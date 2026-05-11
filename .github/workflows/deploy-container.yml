@@ -1,0 +1,105 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Reusable: Deploy Docker container via SSH
+#
+# Callers in other repos use:
+#
+#   jobs:
+#     deploy:
+#       uses: Decentral-America/infra/.github/workflows/deploy-container.yml@main
+#       with:
+#         network:     mainnet
+#         image:       ghcr.io/decentral-america/scanner:abc1234
+#         service:     scanner
+#         compose_dir: /opt/dcc/compose
+#       secrets: inherit
+#
+# The job declares environment: ${{ inputs.network }} at the job level, so GHA
+# reads DEPLOY_* secrets from THIS repo's (infra) environments, not the caller's.
+# This is the key architectural insight that eliminates secret repetition.
+#
+# Required infra repo environments (mainnet/stagenet/testnet) with secrets:
+#   DEPLOY_HOST             — Linode server IP
+#   DEPLOY_USER             — SSH user
+#   DEPLOY_SSH_KEY          — Ed25519 private key (base64)
+#   DEPLOY_HOST_FINGERPRINT — Ed25519 host fingerprint
+#
+# Note: infra repo must be PUBLIC for cross-org reusable workflows to work
+# on GitHub Free plan. No secrets are in the code — all sensitive values are
+# in GitHub Secrets or on-server /opt/dcc/secrets/<network>.env files.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Deploy Container (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      network:
+        description: 'Target network (mainnet | stagenet | testnet)'
+        required: true
+        type: string
+      image:
+        description: 'Full image reference to pull (e.g. ghcr.io/decentral-america/scanner:abc1234)'
+        required: true
+        type: string
+      service:
+        description: 'Docker Compose service name to restart'
+        required: true
+        type: string
+      compose_dir:
+        description: 'Absolute path to docker-compose files on the server'
+        required: false
+        type: string
+        default: '/opt/dcc/compose'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.service }} → ${{ inputs.network }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Environment declared here → reads secrets from infra repo's environments
+    environment:
+      name: ${{ inputs.network }}
+
+    steps:
+      - name: Pull image and restart service via Docker Compose
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host:        ${{ secrets.DEPLOY_HOST }}
+          username:    ${{ secrets.DEPLOY_USER }}
+          key:         ${{ secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          script: |
+            set -euo pipefail
+
+            export IMAGE_TAG="${{ inputs.image }}"
+            export NETWORK="${{ inputs.network }}"
+            SERVICE="${{ inputs.service }}"
+            COMPOSE_DIR="${{ inputs.compose_dir }}"
+
+            echo "Pulling $IMAGE_TAG"
+            docker pull "$IMAGE_TAG"
+
+            echo "Restarting $SERVICE on $NETWORK"
+            cd "$COMPOSE_DIR"
+
+            # docker compose up --wait blocks until the container is running/healthy
+            # (respects healthcheck if defined, otherwise just waits for running state).
+            # --wait-timeout 60 caps the wait to 60 seconds.
+            docker compose --file "${SERVICE}.yml" up \
+              --detach \
+              --remove-orphans \
+              --wait \
+              --wait-timeout 60 \
+              "$SERVICE"
+
+            # Prune dangling images to reclaim disk space (keeps referenced images)
+            docker image prune -f
+
+            echo "Deploy complete: $IMAGE_TAG → $NETWORK"

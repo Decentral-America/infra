@@ -1,0 +1,28 @@
+# docker-compose for DCC Data Service
+# Location on server: /opt/dcc/compose/data-service.yml
+#
+# Deploy via: docker compose -f data-service.yml up -d --remove-orphans data-service
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  data-service:
+    image: "${IMAGE_TAG:-ghcr.io/decentral-america/data-service:latest}"
+    container_name: "data-service-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+    environment:
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
