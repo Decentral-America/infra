@@ -26,3 +26,20 @@ variable "postgres_password" {
   type        = string
   sensitive   = true
 }
+
+variable "default_matcher" {
+  description = "DCC blockchain address of the matcher (data-service config, per network)"
+  type        = string
+}
+
+variable "rate_pair_acceptance_volume_threshold" {
+  description = "Minimum trade volume for rate pair acceptance in data-service"
+  type        = string
+  default     = "0"
+}
+
+variable "rate_threshold_asset_id" {
+  description = "Asset ID used as the rate calculation threshold in data-service"
+  type        = string
+  default     = "DCC"
+}
