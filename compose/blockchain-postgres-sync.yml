@@ -1,0 +1,32 @@
+# docker-compose for DCC Blockchain-Postgres-Sync
+# Location on server: /opt/dcc/compose/blockchain-postgres-sync.yml
+#
+# Deploy via: docker compose -f blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Chain IDs: mainnet=63 ('?'), stagenet=83 ('S'), testnet=33 ('!')
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  blockchain-postgres-sync:
+    image: "${IMAGE_TAG:-ghcr.io/decentral-america/blockchain-postgres-sync:latest}"
+    container_name: "blockchain-postgres-sync-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    network_mode: host  # Needs access to local PostgreSQL on 127.0.0.1:5432
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+    environment:
+      BLOCKCHAIN_UPDATES_URL: "${BLOCKCHAIN_UPDATES_URL}"
+      CHAIN_ID:               "${CHAIN_ID}"
+      STARTING_HEIGHT:        "${STARTING_HEIGHT:-0}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"

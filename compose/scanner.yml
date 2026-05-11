@@ -1,0 +1,30 @@
+# docker-compose for DCC Scanner
+# Location on server: /opt/dcc/compose/scanner.yml
+#
+# Deploy via: docker compose -f scanner.yml up -d --remove-orphans scanner
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  scanner:
+    image: "${IMAGE_TAG:-ghcr.io/decentral-america/scanner:latest}"
+    container_name: "scanner-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+    environment:
+      DCC_NODE_URL:         "${DCC_NODE_URL}"
+      DCC_MATCHER_URL:      "${DCC_MATCHER_URL}"
+      DCC_DATA_SERVICE_URL: "${DCC_DATA_SERVICE_URL}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
