@@ -9,6 +9,9 @@
 # <UDF name="NETWORK"           label="Network name (mainnet/stagenet/testnet)" />
 # <UDF name="CHAIN_ID"          label="DCC chain ID (63/83/33)" />
 # <UDF name="POSTGRES_PASSWORD" label="PostgreSQL password" default="" private="true" />
+# <UDF name="DEFAULT_MATCHER"   label="DCC matcher blockchain address" />
+# <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
+# <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 exec > >(tee /var/log/bootstrap.log) 2>&1
@@ -60,14 +63,35 @@ install -d -m 755 -o deploy -g deploy \
   /opt/dcc/compose \
   /opt/dcc/secrets
 
+# ── Network-specific public endpoints ────────────────────────────────────────
+# These are public URLs — not secrets, but network-dependent config.
+case "$NETWORK" in
+  mainnet)
+    DCC_NODE_URL="https://mainnet-node.decentralchain.io"
+    DCC_MATCHER_URL="https://mainnet-matcher.decentralchain.io/matcher"
+    DCC_DATA_SERVICE_URL="https://data-service.decentralchain.io/v0"
+    ;;
+  stagenet)
+    DCC_NODE_URL="https://stagenet-node.decentralchain.io"
+    DCC_MATCHER_URL="https://stagenet-matcher.decentralchain.io/matcher"
+    DCC_DATA_SERVICE_URL="https://stagenet-data-service.decentralchain.io/v0"
+    ;;
+  testnet)
+    DCC_NODE_URL="https://testnet-node.decentralchain.io"
+    DCC_MATCHER_URL="https://matcher.decentralchain.io/matcher"
+    DCC_DATA_SERVICE_URL="https://testnet-data-service.decentralchain.io/v0"
+    ;;
+esac
+
 # ── Server secrets file ───────────────────────────────────────────────────────
 # Tier 3 secrets: never stored in GitHub. Written once here by bootstrap.
-# Containers source this file at startup.
+# Containers source this file at startup via env_file: in docker-compose.
 cat > "/opt/dcc/secrets/${NETWORK}.env" << EOF
 # DecentralChain $NETWORK secrets — managed by OpenTofu bootstrap
 # DO NOT store this file in version control.
 NETWORK=$NETWORK
 CHAIN_ID=$CHAIN_ID
+# PostgreSQL
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_USER=dcc
 POSTGRES_DB=dcc_${NETWORK}
@@ -76,6 +100,14 @@ PGPORT=5432
 PGDATABASE=dcc_${NETWORK}
 PGUSER=dcc
 PGPASSWORD=${POSTGRES_PASSWORD}
+# DCC public endpoints (scanner uses these at runtime)
+DCC_NODE_URL=${DCC_NODE_URL}
+DCC_MATCHER_URL=${DCC_MATCHER_URL}
+DCC_DATA_SERVICE_URL=${DCC_DATA_SERVICE_URL}
+# Data-service matcher config
+DEFAULT_MATCHER=${DEFAULT_MATCHER}
+RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}
+RATE_THRESHOLD_ASSET_ID=${RATE_THRESHOLD_ASSET_ID}
 EOF
 
 chmod 640 "/opt/dcc/secrets/${NETWORK}.env"
