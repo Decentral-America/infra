@@ -1,0 +1,25 @@
+# CODEOWNERS
+# ─────────────────────────────────────────────────────────────────────────────
+# Defines who is automatically requested for review when PRs touch these paths.
+# Syntax: <pattern> <owner> [<owner> ...]
+#
+# Rules are matched top-to-bottom; the last matching rule wins.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback — infra team reviews all changes
+*                           @Decentral-America/infra
+
+# Terraform configuration — requires infra lead sign-off
+/terraform/                 @Decentral-America/infra
+
+# Bootstrap script — critical; changes affect ALL new server provisions
+/terraform/scripts/         @Decentral-America/infra
+
+# GitHub Actions workflows — security-sensitive; CI/CD changes need review
+/.github/                   @Decentral-America/infra
+
+# Docker Compose service definitions — affects running containers
+/compose/                   @Decentral-America/infra
+
+# Security policy — requires security team review
+SECURITY.md                 @Decentral-America/infra

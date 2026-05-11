@@ -54,6 +54,12 @@ on:
 permissions:
   contents: read
 
+# Prevent parallel deploys of the same service+network from racing.
+# cancel-in-progress: false is critical — never cancel an in-flight deploy.
+concurrency:
+  group: deploy-${{ inputs.service }}-${{ inputs.network }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -70,11 +76,17 @@ jobs:
     steps:
       - name: Pull image and restart service via Docker Compose
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          # GHCR_TOKEN must be set as an org/repo secret with read:packages scope.
+          # Forwarded to the SSH session via envs: so the server can authenticate
+          # to GHCR before pulling (packages are private by default on GHCR).
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           host:        ${{ secrets.DEPLOY_HOST }}
           username:    ${{ secrets.DEPLOY_USER }}
           key:         ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          envs:        GHCR_TOKEN
           script: |
             set -euo pipefail
 
@@ -82,6 +94,9 @@ jobs:
             export NETWORK="${{ inputs.network }}"
             SERVICE="${{ inputs.service }}"
             COMPOSE_DIR="${{ inputs.compose_dir }}"
+
+            echo "Authenticating with GHCR..."
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
 
             echo "Pulling $IMAGE_TAG"
             docker pull "$IMAGE_TAG"

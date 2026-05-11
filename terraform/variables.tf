@@ -43,3 +43,8 @@ variable "rate_threshold_asset_id" {
   type        = string
   default     = "DCC"
 }
+
+variable "blockchain_updates_url" {
+  description = "DCC node Blockchain Updates gRPC endpoint URL for blockchain-postgres-sync (e.g. grpc://mainnet-node.decentralchain.io:6881)"
+  type        = string
+}
