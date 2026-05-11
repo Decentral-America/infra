@@ -1,0 +1,36 @@
+# ─── Terraform / OpenTofu ────────────────────────────────────────────────────
+
+# Local .terraform directories (provider cache, modules)
+**/.terraform/
+
+# Provider lock file IS committed for reproducible builds.
+# Do NOT add .terraform.lock.hcl here.
+
+# Sensitive variable files — operators create their own from terraform.tfvars.example
+*.tfvars
+*.tfvars.json
+
+# Plan files — binary, potentially contain sensitive values
+tfplan
+*.tfplan
+
+# Override files — local developer overrides, not for version control
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local CLI configuration (may contain sensitive credentials)
+.terraformrc
+terraform.rc
+
+# ─── OS / Editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log

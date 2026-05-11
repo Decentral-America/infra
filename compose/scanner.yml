@@ -13,10 +13,9 @@ services:
       - "3000:3000"
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
-    environment:
-      DCC_NODE_URL:         "${DCC_NODE_URL}"
-      DCC_MATCHER_URL:      "${DCC_MATCHER_URL}"
-      DCC_DATA_SERVICE_URL: "${DCC_DATA_SERVICE_URL}"
+    # DCC_NODE_URL, DCC_MATCHER_URL, DCC_DATA_SERVICE_URL come from env_file.
+    # Do NOT duplicate them in environment: — Docker Compose environment: always
+    # overrides env_file, so an unset shell var would silently clear the value.
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s
