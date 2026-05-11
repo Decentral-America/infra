@@ -12,6 +12,7 @@
 # <UDF name="DEFAULT_MATCHER"   label="DCC matcher blockchain address" />
 # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
 # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
+# <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL (e.g. grpc://mainnet-node.decentralchain.io:6881)" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 exec > >(tee /var/log/bootstrap.log) 2>&1
@@ -19,15 +20,30 @@ exec > >(tee /var/log/bootstrap.log) 2>&1
 echo "[bootstrap] Starting DCC backend node bootstrap for network: $NETWORK"
 
 # ── System updates ────────────────────────────────────────────────────────────
+install -m 0755 -d /etc/apt/keyrings
 apt-get update -qq
 apt-get upgrade -y -qq
 apt-get install -y -qq \
   curl \
   ca-certificates \
   gnupg \
-  lsb-release \
-  postgresql \
-  postgresql-client
+  lsb-release
+
+# ── PostgreSQL 17 via PGDG ────────────────────────────────────────────────────
+# Use the official PGDG repo for PostgreSQL 17 (EOL Nov 2029).
+# Debian 12 ships PG15 (EOL Nov 2027) by default — not enterprise-grade longevity.
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  | gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg
+chmod a+r /etc/apt/keyrings/pgdg.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) \
+  signed-by=/etc/apt/keyrings/pgdg.gpg] \
+  https://apt.postgresql.org/pub/repos/apt \
+  $(lsb_release -cs)-pgdg main" \
+  > /etc/apt/sources.list.d/pgdg.list
+
+apt-get update -qq
+apt-get install -y -qq postgresql-17 postgresql-client-17
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 install -m 0755 -d /etc/apt/keyrings
@@ -54,7 +70,9 @@ fi
 usermod -aG docker deploy
 
 install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
-echo "$DEPLOY_PUBLIC_KEY" >> /home/deploy/.ssh/authorized_keys
+# Idempotent: append only if key not already present (avoid duplicates on re-run)
+grep -qF "$DEPLOY_PUBLIC_KEY" /home/deploy/.ssh/authorized_keys 2>/dev/null \
+  || echo "$DEPLOY_PUBLIC_KEY" >> /home/deploy/.ssh/authorized_keys
 chmod 600 /home/deploy/.ssh/authorized_keys
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 
@@ -86,6 +104,7 @@ esac
 # ── Server secrets file ───────────────────────────────────────────────────────
 # Tier 3 secrets: never stored in GitHub. Written once here by bootstrap.
 # Containers source this file at startup via env_file: in docker-compose.
+# Note: heredoc content goes to cat's stdin, NOT stdout — not captured by tee.
 cat > "/opt/dcc/secrets/${NETWORK}.env" << EOF
 # DecentralChain $NETWORK secrets — managed by OpenTofu bootstrap
 # DO NOT store this file in version control.
@@ -104,6 +123,8 @@ PGPASSWORD=${POSTGRES_PASSWORD}
 DCC_NODE_URL=${DCC_NODE_URL}
 DCC_MATCHER_URL=${DCC_MATCHER_URL}
 DCC_DATA_SERVICE_URL=${DCC_DATA_SERVICE_URL}
+# blockchain-postgres-sync gRPC endpoint (provided as UDF at instance creation)
+BLOCKCHAIN_UPDATES_URL=${BLOCKCHAIN_UPDATES_URL}
 # Data-service matcher config
 DEFAULT_MATCHER=${DEFAULT_MATCHER}
 RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}
@@ -132,7 +153,7 @@ sudo -u postgres psql -tc \
   sudo -u postgres createdb -O dcc "dcc_${NETWORK}"
 
 # ── GHCR authentication for docker pull ──────────────────────────────────────
-# The GHCR_TOKEN is passed as a GHA secret during docker pull steps.
-# Nothing to configure here — the CI action handles login.
+# GHCR login is handled per-deploy in deploy-container.yml by passing
+# GHCR_TOKEN via appleboy/ssh-action envs: parameter. Nothing to configure here.
 
 echo "[bootstrap] Bootstrap complete. Network: $NETWORK, Chain ID: $CHAIN_ID"

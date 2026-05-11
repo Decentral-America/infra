@@ -7,7 +7,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 terraform {
-  required_version = ">= 1.11.0"
+  required_version = ">= 1.11.6"  # floor: 1.11.4 (SECURITY: malicious .zip in tofu init)
 
   required_providers {
     linode = {
@@ -87,6 +87,13 @@ resource "linode_instance" "backend" {
     DEFAULT_MATCHER                      = var.default_matcher
     RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
     RATE_THRESHOLD_ASSET_ID              = var.rate_threshold_asset_id
+    BLOCKCHAIN_UPDATES_URL               = var.blockchain_updates_url
+  }
+
+  # Prevent accidental destruction of the backend server.
+  # To intentionally tear down, temporarily set this to false, apply, then destroy.
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
@@ -143,5 +150,6 @@ resource "linode_stackscript" "bootstrap" {
   # <UDF name="DEFAULT_MATCHER" label="DCC matcher blockchain address" />
   # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
   # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
+  # <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL" />
   script = file("${path.module}/scripts/bootstrap.sh")
 }

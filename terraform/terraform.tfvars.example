@@ -1,0 +1,40 @@
+# terraform.tfvars.example
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file to terraform.tfvars and fill in the values before running
+# `tofu plan` or `tofu apply`.
+#
+# IMPORTANT: terraform.tfvars is gitignored — never commit real values.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Linode region slug (run `linode-cli regions list` for available options)
+linode_region = "us-central"
+
+# Linode instance plan (run `linode-cli linodes types` for available options)
+# g6-standard-2 = 2 vCPU / 4 GB RAM
+linode_type = "g6-standard-2"
+
+# Strong random root password (generate with: openssl rand -base64 32)
+root_password = "CHANGE_ME_strong_random_password"
+
+# Ed25519 public key for the deploy user (contents of ~/.ssh/id_ed25519.pub or similar)
+deploy_ssh_public_key = "ssh-ed25519 AAAA... your-deploy-key-here"
+
+# PostgreSQL password for the dcc database user (generate with: openssl rand -base64 32)
+postgres_password = "CHANGE_ME_strong_db_password"
+
+# DCC matcher blockchain address (per-network — check DCC docs for the correct address)
+default_matcher = "3PEjHv3JGjcWNpYEEkif2w8NXV4kbybKoZ7"
+
+# Minimum trade volume threshold for rate pair acceptance in data-service
+rate_pair_acceptance_volume_threshold = "0"
+
+# Asset ID for rate calculation threshold (default: DCC)
+rate_threshold_asset_id = "DCC"
+
+# DCC node Blockchain Updates gRPC URL for blockchain-postgres-sync.
+# This is the gRPC streaming endpoint on the DCC node (typically port 6881).
+# Examples:
+#   mainnet: grpc://mainnet-node.decentralchain.io:6881
+#   stagenet: grpc://stagenet-node.decentralchain.io:6881
+#   testnet:  grpc://testnet-node.decentralchain.io:6881
+blockchain_updates_url = "grpc://mainnet-node.decentralchain.io:6881"

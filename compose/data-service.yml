@@ -15,9 +15,9 @@ services:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
       NODE_ENV: production
-      DEFAULT_MATCHER:                       "${DEFAULT_MATCHER}"
-      RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD: "${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}"
-      RATE_THRESHOLD_ASSET_ID:               "${RATE_THRESHOLD_ASSET_ID}"
+    # DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD, RATE_THRESHOLD_ASSET_ID
+    # come from env_file. Do NOT add them here — environment: overrides env_file,
+    # so an unset shell var would silently clear the value.
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 30s

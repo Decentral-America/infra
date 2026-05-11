@@ -16,15 +16,12 @@ services:
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
-      BLOCKCHAIN_UPDATES_URL: "${BLOCKCHAIN_UPDATES_URL}"
-      CHAIN_ID:               "${CHAIN_ID}"
-      STARTING_HEIGHT:        "${STARTING_HEIGHT:-0}"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:9090/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      # BLOCKCHAIN_UPDATES_URL and CHAIN_ID come from env_file.
+      # STARTING_HEIGHT: use a literal default of 0 so new deployments start
+      # from genesis. Override manually for disaster-recovery scenarios.
+      STARTING_HEIGHT: "0"
+    # healthcheck: omitted — the blockchain-postgres-sync image (Rust binary)
+    # does not include curl/wget. Use `docker inspect` or journald for status.
     logging:
       driver: "json-file"
       options:
