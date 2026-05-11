@@ -80,10 +80,13 @@ resource "linode_instance" "backend" {
   # Bootstrap script: install Docker, create deploy user, write secrets
   stackscript_id   = linode_stackscript.bootstrap.id
   stackscript_data = {
-    DEPLOY_PUBLIC_KEY = var.deploy_ssh_public_key
-    NETWORK           = local.network
-    CHAIN_ID          = tostring(local.chain_id)
-    POSTGRES_PASSWORD = var.postgres_password
+    DEPLOY_PUBLIC_KEY                    = var.deploy_ssh_public_key
+    NETWORK                              = local.network
+    CHAIN_ID                             = tostring(local.chain_id)
+    POSTGRES_PASSWORD                    = var.postgres_password
+    DEFAULT_MATCHER                      = var.default_matcher
+    RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
+    RATE_THRESHOLD_ASSET_ID              = var.rate_threshold_asset_id
   }
 }
 
@@ -137,5 +140,8 @@ resource "linode_stackscript" "bootstrap" {
   # <UDF name="NETWORK" label="Network name" />
   # <UDF name="CHAIN_ID" label="DCC chain ID" />
   # <UDF name="POSTGRES_PASSWORD" label="PostgreSQL password" default="" private="true" />
+  # <UDF name="DEFAULT_MATCHER" label="DCC matcher blockchain address" />
+  # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
+  # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
   script = file("${path.module}/scripts/bootstrap.sh")
 }
