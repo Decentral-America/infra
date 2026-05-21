@@ -7,12 +7,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 terraform {
-  required_version = ">= 1.11.6"  # floor: 1.11.4 (SECURITY: malicious .zip in tofu init)
+  required_version = ">= 1.12.0"  # floor: 1.11.4 (SECURITY: malicious .zip in tofu init)
 
   required_providers {
     linode = {
       source  = "linode/linode"
-      version = "~> 3.12"  # floor: 3.9.0 (CVE-2026-27900 sensitive-info-in-logs)
+      version = "~> 3.13"  # floor: 3.9.0 (CVE-2026-27900 sensitive-info-in-logs)
     }
   }
 
