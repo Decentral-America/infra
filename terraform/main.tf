@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # OpenTofu root configuration for DecentralChain Linode infrastructure
 #
-# Provider: linode/linode v~3.12 (security floor: v3.9.0 — CVE-2026-27900)
+# Provider: linode/linode ~> 3.13 (security floor: v3.9.0 — CVE-2026-27900)
 # State:    Linode Object Storage (S3-compatible backend)
 # Workspaces: mainnet | stagenet | testnet
 # ──────────────────────────────────────────────────────────────────────────────
