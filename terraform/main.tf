@@ -33,6 +33,11 @@ terraform {
 
     # Workspaces are stored as: env:/<workspace>/terraform.tfstate
     workspace_key_prefix = "env:"
+
+    # Native S3 state locking via conditional writes (OpenTofu ≥ 1.10).
+    # Prevents concurrent tofu apply without requiring DynamoDB (unavailable on Linode).
+    # Creates a .tflock object alongside the state file in the bucket.
+    use_lockfile = true
   }
 }
 
