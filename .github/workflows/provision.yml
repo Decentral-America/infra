@@ -2,7 +2,7 @@
 # OpenTofu: Provision / update Linode servers
 #
 # Triggered manually via workflow_dispatch with a target (plan | apply | destroy).
-# Uses OpenTofu 1.11.6 (stable) with the Linode provider v3.12.0.
+# Uses OpenTofu 1.12.0 (stable) with the Linode provider v3.13.
 #
 # State backend: Linode Object Storage (S3-compatible).
 # Create the state bucket before first run:
