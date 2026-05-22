@@ -83,9 +83,9 @@ Add 4 secrets to **each** environment (12 secrets total):
 ### 5 — Cloudflare Pages projects (one-time CLI, run once per network)
 
 ```bash
-npx wrangler@4.90.0 pages project create dcc-exchange-mainnet --production-branch main
-npx wrangler@4.90.0 pages project create dcc-exchange-stagenet --production-branch main
-npx wrangler@4.90.0 pages project create dcc-exchange-testnet --production-branch main
+npx wrangler@4.93.1 pages project create dcc-exchange-mainnet --production-branch main
+npx wrangler@4.93.1 pages project create dcc-exchange-stagenet --production-branch main
+npx wrangler@4.93.1 pages project create dcc-exchange-testnet --production-branch main
 ```
 
 ### 6 — Generate deploy SSH keypair (once per network/server)
