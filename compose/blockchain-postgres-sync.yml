@@ -9,7 +9,7 @@
 
 services:
   blockchain-postgres-sync:
-    image: "${IMAGE_TAG:-ghcr.io/decentral-america/blockchain-postgres-sync:latest}"
+    image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
     container_name: "blockchain-postgres-sync-${NETWORK:-mainnet}"
     restart: unless-stopped
     network_mode: host  # Needs access to local PostgreSQL on 127.0.0.1:5432
