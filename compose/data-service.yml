@@ -6,7 +6,7 @@
 
 services:
   data-service:
-    image: "${IMAGE_TAG:-ghcr.io/decentral-america/data-service:latest}"
+    image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
     container_name: "data-service-${NETWORK:-mainnet}"
     restart: unless-stopped
     ports:

@@ -6,7 +6,7 @@
 
 services:
   scanner:
-    image: "${IMAGE_TAG:-ghcr.io/decentral-america/scanner:latest}"
+    image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
     container_name: "scanner-${NETWORK:-mainnet}"
     restart: unless-stopped
     ports:
