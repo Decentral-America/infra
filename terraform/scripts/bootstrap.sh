@@ -12,7 +12,9 @@
 # <UDF name="DEFAULT_MATCHER"   label="DCC matcher blockchain address" />
 # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
 # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
-# <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL (e.g. grpc://mainnet-node.decentralchain.io:6881)" />
+# <UDF name="BLOCKCHAIN_UPDATES_URL"              label="DCC node Blockchain Updates gRPC URL (e.g. grpc://mainnet-node.decentralchain.io:6881)" />
+# <UDF name="MATCHER_ACCOUNT_PASSWORD"            label="DEX Matcher account.dat encryption password" default="" private="true" />
+# <UDF name="MATCHER_API_KEY_HASH"                label="DEX Matcher API key hash (Base58-encoded SHA256)" default="" private="true" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 exec > >(tee /var/log/bootstrap.log) 2>&1
@@ -76,10 +78,22 @@ grep -qF "$DEPLOY_PUBLIC_KEY" /home/deploy/.ssh/authorized_keys 2>/dev/null \
 chmod 600 /home/deploy/.ssh/authorized_keys
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 
+# ── SSH hardening ─────────────────────────────────────────────────────────────
+# Disable root password login (key-based root access preserved for emergency).
+# Disable all password authentication — SSH keys only.
+sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+systemctl restart sshd
+echo "[bootstrap] SSH hardened: PermitRootLogin=prohibit-password, PasswordAuthentication=no"
+
 # ── Directory structure ───────────────────────────────────────────────────────
 install -d -m 755 -o deploy -g deploy \
   /opt/dcc/compose \
-  /opt/dcc/secrets
+  /opt/dcc/secrets \
+  /opt/dcc/data/node-wallet-${NETWORK} \
+  /opt/dcc/data/matcher-${NETWORK} \
+  /opt/dcc/config/matcher-${NETWORK}
 
 # ── Network-specific public endpoints ────────────────────────────────────────
 # These are public URLs — not secrets, but network-dependent config.
@@ -104,35 +118,82 @@ esac
 # ── Server secrets file ───────────────────────────────────────────────────────
 # Tier 3 secrets: never stored in GitHub. Written once here by bootstrap.
 # Containers source this file at startup via env_file: in docker-compose.
-# Note: heredoc content goes to cat's stdin, NOT stdout — not captured by tee.
-cat > "/opt/dcc/secrets/${NETWORK}.env" << EOF
-# DecentralChain $NETWORK secrets — managed by OpenTofu bootstrap
-# DO NOT store this file in version control.
-NETWORK=$NETWORK
-CHAIN_ID=$CHAIN_ID
-# PostgreSQL
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-POSTGRES_USER=dcc
-POSTGRES_DB=dcc_${NETWORK}
-PGHOST=localhost
-PGPORT=5432
-PGDATABASE=dcc_${NETWORK}
-PGUSER=dcc
-PGPASSWORD=${POSTGRES_PASSWORD}
-# DCC public endpoints (scanner uses these at runtime)
-DCC_NODE_URL=${DCC_NODE_URL}
-DCC_MATCHER_URL=${DCC_MATCHER_URL}
-DCC_DATA_SERVICE_URL=${DCC_DATA_SERVICE_URL}
-# blockchain-postgres-sync gRPC endpoint (provided as UDF at instance creation)
-BLOCKCHAIN_UPDATES_URL=${BLOCKCHAIN_UPDATES_URL}
-# Data-service matcher config
-DEFAULT_MATCHER=${DEFAULT_MATCHER}
-RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}
-RATE_THRESHOLD_ASSET_ID=${RATE_THRESHOLD_ASSET_ID}
-EOF
+#
+# IMPORTANT — printf, not heredoc:
+# An unquoted heredoc (<<EOF) expands shell metacharacters inside the body, so
+# POSTGRES_PASSWORD values containing $, `, \, or ! are silently corrupted.
+# printf '%s' never interprets its argument as a format string, making it safe
+# for all password values regardless of content. (Audit finding F-07.)
+{
+  printf '# DecentralChain %s secrets — managed by OpenTofu bootstrap\n' "${NETWORK}"
+  printf '# DO NOT store this file in version control.\n'
+  printf 'NETWORK=%s\n'                                "${NETWORK}"
+  printf 'CHAIN_ID=%s\n'                               "${CHAIN_ID}"
+  printf '# PostgreSQL\n'
+  printf 'POSTGRES_PASSWORD=%s\n'                      "${POSTGRES_PASSWORD}"
+  printf 'POSTGRES_USER=dcc\n'
+  printf 'POSTGRES_DB=dcc_%s\n'                        "${NETWORK}"
+  printf 'PGHOST=localhost\n'
+  printf 'PGPORT=5432\n'
+  printf 'PGDATABASE=dcc_%s\n'                         "${NETWORK}"
+  printf 'PGUSER=dcc\n'
+  printf 'PGPASSWORD=%s\n'                             "${POSTGRES_PASSWORD}"
+  printf '# DCC public endpoints (scanner uses these at runtime)\n'
+  printf 'DCC_NODE_URL=%s\n'                           "${DCC_NODE_URL}"
+  printf 'DCC_MATCHER_URL=%s\n'                        "${DCC_MATCHER_URL}"
+  printf 'DCC_DATA_SERVICE_URL=%s\n'                   "${DCC_DATA_SERVICE_URL}"
+  printf '# blockchain-postgres-sync gRPC endpoint (provided as UDF at instance creation)\n'
+  printf 'BLOCKCHAIN_UPDATES_URL=%s\n'                 "${BLOCKCHAIN_UPDATES_URL}"
+  printf '# Data-service matcher config\n'
+  printf 'DEFAULT_MATCHER=%s\n'                        "${DEFAULT_MATCHER}"
+  printf 'RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=%s\n'  "${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}"
+  printf 'RATE_THRESHOLD_ASSET_ID=%s\n'                "${RATE_THRESHOLD_ASSET_ID}"
+  printf '# DEX Matcher secrets\n'
+  printf 'MATCHER_ACCOUNT_PASSWORD=%s\n'               "${MATCHER_ACCOUNT_PASSWORD}"
+  printf 'MATCHER_API_KEY_HASH=%s\n'                   "${MATCHER_API_KEY_HASH}"
+} > "/opt/dcc/secrets/${NETWORK}.env"
 
 chmod 640 "/opt/dcc/secrets/${NETWORK}.env"
 chown root:deploy "/opt/dcc/secrets/${NETWORK}.env"
+
+# ── Matcher network-specific config ──────────────────────────────────────────
+# The DEX matcher image includes this file via:
+#   include "/var/lib/decentralchain-dex/config/local.conf"
+# in dex.conf. The file is bind-mounted from /opt/dcc/config/matcher-<NETWORK>/.
+#
+# gRPC targets point to node-scala running on the same host.
+# Port 6887 = DEX extension; 6881 = BlockchainUpdates extension.
+#
+# address-scheme-character: single byte that encodes the network.
+# DCC mainnet=63='?', stagenet=83='S', testnet=33='!'.
+case "$CHAIN_ID" in
+  63) ADDR_SCHEME="?" ;;   # mainnet
+  83) ADDR_SCHEME="S" ;;   # stagenet
+  33) ADDR_SCHEME="!" ;;   # testnet
+  *)  ADDR_SCHEME="D" ;;   # devnet / unknown — fail loudly at matcher startup
+esac
+
+{
+  printf '# DecentralChain DEX Matcher local config — managed by OpenTofu bootstrap\n'
+  printf '# Network: %s  Chain ID: %s\n' "${NETWORK}" "${CHAIN_ID}"
+  printf '# DO NOT store this file in version control.\n'
+  printf 'waves.dex {\n'
+  printf '  address-scheme-character = "%s"\n'                             "${ADDR_SCHEME}"
+  printf '  waves-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
+  printf '  waves-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"\n'
+  printf '  account-storage {\n'
+  printf '    type = "encrypted-file"\n'
+  printf '    encrypted-file {\n'
+  printf '      path = "/var/lib/decentralchain-dex/account.dat"\n'
+  printf '      password = "%s"\n'                                          "${MATCHER_ACCOUNT_PASSWORD}"
+  printf '    }\n'
+  printf '  }\n'
+  printf '  rest-api.api-key-hashes = ["%s"]\n'                            "${MATCHER_API_KEY_HASH}"
+  printf '}\n'
+} > "/opt/dcc/config/matcher-${NETWORK}/local.conf"
+
+chmod 640 "/opt/dcc/config/matcher-${NETWORK}/local.conf"
+chown root:deploy "/opt/dcc/config/matcher-${NETWORK}/local.conf"
 
 # ── PostgreSQL setup ──────────────────────────────────────────────────────────
 systemctl enable --now postgresql
