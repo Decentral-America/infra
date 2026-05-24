@@ -1,0 +1,77 @@
+# ── DecentralChain Go Node ─────────────────────────────────────────────────────
+#
+# Prerequisites (set by bootstrap.sh and deploy-container.yml):
+#   IMAGE_TAG — full image reference, e.g. ghcr.io/decentral-america/node-go:abc123
+#   NETWORK   — mainnet | testnet | stagenet
+#
+# Volumes:
+#   node-state-<NETWORK>   — persistent blockchain state (named, survives upgrades)
+#   /opt/dcc/data/wallet   — node wallet directory (bind-mount; created by bootstrap.sh)
+#
+# Ports:
+#   6869 — REST API (internal; expose via reverse proxy only)
+#   6868 — P2P     (must be externally reachable for peer discovery)
+#   7475 — gRPC
+#   6870 — metrics (internal; scrape via Prometheus on same host)
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  node:
+    image: "${IMAGE_TAG:?IMAGE_TAG is required}"
+    container_name: "node-${NETWORK:-mainnet}"
+    restart: unless-stopped
+
+    # Secrets are written by bootstrap.sh; never baked into the image.
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+
+    # Constants and mappings (never duplicated in env_file).
+    # BLOCKCHAIN_TYPE derives from the NETWORK variable exported by deploy-container.yml.
+    environment:
+      BLOCKCHAIN_TYPE: "${NETWORK:-mainnet}"
+      API_ADDR: ":6869"
+      # gRPC port — matches Dockerfile default; also exposed for blockchain-postgres-sync
+      GRPC_ADDR: ":7475"
+      LOG_LEVEL: "INFO"
+
+    ports:
+      # REST — only bind to localhost; expose via nginx/Caddy reverse proxy
+      - "127.0.0.1:6869:6869"
+      # P2P — must be world-reachable for node to connect to peers
+      - "6868:6868"
+      # gRPC — localhost only; blockchain-postgres-sync connects from the same host
+      - "127.0.0.1:7475:7475"
+      # Prometheus metrics — localhost only
+      - "127.0.0.1:6870:6870"
+
+    volumes:
+      # Blockchain state — named volume survives image upgrades and docker rm
+      - "node-state-${NETWORK:-mainnet}:/home/gowaves/data"
+      # Wallet — bind-mount so the key file persists independently of the volume lifecycle
+      - "/opt/dcc/data/node-wallet-${NETWORK:-mainnet}:/home/gowaves/wallet"
+
+    # docker compose up --wait blocks here until the healthcheck passes.
+    # Mirrors the Dockerfile HEALTHCHECK to confirm the REST API is serving.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6869/node/version"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  # Declare here so Docker creates the volume if it doesn't already exist.
+  # Using an external: false (default) named volume means docker compose down -v
+  # would delete it — operators must NOT use -v in production.
+  node-state-mainnet:
+    name: "node-state-mainnet"
+  node-state-testnet:
+    name: "node-state-testnet"
+  node-state-stagenet:
+    name: "node-state-stagenet"
