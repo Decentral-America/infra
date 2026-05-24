@@ -7,6 +7,8 @@
 > code — all sensitive values live in GitHub Secrets or on-server
 > `/opt/dcc/secrets/<network>.env` files. Public infra repos are standard practice
 > in the industry (HashiCorp, Cloudflare, etc. all follow this pattern).
+>
+> **Canonical ecosystem deploy runbook:** see [../DEPLOY.md](../DEPLOY.md). This README stays focused on infra-repo internals.
 
 ---
 
@@ -21,6 +23,7 @@
 - [OpenTofu variables reference](#opentofu-variables-reference)
 - [One-time setup checklist](#one-time-setup-checklist)
 - [Activation](#activation)
+- [How to deploy](#how-to-deploy)
 
 ---
 
@@ -110,15 +113,16 @@ or `blockchain-postgres-sync` repo.
 | **Org** | `NPM_TOKEN` | 1 | ✅ set |
 | **Org** | `MAVEN_GPG_PRIVATE_KEY` | 1 | ✅ set |
 | **Org** | `MAVEN_GPG_PASSPHRASE` | 1 | ✅ set |
-| **Org** | `CENTRAL_USERNAME` | 1 | ✅ set (⚠ name mismatch — see below) |
-| **Org** | `CENTRAL_PASSWORD` | 1 | ✅ set (⚠ name mismatch — see below) |
+| **Org** | `CENTRAL_USERNAME` | 1 | ✅ set (⚠ can delete — replaced by `MAVEN_CENTRAL_USERNAME`) |
+| **Org** | `CENTRAL_PASSWORD` | 1 | ✅ set (⚠ can delete — replaced by `MAVEN_CENTRAL_PASSWORD`) |
+| **Org** | `MAVEN_CENTRAL_USERNAME` | 1 | ✅ set |
+| **Org** | `MAVEN_CENTRAL_PASSWORD` | 1 | ✅ set |
 | **Org** | `CODECOV_TOKEN` | 1 | ✅ set |
 | **Org** | `DOCKERHUB_TOKEN` | 1 | ✅ set |
 | **Org** | `GHCR_TOKEN` | 1 | ❌ missing |
 | **Org** | `CLOUDFLARE_API_TOKEN` | 1 | ❌ missing |
 | **Org** | `CLOUDFLARE_ACCOUNT_ID` | 1 | ❌ missing |
-| **Org** | `MAVEN_CENTRAL_USERNAME` | 1 | ❌ missing (see ⚠ below) |
-| **Org** | `MAVEN_CENTRAL_PASSWORD` | 1 | ❌ missing (see ⚠ below) |
+| **Org** | `SENTRY_AUTH_TOKEN` | 1 | ❌ missing |
 | **Org** | `MAVEN_GPG_KEY_ID` | 1 | ❌ missing |
 | **Org** | `NVD_API_KEY` | 1 | ❌ missing |
 | **Org** | `CHROME_EXTENSION_ID` | 1 | ❌ missing |
@@ -143,15 +147,15 @@ or `blockchain-postgres-sync` repo.
 | **Server** `/opt/dcc/secrets/*.env` | written by bootstrap (see §[Server .env](#server-env-file-reference)) | — | written at provision time |
 | **DecentralChain repo** | — | **0** | nothing needed |
 
-> **⚠ MAVEN_CENTRAL naming mismatch.** The org currently has `CENTRAL_USERNAME` and
-> `CENTRAL_PASSWORD`. The `publish-protobuf-serialization.yml` workflow uses those names.
-> However, `publish-blst.yml`, `publish-curve25519.yml`, `publish-groth16.yml`,
-> `publish-java-sdk.yml`, `publish-ride.yml`, and `publish-transactions.yml` all
-> reference `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` — different names.
-> **Fix:** either rename the existing org secrets to `MAVEN_CENTRAL_USERNAME` /
-> `MAVEN_CENTRAL_PASSWORD` (and update `publish-protobuf-serialization.yml` to match),
-> or add `MAVEN_CENTRAL_*` as aliases pointing at the same values. Publish workflows
-> only fire on version tags so this is not blocking CI today.
+> ✅ **MAVEN_CENTRAL naming mismatch — RESOLVED** (2026-05-23). `publish-protobuf-serialization.yml`
+> was updated to use `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` (matching all other
+> 6 publish workflows). Both secrets are now set at org level. The legacy `CENTRAL_USERNAME` /
+> `CENTRAL_PASSWORD` secrets can be safely deleted from the org once confirmed no other workflow
+> references them:
+> ```bash
+> gh secret delete CENTRAL_USERNAME --org Decentral-America
+> gh secret delete CENTRAL_PASSWORD --org Decentral-America
+> ```
 
 ---
 
@@ -333,11 +337,10 @@ gpg --list-secret-keys --keyid-format=short
 
 #### `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD`
 
-**Where:** Org level — ❌ missing (org has `CENTRAL_USERNAME`/`CENTRAL_PASSWORD`
-which serve `publish-protobuf-serialization.yml` only; the other 6 publish workflows
-need `MAVEN_CENTRAL_*` names).
-**Used by:** `publish-blst.yml`, `publish-curve25519.yml`, `publish-groth16.yml`,
-`publish-java-sdk.yml`, `publish-ride.yml`, `publish-transactions.yml`.
+**Where:** Org level — ✅ set (2026-05-23).
+**Used by:** All 7 publish workflows: `publish-blst.yml`, `publish-curve25519.yml`,
+`publish-groth16.yml`, `publish-java-sdk.yml`, `publish-protobuf-serialization.yml`,
+`publish-ride.yml`, `publish-transactions.yml`.
 
 Credentials for the Maven Central Portal (central.sonatype.com). These are the
 Portal Token credentials, **not** your Sonatype Jira credentials (the legacy OSSRH
@@ -349,14 +352,6 @@ portal used Jira login; the new Central Portal uses separate API tokens).
 3. The username token and password token displayed are
    `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD` respectively.
 4. These tokens expire unless you extend them — note the expiry date.
-
-**Resolution options:**
-- **Option A (recommended):** Add `MAVEN_CENTRAL_USERNAME` and
-  `MAVEN_CENTRAL_PASSWORD` as org secrets (same values as `CENTRAL_USERNAME`/
-  `CENTRAL_PASSWORD` if they are the same account), then update
-  `publish-protobuf-serialization.yml` to use the `MAVEN_CENTRAL_*` names.
-- **Option B:** Keep both name pairs in the org. Two secrets with different names,
-  same values. No workflow changes needed.
 
 ---
 
@@ -386,6 +381,48 @@ unauthenticated rate limits (300 req/day without a key vs. 2,000/day with).
 2. Enter your email. The key is emailed immediately — no approval required.
 3. The key is a 128-bit UUID (e.g. `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
 4. Store as `NVD_API_KEY`.
+
+---
+
+#### `SENTRY_AUTH_TOKEN`
+
+**Where:** Org level — ❌ missing.
+**Used by:** `deploy-exchange.yml`, `deploy-scanner.yml` — at Vite build time by
+`@sentry/vite-plugin` to upload source maps and create Sentry releases.
+
+**Why this is required:** Without source maps, every Sentry error shows minified
+stack traces (`at o (main.abc123.js:1:8472)`) with no actionable file or line
+number. This token authenticates the plugin to upload `.map` files to Sentry at
+build time and then delete them from the output bundle so they are never served
+to end users.
+
+This is **different from the DSN**. The DSN is embedded in the app bundle (it is
+safe to be public — it only accepts incoming events). This token is a server-side
+secret used only during the CI build step.
+
+**Required permissions:**
+- `Project: Read & Write`
+- `Release: Admin`
+
+**How to create:**
+1. Log in to sentry.io → your organisation → Settings → Auth Tokens.
+2. Click **Create New Token**.
+3. Select scopes: `project:read`, `project:write`, `project:releases`.
+4. Copy the token — it is shown only once.
+5. Store as org secret `SENTRY_AUTH_TOKEN`.
+
+**How it is used in CI (example):**
+```yaml
+- name: Build exchange
+  env:
+    SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  run: pnpm --filter exchange build
+```
+
+The `@sentry/vite-plugin` in both `apps/exchange/vite.config.ts` and
+`apps/scanner/vite.config.ts` reads `process.env.SENTRY_AUTH_TOKEN`. It
+automatically no-ops when the variable is absent (local dev, forks) via the
+`disable: !process.env.SENTRY_AUTH_TOKEN` guard already in the config.
 
 ---
 
@@ -833,3 +870,420 @@ Docker image. This allows Docker image CI to run and validate on every commit ev
 before servers are provisioned.
 
 **Current state:** `INFRA_DEPLOY_ENABLED = false`.
+
+---
+
+## How to deploy
+
+Everything in one place: what to tag, what fires, what must be set up first,
+and how to verify each service after deploy.
+
+---
+
+### Deploy workflow reference
+
+| Workflow | Tag trigger | Default network | Target | Required secrets |
+|----------|------------|-----------------|--------|-----------------|
+| `deploy-exchange.yml` | `exchange/v*.*.*` | mainnet | Cloudflare Pages | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SENTRY_AUTH_TOKEN` |
+| `deploy-scanner.yml` | `scanner/v*.*.*` | mainnet | GHCR image → SSH docker pull | `GHCR_TOKEN` (via infra), `SENTRY_AUTH_TOKEN` |
+| `deploy-data-service.yml` | `data-service/v*.*.*` | mainnet | GHCR image → SSH docker pull | `GHCR_TOKEN` (via infra) |
+| `deploy-bps.yml` | `bps/v*.*.*` | mainnet | GHCR image → SSH docker pull | `GHCR_TOKEN` (via infra) |
+| `deploy-cubensis.yml` | `cubensis/v*.*.*` | — | Chrome / Firefox / Edge stores | All `CHROME_*`, `FIREFOX_*`, `EDGE_*` secrets |
+
+Tag-based workflows target **mainnet** automatically. Any network can be targeted
+at any time via **Actions → workflow → Run workflow** (manual `workflow_dispatch`).
+
+---
+
+### Tag naming convention
+
+```bash
+# Format: <product>/v<MAJOR>.<MINOR>.<PATCH>
+git tag exchange/v1.0.0     && git push origin exchange/v1.0.0
+git tag scanner/v1.0.0      && git push origin scanner/v1.0.0
+git tag data-service/v1.0.0 && git push origin data-service/v1.0.0
+git tag bps/v1.0.0          && git push origin bps/v1.0.0
+git tag cubensis/v1.0.0     && git push origin cubensis/v1.0.0
+```
+
+The tag name becomes `SENTRY_RELEASE` and `GITHUB_REF_NAME` inside the workflow,
+so it also labels the Sentry release that source maps are uploaded against.
+
+---
+
+### Complete pre-deploy requirements
+
+Not one secret, variable, or file value is omitted. Every layer is listed.
+
+---
+
+#### Layer 1 — GitHub org secrets (`Decentral-America` → Settings → Secrets → Actions)
+
+| Secret | Status | Used by | Notes |
+|--------|--------|---------|-------|
+| `NX_CLOUD_ACCESS_TOKEN` | ✅ set | `ci.yml`, all workflows | Nx remote task cache. Read-only. |
+| `NPM_TOKEN` | ✅ set | `release.yml`, `publish-ride.yml` | Publish `@decentralchain/*` to npm. |
+| `MAVEN_GPG_PRIVATE_KEY` | ✅ set | All `publish-*.yml` (JVM) | ASCII-armored GPG private key. Signs Maven artifacts. |
+| `MAVEN_GPG_PASSPHRASE` | ✅ set | All `publish-*.yml` (JVM) | Passphrase protecting `MAVEN_GPG_PRIVATE_KEY`. |
+| `MAVEN_CENTRAL_USERNAME` | ✅ set | All 7 JVM publish workflows | Sonatype Central Portal token username. |
+| `MAVEN_CENTRAL_PASSWORD` | ✅ set | All 7 JVM publish workflows | Sonatype Central Portal token password. |
+| `CODECOV_TOKEN` | ✅ set | CI coverage jobs | Repo upload token from codecov.io. |
+| `DOCKERHUB_TOKEN` | ✅ set | Docker Hub image push | Access token from hub.docker.com. |
+| `GHCR_TOKEN` | ❌ missing | `deploy-container.yml` (infra, via SSH) | PAT `read:packages` only. Forwarded to Linode server for `docker login ghcr.io`. |
+| `CLOUDFLARE_API_TOKEN` | ❌ missing | `deploy-exchange.yml` | CF API token, `account:cloudflare_pages:edit` scope. Skipped gracefully when absent. |
+| `CLOUDFLARE_ACCOUNT_ID` | ❌ missing | `deploy-exchange.yml` | 32-char hex from `dash.cloudflare.com/<ACCOUNT_ID>`. |
+| `SENTRY_AUTH_TOKEN` | ❌ missing | `deploy-exchange.yml` (build env), `deploy-scanner.yml` (Docker secret) | Source-map upload. Scopes: `project:read`, `project:write`, `project:releases`. No-ops when absent. |
+| `MAVEN_GPG_KEY_ID` | ❌ missing | `publish-blst.yml`, `publish-curve25519.yml`, `publish-groth16.yml`, `publish-java-sdk.yml`, `publish-ride.yml`, `publish-transactions.yml` | 8-char GPG short key ID: `gpg --list-secret-keys --keyid-format=short` |
+| `NVD_API_KEY` | ❌ missing | 5 JVM publish workflows | NIST NVD API key. Free, no approval — nvd.nist.gov/developers/request-an-api-key. |
+| `CHROME_EXTENSION_ID` | ❌ missing | `deploy-cubensis.yml` | Chrome Web Store extension ID (32-char string). |
+| `CHROME_CLIENT_ID` | ❌ missing | `deploy-cubensis.yml` | Google OAuth 2.0 client ID. |
+| `CHROME_CLIENT_SECRET` | ❌ missing | `deploy-cubensis.yml` | Google OAuth 2.0 client secret. |
+| `CHROME_REFRESH_TOKEN` | ❌ missing | `deploy-cubensis.yml` | Long-lived OAuth refresh token: `npx chrome-webstore-upload-cli@3 --action login` |
+| `FIREFOX_ADDON_GUID` | ❌ missing | `deploy-cubensis.yml` | AMO addon GUID `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`. |
+| `FIREFOX_JWT_ISSUER` | ❌ missing | `deploy-cubensis.yml` | AMO API key issuer. addons.mozilla.org → User → API Keys. |
+| `FIREFOX_JWT_SECRET` | ❌ missing | `deploy-cubensis.yml` | AMO API key secret (same page as issuer). |
+| `EDGE_PRODUCT_ID` | ❌ missing | `deploy-cubensis.yml` | Microsoft Partner Center product ID. |
+| `EDGE_CLIENT_ID` | ❌ missing | `deploy-cubensis.yml` | Microsoft Edge Addons API client ID. |
+| `EDGE_API_KEY` | ❌ missing | `deploy-cubensis.yml` | Microsoft Edge Addons API key. |
+
+> `GITHUB_TOKEN` is automatic — provided by GitHub Actions for every run. No setup needed.
+
+> **Clean up legacy duplicates** (safe to delete — replaced by `MAVEN_CENTRAL_*`):
+> ```bash
+> gh secret delete CENTRAL_USERNAME --org Decentral-America
+> gh secret delete CENTRAL_PASSWORD --org Decentral-America
+> ```
+
+---
+
+#### Layer 2 — GitHub repository variable (`DecentralChain` repo → Settings → Variables → Actions)
+
+| Variable | Required value | Status | Used by |
+|----------|----------------|--------|---------|
+| `INFRA_DEPLOY_ENABLED` | `true` | ❌ currently `false` | `deploy-scanner.yml`, `deploy-data-service.yml`, `deploy-bps.yml` |
+
+```bash
+# Enable when servers are provisioned and DEPLOY_* secrets are in place:
+gh variable set INFRA_DEPLOY_ENABLED --body "true" --repo Decentral-America/DecentralChain
+```
+
+---
+
+#### Layer 3 — infra repo environment secrets (`Decentral-America/infra` → Settings → Environments)
+
+Four secrets × three networks = 12 values. All ❌ missing until servers are provisioned.
+
+| Secret | mainnet | stagenet | testnet | Value |
+|--------|---------|----------|---------|-------|
+| `DEPLOY_HOST` | ❌ | ❌ | ❌ | IPv4 of Linode server — from `tofu output backend_ip` |
+| `DEPLOY_USER` | ❌ | ❌ | ❌ | Always `deploy` |
+| `DEPLOY_SSH_KEY` | ❌ | ❌ | ❌ | Ed25519 private key, base64-encoded single line |
+| `DEPLOY_HOST_FINGERPRINT` | ❌ | ❌ | ❌ | `SHA256:...` from `ssh-keyscan -t ed25519 <HOST>` |
+
+---
+
+#### Layer 4 — infra repo secrets (repo-level, Settings → Secrets → Actions)
+
+Used exclusively by `provision.yml` (OpenTofu). Not needed for day-to-day deploys.
+
+| Secret | Status | Purpose |
+|--------|--------|---------|
+| `LINODE_TOKEN` | ❌ missing | Linode API — read/write Linodes, StackScripts, Firewalls, Object Storage |
+| `LINODE_OBJ_ACCESS_KEY` | ❌ missing | OpenTofu S3 state backend (`dcc-tofu-state` bucket) |
+| `LINODE_OBJ_SECRET_KEY` | ❌ missing | Same |
+
+---
+
+#### Layer 5 — App build-time env files (committed in the repo)
+
+Not GitHub secrets. Baked into the build by Vite/Docker at CI time. Every variable listed.
+
+**`apps/exchange/.env.production`** — mainnet (`exchange/v*.*.*` tag or `workflow_dispatch network=mainnet`)
+
+| Variable | Committed value | Action |
+|----------|----------------|--------|
+| `VITE_APP_ENV` | `production` | ✅ |
+| `VITE_NETWORK` | `mainnet` | ✅ |
+| `VITE_NETWORK_BYTE` | `?` | ✅ |
+| `VITE_NODE_URL` | `https://mainnet-node.decentralchain.io` | ✅ |
+| `VITE_MATCHER_URL` | `https://mainnet-matcher.decentralchain.io/matcher` | ✅ |
+| `VITE_API_URL` | `https://data-service.decentralchain.io` | ✅ |
+| `VITE_DATA_SERVICE_URL` | `https://data-service.decentralchain.io` | ✅ |
+| `VITE_EXPLORER_URL` | `https://decentralscan.com` | ✅ |
+| `VITE_DEBUG` | `false` | ✅ |
+| `VITE_ENABLE_MOCKS` | `false` | ✅ |
+| `VITE_SENTRY_ENABLED` | `true` | ✅ |
+| `VITE_SENTRY_DSN` | _(empty)_ | **⚠ fill in** — DSN from `dcc-exchange` Sentry project |
+
+**`apps/exchange/.env.staging`** — stagenet (`workflow_dispatch network=stagenet`)
+
+| Variable | Committed value | Action |
+|----------|----------------|--------|
+| `VITE_APP_ENV` | `staging` | ✅ |
+| `VITE_NETWORK` | `stagenet` | ✅ |
+| `VITE_NETWORK_BYTE` | `S` | ✅ |
+| `VITE_NODE_URL` | `https://stagenet-node.decentralchain.io` | ✅ |
+| `VITE_MATCHER_URL` | `https://stagenet-matcher.decentralchain.io/matcher` | ✅ |
+| `VITE_API_URL` | `https://stagenet-data-service.decentralchain.io` | ✅ |
+| `VITE_DATA_SERVICE_URL` | `https://stagenet-data-service.decentralchain.io` | ✅ |
+| `VITE_EXPLORER_URL` | `https://stagenet.decentralscan.com` | ✅ |
+| `VITE_DEBUG` | `true` | ✅ |
+| `VITE_ENABLE_MOCKS` | `false` | ✅ |
+| `VITE_SENTRY_ENABLED` | `true` | ✅ |
+| `VITE_SENTRY_DSN` | _(empty)_ | **⚠ fill in** — DSN from `dcc-exchange` Sentry project |
+
+**`apps/exchange/.env.testnet`** — testnet (`workflow_dispatch network=testnet`)
+
+| Variable | Committed value | Action |
+|----------|----------------|--------|
+| `VITE_APP_ENV` | `testnet` | ✅ |
+| `VITE_NETWORK` | `testnet` | ✅ |
+| `VITE_NETWORK_BYTE` | `!` | ✅ |
+| `VITE_NODE_URL` | `https://testnet-node.decentralchain.io` | ✅ |
+| `VITE_MATCHER_URL` | `https://matcher.decentralchain.io/matcher` | ✅ |
+| `VITE_API_URL` | `https://testnet-data-service.decentralchain.io` | ✅ |
+| `VITE_DATA_SERVICE_URL` | `https://testnet-data-service.decentralchain.io` | ✅ |
+| `VITE_EXPLORER_URL` | `https://testnet.decentralscan.com` | ✅ |
+| `VITE_DEBUG` | `true` | ✅ |
+| `VITE_ENABLE_MOCKS` | `false` | ✅ |
+| `VITE_SENTRY_ENABLED` | `false` | ✅ — Sentry disabled on testnet by design |
+| `VITE_SENTRY_DSN` | _(empty)_ | ✅ — disabled, no action needed |
+
+**`apps/scanner/.env.production`** — every scanner Docker build
+
+| Variable | Committed value | Action |
+|----------|----------------|--------|
+| `VITE_SENTRY_DSN` | _(empty)_ | **⚠ fill in** — DSN from `dcc-scanner` Sentry project |
+| `VITE_APP_VERSION` | `0.1.0` | ✅ — CI overrides via `SENTRY_RELEASE` Docker build arg. Local-dev fallback only. |
+
+**`apps/cubensis-connect/.env`** — bundled into the extension at build time
+
+| Variable | Committed value | Action |
+|----------|----------------|--------|
+| `CUBENSIS_VERSION` | `0.0.0` | ✅ — CI overrides from tag (e.g. `cubensis/v1.2.3` → `1.2.3`) |
+| `SENTRY_DSN` | _(empty)_ | **⚠ fill in** — DSN from `dcc-cubensis-connect` Sentry project |
+| `SENTRY_ENVIRONMENT` | `production` | ✅ |
+
+> **DSN values are safe to commit.** Sentry DSNs are public by design — they only accept inbound events. Never commit `SENTRY_AUTH_TOKEN` — that belongs in GitHub org secrets only.
+
+---
+
+#### Layer 6 — CI-injected variables (automatic — no setup needed)
+
+| Variable | Injected as | Used in |
+|----------|------------|---------|
+| `SENTRY_RELEASE` | `${{ github.ref_name }}` (e.g. `exchange/v1.2.3`) | Exchange build step `env:`; Scanner Docker `build-args:` |
+| `VITE_APP_VERSION` | `${SENTRY_RELEASE}` inside Dockerfile `ARG` | Scanner Vite build (`import.meta.env.VITE_APP_VERSION`) |
+| `GITHUB_TOKEN` | Automatic GitHub Actions token | All workflows — GHCR image push, CF Pages deployment status |
+
+---
+
+#### Layer 7 — On-server variables (`/opt/dcc/secrets/<network>.env`)
+
+Written once at server provision time by `bootstrap.sh` via Linode StackScript UDF. Never in GitHub. Sourced by Docker Compose `env_file:`.
+
+| Variable | Example (mainnet) | Used by |
+|----------|------------------|---------|
+| `NETWORK` | `mainnet` | All containers |
+| `CHAIN_ID` | `63` (`?`=63, `S`=83, `!`=33) | All containers |
+| `POSTGRES_PASSWORD` | `<random 32+ chars>` | All containers (DB auth) |
+| `POSTGRES_USER` | `dcc` | All containers |
+| `POSTGRES_DB` | `dcc_mainnet` | All containers |
+| `PGHOST` | `localhost` | CLI clients on server |
+| `PGPORT` | `5432` | CLI clients |
+| `PGDATABASE` | `dcc_mainnet` | CLI clients |
+| `PGUSER` | `dcc` | CLI clients |
+| `PGPASSWORD` | `<same as POSTGRES_PASSWORD>` | CLI clients |
+| `DCC_NODE_URL` | `https://mainnet-node.decentralchain.io` | scanner |
+| `DCC_MATCHER_URL` | `https://mainnet-matcher.decentralchain.io` | scanner |
+| `DCC_DATA_SERVICE_URL` | `https://data-service.decentralchain.io/v0` | scanner |
+| `BLOCKCHAIN_UPDATES_URL` | `grpc://mainnet-node.decentralchain.io:6881` | blockchain-postgres-sync |
+| `DEFAULT_MATCHER` | `<DCC blockchain address>` | data-service |
+| `RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD` | `0` | data-service |
+| `RATE_THRESHOLD_ASSET_ID` | `DCC` | data-service |
+
+> These 17 values are passed to the Linode StackScript as OpenTofu `var.*` inputs during `tofu apply`. They are written to disk at provision time and never transmitted after that.
+
+---
+
+#### Priority — what blocks what
+
+| Priority | Missing item | Blocks |
+|----------|-------------|--------|
+| 🔴 Critical path | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Exchange deploy |
+| 🔴 Critical path | `GHCR_TOKEN` | All 3 container deploys (scanner, data-service, BPS) |
+| 🔴 Critical path | `DEPLOY_*` × 3 + `LINODE_*` | Gate 3 server go-live (Gabriel) |
+| 🟡 Pre-release | `SENTRY_AUTH_TOKEN` | Source maps in exchange + scanner (no-ops gracefully when absent) |
+| 🟡 Pre-release | `MAVEN_GPG_KEY_ID` + `NVD_API_KEY` | All 7 JVM publish workflows |
+| 🟡 Pre-release | `CHROME_*` / `FIREFOX_*` / `EDGE_*` | Cubensis browser store publish |
+| 📝 Config (commit) | `VITE_SENTRY_DSN` in exchange `.env.production` + `.env.staging` | Sentry in exchange |
+| 📝 Config (commit) | `VITE_SENTRY_DSN` in scanner `.env.production` | Sentry in scanner |
+| 📝 Config (commit) | `SENTRY_DSN` in cubensis `.env` | Sentry in cubensis |
+
+---
+
+#### Minimum to get Exchange live (no server required)
+
+| # | Action | Where |
+|---|--------|-------|
+| 1 | Create `dcc-exchange` project in Sentry | sentry.io |
+| 2 | Fill `VITE_SENTRY_DSN` in `apps/exchange/.env.production` + `.env.staging` | commit to repo |
+| 3 | Set `CLOUDFLARE_API_TOKEN` | GitHub org secret |
+| 4 | Set `CLOUDFLARE_ACCOUNT_ID` | GitHub org secret |
+| 5 | Set `SENTRY_AUTH_TOKEN` | GitHub org secret |
+| 6 | Create CF Pages projects (one-time — see [setup step 5](#5--create-cloudflare-pages-projects-one-time)) | `npx wrangler pages project create` |
+| 7 | Push `exchange/v1.0.0` tag | git |
+
+#### Minimum to get Scanner / Data Service / BPS live (requires server)
+
+| # | Action | Where |
+|---|--------|-------|
+| 1 | Provision Linode server (`provision.yml` apply) | GitHub Actions |
+| 2 | Set `DEPLOY_HOST` from `tofu output backend_ip` | infra repo mainnet environment |
+| 3 | Set `DEPLOY_USER = deploy` | infra repo mainnet environment |
+| 4 | Generate + set `DEPLOY_SSH_KEY` | infra repo mainnet environment |
+| 5 | Set `DEPLOY_HOST_FINGERPRINT` from `ssh-keyscan` | infra repo mainnet environment |
+| 6 | Set `GHCR_TOKEN` (`read:packages` PAT) | GitHub org secret |
+| 7 | Set `INFRA_DEPLOY_ENABLED = true` | `DecentralChain` repo variable |
+| 8 | Create `dcc-scanner` project in Sentry | sentry.io |
+| 9 | Fill `VITE_SENTRY_DSN` in `apps/scanner/.env.production` | commit to repo |
+| 10 | Set `SENTRY_AUTH_TOKEN` | GitHub org secret |
+| 11 | Push `scanner/v1.0.0` tag | git |
+
+---
+
+
+### Exchange deploy (Cloudflare Pages)
+
+```bash
+# 1. Fill VITE_SENTRY_DSN in apps/exchange/.env.production (commit it)
+# 2. Ensure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID org secrets are set
+# 3. Ensure SENTRY_AUTH_TOKEN org secret is set (source map uploads)
+# 4. Tag and push — CI builds and deploys to mainnet automatically:
+git tag exchange/v1.2.3 && git push origin exchange/v1.2.3
+
+# Deploy to stagenet without a tag (manual dispatch):
+gh workflow run deploy-exchange.yml --field network=stagenet
+```
+
+**What happens:** Vite builds the SPA with the network baked in via `--mode`.
+`@sentry/vite-plugin` uploads source maps to Sentry then deletes the `.map` files
+from `dist/`. Wrangler uploads the output to the appropriate Cloudflare Pages project
+(`dcc-exchange-mainnet`, `dcc-exchange-stagenet`, or `dcc-exchange-testnet`).
+
+**Verify:**
+```bash
+# Mainnet
+curl -sI https://decentral.exchange | grep -E "HTTP|CF-Ray|x-frame"
+# Stagenet
+curl -sI https://stagenet.decentral.exchange | grep -E "HTTP|CF-Ray"
+```
+
+---
+
+### Scanner deploy (Docker → Linode)
+
+```bash
+# Prerequisites:
+#   - INFRA_DEPLOY_ENABLED=true (repository variable in DecentralChain repo)
+#   - DEPLOY_* secrets set in infra repo mainnet environment
+#   - SENTRY_AUTH_TOKEN org secret set
+#   - VITE_SENTRY_DSN committed in apps/scanner/.env.production
+
+git tag scanner/v1.2.3 && git push origin scanner/v1.2.3
+
+# Manual deploy to testnet:
+gh workflow run deploy-scanner.yml --field network=testnet
+```
+
+**What happens:** Docker builds a multi-stage image. During the build stage,
+`SENTRY_RELEASE` is passed as a build arg and becomes `VITE_APP_VERSION` for the
+Vite build; `SENTRY_AUTH_TOKEN` is mounted as a Docker secret (never baked into
+image layers) so `@sentry/vite-plugin` can upload maps. The image is pushed to
+GHCR. The infra `deploy-container.yml` workflow then SSHs to the server, runs
+`docker pull ghcr.io/decentral-america/scanner:<sha>`, and restarts the container.
+
+**Verify:**
+```bash
+curl -sI https://scanner.decentralchain.io/ | grep HTTP
+# Should return HTTP/2 200
+```
+
+---
+
+### Data Service deploy (Docker → Linode)
+
+```bash
+git tag data-service/v1.2.3 && git push origin data-service/v1.2.3
+
+# Verify after deploy:
+curl -s "https://data-service.decentralchain.io/v0/assets?ids[]=DCC" | jq .data[0].id
+# Should return "DCC" (or equivalent native asset entry)
+```
+
+---
+
+### blockchain-postgres-sync deploy (Docker → Linode)
+
+```bash
+git tag bps/v1.2.3 && git push origin bps/v1.2.3
+
+# Verify on the server after deploy:
+# SSH to the Linode and check that the sync daemon is progressing:
+ssh deploy@<DEPLOY_HOST> "docker logs --tail=20 blockchain-postgres-sync"
+# Look for lines like: "synced block <HEIGHT>"
+```
+
+---
+
+### Cubensis Connect publish (browser stores)
+
+```bash
+# Prerequisites: all CHROME_*, FIREFOX_*, EDGE_* org secrets set
+# Fill SENTRY_DSN in apps/cubensis-connect/.env (commit it)
+
+git tag cubensis/v1.2.3 && git push origin cubensis/v1.2.3
+```
+
+**What happens:** Builds separate zip packages for Chrome MV3, Firefox MV2, and
+Edge. Submits each package to its store via the store's publish API. Also produces
+a `cubensis-opera-<version>.zip` release artifact for manual Opera submission
+(Opera has no publish API; it installs Chrome extensions directly).
+
+**Verify:** Check the store developer dashboards for submission status. Store
+review takes hours (Chrome) to days (Firefox) — the workflow succeeds when the
+upload is accepted by the store, not when review is complete.
+
+---
+
+### Post-deploy verification checklist
+
+| Product | Command / URL | What to look for |
+|---------|--------------|-----------------|
+| Exchange | https://decentral.exchange | Page loads, order book populates, no JS console errors |
+| Scanner | https://scanner.decentralchain.io | Latest block shows, transactions link correctly |
+| Data service | `curl "https://data-service.decentralchain.io/v0/assets?ids[]=DCC"` | `200 OK`, non-empty `data[]` array |
+| BPS | `docker logs blockchain-postgres-sync` (on server) | Block height advancing, no `ERROR` lines |
+| Cubensis | Load extension → open popup | No Sentry errors in sentry.io |
+| Sentry source maps | Trigger a test error in the app | Stack trace in Sentry shows real file + line number (not minified) |
+
+---
+
+### Rollback
+
+All products use immutable deployments — rolling back means re-deploying the
+previous tag.
+
+```bash
+# Exchange: redeploy previous tag to CF Pages (atomic — CF keeps last 3 deployments)
+gh workflow run deploy-exchange.yml --field network=mainnet
+# (from the previous tag's commit, or use CF dashboard "Rollback deployment" directly)
+
+# Scanner / data-service / BPS: previous image is still in GHCR with its SHA tag.
+# SSH to server and restart with the previous image:
+ssh deploy@<DEPLOY_HOST> \
+  "docker pull ghcr.io/decentral-america/scanner:<PREVIOUS_SHA> && \
+   docker stop scanner && \
+   docker run -d --name scanner --env-file /opt/dcc/secrets/mainnet.env \
+     ghcr.io/decentral-america/scanner:<PREVIOUS_SHA>"
+```
