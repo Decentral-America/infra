@@ -84,3 +84,33 @@ variable "acme_email" {
   type        = string
   default     = ""
 }
+
+# ── PostgreSQL off-site backup (Linode Object Storage or S3-compatible) ───────
+# rclone copies completed pg_dump archives to object storage after each backup.
+# Leave all four variables empty to disable off-site backup (local rotation only).
+
+variable "backup_obj_access_key" {
+  description = "Object storage access key for pg_dump off-site upload (rclone S3/Linode provider). Leave empty to disable off-site backup."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "backup_obj_secret_key" {
+  description = "Object storage secret key for pg_dump off-site upload (rclone S3/Linode provider). Leave empty to disable off-site backup."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "backup_obj_bucket" {
+  description = "Object storage bucket name for pg_dump off-site upload (e.g. dcc-backups-mainnet). Leave empty to disable off-site backup."
+  type        = string
+  default     = ""
+}
+
+variable "backup_obj_endpoint" {
+  description = "Object storage endpoint URL for rclone S3 provider (e.g. us-east-1.linodeobjects.com for Linode Object Storage). Leave empty to disable off-site backup."
+  type        = string
+  default     = ""
+}
