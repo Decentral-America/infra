@@ -10,14 +10,16 @@ services:
     container_name: "data-service-${NETWORK:-mainnet}"
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # Bind to loopback only — Caddy terminates TLS on 443 and forwards here.
+      # Direct external access on port 8080 is closed by the Linode firewall.
+      - "127.0.0.1:8080:8080"
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
       NODE_ENV: production
       # PORT is a hardcoded infrastructure constant (not sourced from env_file), so it
-      # is safe to set here. Container must bind 8080 to match the 8080:8080 port
-      # mapping and the firewall rule opening port 8080 for data-service.
+      # is safe to set here. Container binds to 127.0.0.1:8080 (loopback only);
+      # Caddy proxies it externally with automatic TLS on port 443.
       PORT: "8080"
     # DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD, RATE_THRESHOLD_ASSET_ID
     # come from env_file. Do NOT add them here — environment: overrides env_file,

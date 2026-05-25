@@ -15,6 +15,9 @@
 # <UDF name="BLOCKCHAIN_UPDATES_URL"              label="DCC node Blockchain Updates gRPC URL (e.g. grpc://mainnet-node.decentralchain.io:6881)" />
 # <UDF name="MATCHER_ACCOUNT_PASSWORD"            label="DEX Matcher account.dat encryption password" default="" private="true" />
 # <UDF name="MATCHER_API_KEY_HASH"                label="DEX Matcher API key hash (Base58-encoded SHA256)" default="" private="true" />
+# <UDF name="SCANNER_DOMAIN"      label="Scanner/block-explorer domain for Caddy TLS (e.g. explorer.decentralchain.io)" default="" />
+# <UDF name="DATA_SERVICE_DOMAIN" label="Data-service API domain for Caddy TLS (e.g. data-service.decentralchain.io)" default="" />
+# <UDF name="ACME_EMAIL"          label="ACME/Let's Encrypt email for TLS cert expiry alerts (optional)" default="" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 exec > >(tee /var/log/bootstrap.log) 2>&1
@@ -64,6 +67,21 @@ apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plug
 
 systemctl enable --now docker
 
+# ── Automatic security updates ───────────────────────────────────────────────
+# Applies security-only OS patches automatically.
+# Reboots are intentionally suppressed — we control restarts via deploys.
+apt-get install -y -qq unattended-upgrades apt-listchanges
+dpkg-reconfigure -f noninteractive unattended-upgrades
+cat > /etc/apt/apt.conf.d/52dcc-settings << 'EOF'
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+EOF
+systemctl enable --now unattended-upgrades
+echo "[bootstrap] Unattended security upgrades enabled (reboot suppressed)"
+
 # ── Deploy user ───────────────────────────────────────────────────────────────
 if ! id -u deploy &>/dev/null; then
   useradd -m -s /bin/bash deploy
@@ -87,13 +105,36 @@ sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_con
 systemctl restart sshd
 echo "[bootstrap] SSH hardened: PermitRootLogin=prohibit-password, PasswordAuthentication=no"
 
+# ── fail2ban (SSH brute-force protection) ────────────────────────────────────
+apt-get install -y -qq fail2ban
+# SSH jail: 5 failures in 10 min → 1-hour ban.
+cat > /etc/fail2ban/jail.d/sshd.conf << 'EOF'
+[sshd]
+enabled  = true
+port     = ssh
+filter   = sshd
+logpath  = /var/log/auth.log
+maxretry = 5
+bantime  = 3600
+findtime = 600
+EOF
+systemctl enable --now fail2ban
+echo "[bootstrap] fail2ban enabled: SSH jail active (5 retries / 10 min → 1 h ban)"
+
 # ── Directory structure ───────────────────────────────────────────────────────
 install -d -m 755 -o deploy -g deploy \
   /opt/dcc/compose \
   /opt/dcc/secrets \
   /opt/dcc/data/node-wallet-${NETWORK} \
   /opt/dcc/data/matcher-${NETWORK} \
-  /opt/dcc/config/matcher-${NETWORK}
+  /opt/dcc/config/matcher-${NETWORK} \
+  /opt/dcc/caddy
+
+# Backup directory: postgres-owned (pg_dump writes here via cron).
+install -d -m 750 -o postgres -g postgres /opt/dcc/backups
+
+# Scripts directory: root-owned, executable by the system cron subsystem.
+install -d -m 755 /opt/dcc/scripts
 
 # ── Network-specific public endpoints ────────────────────────────────────────
 # These are public URLs — not secrets, but network-dependent config.
@@ -213,8 +254,104 @@ sudo -u postgres psql -tc \
   | grep -q 1 || \
   sudo -u postgres createdb -O dcc "dcc_${NETWORK}"
 
+# ── PostgreSQL daily backup ──────────────────────────────────────────────────
+# Writes a compressed pg_dump to /opt/dcc/backups/ and rotates after 7 days.
+# Runs at 02:00 UTC daily under the postgres OS user.
+# To add off-site storage: extend the script with rclone or aws-cli after pg_dump.
+cat > /opt/dcc/scripts/pg-backup.sh << 'CRONEOF'
+#!/usr/bin/env bash
+# DCC PostgreSQL daily backup — rotate last 7 days.
+set -euo pipefail
+NETWORK="__NETWORK__"
+DATE=$(date +%Y-%m-%d_%H%M%S)
+BACKUP_DIR="/opt/dcc/backups"
+BACKUP_FILE="${BACKUP_DIR}/dcc_${NETWORK}_${DATE}.sql.gz"
+
+pg_dump "dcc_${NETWORK}" | gzip > "${BACKUP_FILE}"
+chmod 640 "${BACKUP_FILE}"
+
+# Prune backups older than 7 days (suppress "no matches" on fresh installs)
+find "${BACKUP_DIR}" -name "dcc_${NETWORK}_*.sql.gz" -mtime +7 -delete 2>/dev/null || true
+
+echo "[pg-backup] $(date -Iseconds) complete: ${BACKUP_FILE}"
+CRONEOF
+# Inject the actual network name at bootstrap time (NETWORK is alphanumeric — safe for sed)
+sed -i "s/__NETWORK__/${NETWORK}/" /opt/dcc/scripts/pg-backup.sh
+chmod 750 /opt/dcc/scripts/pg-backup.sh
+chown postgres:postgres /opt/dcc/scripts/pg-backup.sh
+
+# Install as postgres crontab (02:00 UTC daily)
+printf '%s\n' "0 2 * * * /opt/dcc/scripts/pg-backup.sh >> /var/log/pg-backup.log 2>&1" \
+  | crontab -u postgres -
+echo "[bootstrap] PostgreSQL daily backup cron installed (02:00 UTC, 7-day local retention)"
+
 # ── GHCR authentication for docker pull ──────────────────────────────────────
 # GHCR login is handled per-deploy in deploy-container.yml by passing
 # GHCR_TOKEN via appleboy/ssh-action envs: parameter. Nothing to configure here.
+
+# ── Caddy TLS reverse proxy ──────────────────────────────────────────────────
+# Caddy terminates HTTPS for scanner (→ localhost:3000) and data-service
+# (→ localhost:8080). Certificates are obtained automatically from Let's Encrypt.
+# SCANNER_DOMAIN and DATA_SERVICE_DOMAIN are optional UDF variables.
+# If neither is set, Caddy is not configured (services are reachable via SSH
+# tunnel or internal network only).
+if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
+
+  # ── Write Caddyfile ────────────────────────────────────────────────────────
+  # Using printf (not heredoc) to safely embed UDF variables that may contain
+  # special characters (same rationale as the secrets file above).
+  {
+    printf '# Generated by DCC bootstrap — do not edit manually\n'
+    printf '{\n'
+    if [[ -n "${ACME_EMAIL:-}" ]]; then
+      printf '    email %s\n' "${ACME_EMAIL}"
+    fi
+    printf '}\n\n'
+
+    if [[ -n "${SCANNER_DOMAIN:-}" ]]; then
+      printf '%s {\n' "${SCANNER_DOMAIN}"
+      printf '    reverse_proxy localhost:3000\n'
+      printf '    header {\n'
+      printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+      printf '        X-Content-Type-Options "nosniff"\n'
+      printf '        X-Frame-Options "DENY"\n'
+      printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+      printf '        X-XSS-Protection "1; mode=block"\n'
+      printf '        -Server\n'
+      printf '    }\n'
+      printf '    encode gzip zstd\n'
+      printf '    log\n'
+      printf '}\n\n'
+    fi
+
+    if [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
+      printf '%s {\n' "${DATA_SERVICE_DOMAIN}"
+      printf '    reverse_proxy localhost:8080\n'
+      printf '    header {\n'
+      printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+      printf '        X-Content-Type-Options "nosniff"\n'
+      printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+      printf '        -Server\n'
+      printf '    }\n'
+      printf '    encode gzip zstd\n'
+      printf '    log\n'
+      printf '}\n'
+    fi
+  } > /opt/dcc/caddy/Caddyfile
+  chmod 644 /opt/dcc/caddy/Caddyfile
+  chown deploy:deploy /opt/dcc/caddy/Caddyfile
+  echo "[bootstrap] Caddyfile written to /opt/dcc/caddy/Caddyfile"
+
+  # ── Download caddy.yml and start Caddy ────────────────────────────────────
+  # infra repo is public — no auth needed. This runs at bootstrap time so
+  # Caddy is available before the first application deploy.
+  curl -fsSL \
+    "https://raw.githubusercontent.com/Decentral-America/infra/main/compose/caddy.yml" \
+    -o /opt/dcc/compose/caddy.yml
+  chown deploy:deploy /opt/dcc/compose/caddy.yml
+
+  NETWORK="${NETWORK}" docker compose -f /opt/dcc/compose/caddy.yml up -d
+  echo "[bootstrap] Caddy TLS reverse proxy started"
+fi
 
 echo "[bootstrap] Bootstrap complete. Network: $NETWORK, Chain ID: $CHAIN_ID"

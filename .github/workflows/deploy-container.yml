@@ -114,6 +114,28 @@ jobs:
       name: ${{ inputs.network }}
 
     steps:
+      - name: Checkout infra repository
+        # Checks out THIS (infra) repo so we can upload the latest compose file.
+        # This ensures the compose file on the server is always in sync with the
+        # version in git — no manual copying required.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Upload compose file to server
+        # Uploads compose/<service>.yml to $compose_dir/ before docker compose up.
+        # strip_components: 1 strips the leading "compose/" directory component
+        # so the file lands at e.g. /opt/dcc/compose/scanner.yml (not .../compose/scanner.yml).
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345  # v1.0.0
+        with:
+          host:             ${{ secrets.DEPLOY_HOST }}
+          username:         ${{ secrets.DEPLOY_USER }}
+          key:              ${{ secrets.DEPLOY_SSH_KEY }}
+          fingerprint:      ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          source:           compose/${{ inputs.service }}.yml
+          target:           ${{ inputs.compose_dir }}/
+          strip_components: 1
+
       - name: Pull image, deploy, and auto-rollback on failure
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
