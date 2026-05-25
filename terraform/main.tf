@@ -93,6 +93,8 @@ resource "linode_instance" "backend" {
     RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
     RATE_THRESHOLD_ASSET_ID              = var.rate_threshold_asset_id
     BLOCKCHAIN_UPDATES_URL               = var.blockchain_updates_url
+    MATCHER_ACCOUNT_PASSWORD             = var.matcher_account_password
+    MATCHER_API_KEY_HASH                 = var.matcher_api_key_hash
   }
 
   # Prevent accidental destruction of the backend server.
