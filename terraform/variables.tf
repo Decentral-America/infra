@@ -47,4 +47,22 @@ variable "rate_threshold_asset_id" {
 variable "blockchain_updates_url" {
   description = "DCC node Blockchain Updates gRPC endpoint URL for blockchain-postgres-sync (e.g. grpc://mainnet-node.decentralchain.io:6881)"
   type        = string
+  validation {
+    condition     = can(regex("^grpcs?://[^:]+:6881$", var.blockchain_updates_url))
+    error_message = "blockchain_updates_url must use grpc:// or grpcs:// scheme and port 6881 (BlockchainUpdates). Got: ${var.blockchain_updates_url}"
+  }
+}
+
+variable "matcher_account_password" {
+  description = "DEX Matcher account.dat encryption password (used to decrypt the matcher wallet on startup)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "matcher_api_key_hash" {
+  description = "DEX Matcher API key hash (Base58-encoded SHA256 of the API key) for authenticated REST endpoints"
+  type        = string
+  sensitive   = true
+  default     = ""
 }

@@ -32,6 +32,25 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    # ── Container security hardening ───────────────────────────────────────────
+    # NOTE: network_mode: host disables Docker's network namespace, so
+    # cap_drop / security_opt still apply to the process but the container
+    # shares the host network stack (required to reach localhost:5432 PostgreSQL).
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # BPS writes to PostgreSQL via network only (no local sockets) and has no
+    # local state — root filesystem can be read-only. Tmp is needed for scratch.
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
     logging:
       driver: "json-file"
       options:

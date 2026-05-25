@@ -64,17 +64,57 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Container security scan ─────────────────────────────────────────────────
+  # Trivy scans the image for HIGH/CRITICAL CVEs before it is deployed.
+  # A clean scan is a hard gate: the deploy job only runs if this passes.
+  # This catches vulnerabilities introduced between CI build and production deploy,
+  # ensuring no image with known critical flaws reaches the live environment.
+  scan:
+    name: Trivy scan ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      security-events: write  # upload SARIF to GitHub Security tab
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a0 # v0.36.0
+        with:
+          image-ref:      '${{ inputs.image }}'
+          format:         'sarif'
+          output:         'trivy-results.sarif'
+          severity:       'HIGH,CRITICAL'
+          # Exit 1 if any HIGH or CRITICAL vuln found — gates the deploy job.
+          exit-code:      '1'
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
+        with:
+          sarif_file: trivy-results.sarif
+
   deploy:
     name: Deploy ${{ inputs.service }} → ${{ inputs.network }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: scan
 
     # Environment declared here → reads secrets from infra repo's environments
     environment:
       name: ${{ inputs.network }}
 
     steps:
-      - name: Pull image and restart service via Docker Compose
+      - name: Pull image, deploy, and auto-rollback on failure
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           # GHCR_TOKEN must be set as an org/repo secret with read:packages scope.
@@ -98,21 +138,49 @@ jobs:
             echo "Authenticating with GHCR..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
 
+            # ── Capture previous image for rollback ────────────────────────
+            # docker inspect returns the image digest/tag currently running.
+            # If the container doesn't exist yet (first deploy), PREV_IMAGE
+            # will be empty and the rollback block is a no-op.
+            PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' "${SERVICE}-${NETWORK}" 2>/dev/null || echo "")
+            echo "Previous image: ${PREV_IMAGE:-<none — first deploy>}"
+
             echo "Pulling $IMAGE_TAG"
             docker pull "$IMAGE_TAG"
 
-            echo "Restarting $SERVICE on $NETWORK"
+            echo "Deploying $SERVICE on $NETWORK..."
             cd "$COMPOSE_DIR"
 
             # docker compose up --wait blocks until the container is running/healthy
             # (respects healthcheck if defined, otherwise just waits for running state).
             # --wait-timeout 60 caps the wait to 60 seconds.
-            docker compose --file "${SERVICE}.yml" up \
+            if ! docker compose --file "${SERVICE}.yml" up \
               --detach \
               --remove-orphans \
               --wait \
               --wait-timeout 60 \
-              "$SERVICE"
+              "$SERVICE"; then
+
+              echo "::error::Health check failed for $SERVICE on $NETWORK."
+
+              # ── Auto-rollback to the previous image ───────────────────────
+              if [[ -n "$PREV_IMAGE" ]]; then
+                echo "Rolling back to previous image: $PREV_IMAGE"
+                export IMAGE_TAG="$PREV_IMAGE"
+                docker compose --file "${SERVICE}.yml" up \
+                  --detach \
+                  --remove-orphans \
+                  --wait \
+                  --wait-timeout 60 \
+                  "$SERVICE" \
+                  && echo "Rollback successful: $PREV_IMAGE is running." \
+                  || echo "::error::Rollback also failed — manual intervention required."
+              else
+                echo "No previous image to roll back to (first deploy). Manual intervention required."
+              fi
+
+              exit 1
+            fi
 
             # Prune dangling images to reclaim disk space (keeps referenced images)
             docker image prune -f
