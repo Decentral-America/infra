@@ -10,7 +10,9 @@ services:
     container_name: "scanner-${NETWORK:-mainnet}"
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Bind to loopback only — Caddy terminates TLS on 443 and forwards here.
+      # Direct external access on port 3000 is closed by the Linode firewall.
+      - "127.0.0.1:3000:3000"
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     # DCC_NODE_URL, DCC_MATCHER_URL, DCC_DATA_SERVICE_URL come from env_file.

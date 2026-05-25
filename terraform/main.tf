@@ -79,7 +79,9 @@ resource "linode_instance" "backend" {
 
   tags = local.tags
 
-  # Firewall — allow SSH (22), scanner (3000), data-service (8080) only
+  # Firewall — allow SSH (22), HTTP (80), HTTPS (443).
+  # Direct access to port 3000 (scanner) and 8080 (data-service) is closed;
+  # those services bind to loopback only and are proxied by Caddy with auto-TLS.
   firewall_id = linode_firewall.backend.id
 
   # Bootstrap script: install Docker, create deploy user, write secrets
@@ -95,6 +97,9 @@ resource "linode_instance" "backend" {
     BLOCKCHAIN_UPDATES_URL               = var.blockchain_updates_url
     MATCHER_ACCOUNT_PASSWORD             = var.matcher_account_password
     MATCHER_API_KEY_HASH                 = var.matcher_api_key_hash
+    SCANNER_DOMAIN                       = var.scanner_domain
+    DATA_SERVICE_DOMAIN                  = var.data_service_domain
+    ACME_EMAIL                           = var.acme_email
   }
 
   # Prevent accidental destruction of the backend server.
@@ -120,19 +125,19 @@ resource "linode_firewall" "backend" {
   }
 
   inbound {
-    label    = "allow-scanner"
+    label    = "allow-http"
     action   = "ACCEPT"
     protocol = "TCP"
-    ports    = "3000"
+    ports    = "80"
     ipv4     = ["0.0.0.0/0"]
     ipv6     = ["::/0"]
   }
 
   inbound {
-    label    = "allow-data-service"
+    label    = "allow-https"
     action   = "ACCEPT"
     protocol = "TCP"
-    ports    = "8080"
+    ports    = "443"
     ipv4     = ["0.0.0.0/0"]
     ipv6     = ["::/0"]
   }

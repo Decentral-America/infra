@@ -46,3 +46,23 @@ matcher_account_password = "CHANGE_ME_strong_matcher_password"
 # DEX Matcher API key hash (Base58-encoded SHA256 of the API key)
 # Generate: echo -n 'your-api-key' | openssl dgst -sha256 -binary | base58
 matcher_api_key_hash = "CHANGE_ME_base58_sha256_of_api_key"
+
+# ── Caddy TLS reverse proxy ───────────────────────────────────────────────────
+# Public domain names for Caddy to serve via automatic Let's Encrypt TLS.
+# Caddy proxies scanner → 127.0.0.1:3000 and data-service → 127.0.0.1:8080.
+# DNS for both domains MUST point to this server before Caddy starts (ACME
+# challenge requires the domain to resolve to the server's public IP).
+# Leave empty ("") to skip Caddy config for that service.
+
+# Block explorer / scanner frontend (Next.js SSR)
+scanner_domain = "explorer.decentralchain.io"
+
+# Data-service REST API (Hono/Node — change prefix per network)
+# mainnet:  data-service.decentralchain.io
+# stagenet: stagenet-data-service.decentralchain.io
+# testnet:  testnet-data-service.decentralchain.io
+data_service_domain = "data-service.decentralchain.io"
+
+# Email address for Let's Encrypt expiry notifications (optional).
+# If empty, certificates are requested anonymously (still works, no reminders).
+acme_email = "ops@decentralchain.io"
