@@ -18,6 +18,10 @@
 # <UDF name="SCANNER_DOMAIN"      label="Scanner/block-explorer domain for Caddy TLS (e.g. explorer.decentralchain.io)" default="" />
 # <UDF name="DATA_SERVICE_DOMAIN" label="Data-service API domain for Caddy TLS (e.g. data-service.decentralchain.io)" default="" />
 # <UDF name="ACME_EMAIL"          label="ACME/Let's Encrypt email for TLS cert expiry alerts (optional)" default="" />
+# <UDF name="BACKUP_OBJ_ACCESS_KEY" label="Object storage access key for pg_dump off-site backup (rclone Linode/S3 provider)" default="" private="true" />
+# <UDF name="BACKUP_OBJ_SECRET_KEY" label="Object storage secret key for pg_dump off-site backup" default="" private="true" />
+# <UDF name="BACKUP_OBJ_BUCKET"     label="Object storage bucket name for pg_dump backups (e.g. dcc-backups-mainnet)" default="" />
+# <UDF name="BACKUP_OBJ_ENDPOINT"   label="Object storage endpoint for rclone S3 provider (e.g. us-east-1.linodeobjects.com)" default="" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 exec > >(tee /var/log/bootstrap.log) 2>&1
@@ -254,13 +258,46 @@ sudo -u postgres psql -tc \
   | grep -q 1 || \
   sudo -u postgres createdb -O dcc "dcc_${NETWORK}"
 
+# ── rclone v1.74.2 (for PostgreSQL off-site backup) ─────────────────────────
+# Install from the official Debian package — no curl-pipe-to-sh pattern.
+# Only installed if BACKUP_OBJ_BUCKET is non-empty; safe no-op otherwise.
+if [[ -n "${BACKUP_OBJ_BUCKET:-}" ]]; then
+  echo "[bootstrap] Installing rclone for off-site backup..."
+  RCLONE_DEB="rclone-v1.74.2-linux-amd64.deb"
+  RCLONE_URL="https://github.com/rclone/rclone/releases/download/v1.74.2/${RCLONE_DEB}"
+  # SHA-256 of rclone-v1.74.2-linux-amd64.deb (from rclone.org SHA256SUMS)
+  RCLONE_SHA256="$(curl -fsSL https://github.com/rclone/rclone/releases/download/v1.74.2/SHA256SUMS \
+    | grep "${RCLONE_DEB}" | awk '{print $1}')"
+  curl -fsSL "${RCLONE_URL}" -o "/tmp/${RCLONE_DEB}"
+  echo "${RCLONE_SHA256}  /tmp/${RCLONE_DEB}" | sha256sum --check --status \
+    || { echo "[bootstrap] FATAL: rclone SHA256 mismatch — aborting"; exit 1; }
+  dpkg -i "/tmp/${RCLONE_DEB}"
+  rm -f "/tmp/${RCLONE_DEB}"
+  echo "[bootstrap] rclone $(rclone version --check 2>/dev/null || rclone version | head -1) installed"
+
+  # Write rclone config for the postgres OS user (cron runs as postgres).
+  # Config uses environment variables for credentials — NOT stored in config file.
+  # RCLONE_S3_ACCESS_KEY_ID and RCLONE_S3_SECRET_ACCESS_KEY are set in the cron env.
+  install -d -m 700 -o postgres -g postgres /var/lib/postgresql/.config/rclone
+  cat > /var/lib/postgresql/.config/rclone/rclone.conf << 'RCLONEEOF'
+[dcc-backup]
+type = s3
+provider = Linode
+env_auth = false
+RCLONEEOF
+  # Credentials are injected via env vars in pg-backup.sh — nothing sensitive in the config.
+  chown postgres:postgres /var/lib/postgresql/.config/rclone/rclone.conf
+  chmod 600 /var/lib/postgresql/.config/rclone/rclone.conf
+  echo "[bootstrap] rclone config written for postgres user"
+fi
+
 # ── PostgreSQL daily backup ──────────────────────────────────────────────────
 # Writes a compressed pg_dump to /opt/dcc/backups/ and rotates after 7 days.
+# If BACKUP_OBJ_BUCKET is set, also uploads to Linode Object Storage via rclone.
 # Runs at 02:00 UTC daily under the postgres OS user.
-# To add off-site storage: extend the script with rclone or aws-cli after pg_dump.
 cat > /opt/dcc/scripts/pg-backup.sh << 'CRONEOF'
 #!/usr/bin/env bash
-# DCC PostgreSQL daily backup — rotate last 7 days.
+# DCC PostgreSQL daily backup — rotate last 7 days, optional off-site upload.
 set -euo pipefail
 NETWORK="__NETWORK__"
 DATE=$(date +%Y-%m-%d_%H%M%S)
@@ -273,17 +310,48 @@ chmod 640 "${BACKUP_FILE}"
 # Prune backups older than 7 days (suppress "no matches" on fresh installs)
 find "${BACKUP_DIR}" -name "dcc_${NETWORK}_*.sql.gz" -mtime +7 -delete 2>/dev/null || true
 
-echo "[pg-backup] $(date -Iseconds) complete: ${BACKUP_FILE}"
+echo "[pg-backup] $(date -Iseconds) local backup complete: ${BACKUP_FILE}"
+
+# ── Off-site upload via rclone ─────────────────────────────────────────────
+# Only runs if BACKUP_OBJ_BUCKET is non-empty.
+# Credentials are taken from env vars — never written to disk.
+BACKUP_OBJ_BUCKET="__BACKUP_OBJ_BUCKET__"
+BACKUP_OBJ_ENDPOINT="__BACKUP_OBJ_ENDPOINT__"
+
+if [[ -n "${BACKUP_OBJ_BUCKET}" && -n "${BACKUP_OBJ_ENDPOINT}" ]]; then
+  export RCLONE_S3_ACCESS_KEY_ID="__BACKUP_OBJ_ACCESS_KEY__"
+  export RCLONE_S3_SECRET_ACCESS_KEY="__BACKUP_OBJ_SECRET_KEY__"
+  export RCLONE_S3_ENDPOINT="${BACKUP_OBJ_ENDPOINT}"
+  export RCLONE_CONFIG_DCC_BACKUP_TYPE=s3
+  export RCLONE_CONFIG_DCC_BACKUP_PROVIDER=Linode
+  export RCLONE_CONFIG_DCC_BACKUP_ENV_AUTH=false
+
+  if rclone copyto \
+    "${BACKUP_FILE}" \
+    ":s3,provider=Linode,endpoint=${BACKUP_OBJ_ENDPOINT}:${BACKUP_OBJ_BUCKET}/$(basename "${BACKUP_FILE}")" \
+    --no-traverse \
+    2>&1; then
+    echo "[pg-backup] $(date -Iseconds) off-site upload complete: s3://${BACKUP_OBJ_BUCKET}/$(basename "${BACKUP_FILE}")"
+  else
+    # Off-site failure is non-fatal — local backup is already complete.
+    echo "[pg-backup] $(date -Iseconds) WARNING: off-site upload failed (local backup preserved)" >&2
+  fi
+fi
 CRONEOF
-# Inject the actual network name at bootstrap time (NETWORK is alphanumeric — safe for sed)
+# Inject the actual network name and backup config at bootstrap time.
+# All values are alphanumeric or empty — safe for sed substitution.
 sed -i "s/__NETWORK__/${NETWORK}/" /opt/dcc/scripts/pg-backup.sh
+sed -i "s|__BACKUP_OBJ_BUCKET__|${BACKUP_OBJ_BUCKET:-}|" /opt/dcc/scripts/pg-backup.sh
+sed -i "s|__BACKUP_OBJ_ENDPOINT__|${BACKUP_OBJ_ENDPOINT:-}|" /opt/dcc/scripts/pg-backup.sh
+sed -i "s|__BACKUP_OBJ_ACCESS_KEY__|${BACKUP_OBJ_ACCESS_KEY:-}|" /opt/dcc/scripts/pg-backup.sh
+sed -i "s|__BACKUP_OBJ_SECRET_KEY__|${BACKUP_OBJ_SECRET_KEY:-}|" /opt/dcc/scripts/pg-backup.sh
 chmod 750 /opt/dcc/scripts/pg-backup.sh
 chown postgres:postgres /opt/dcc/scripts/pg-backup.sh
 
 # Install as postgres crontab (02:00 UTC daily)
 printf '%s\n' "0 2 * * * /opt/dcc/scripts/pg-backup.sh >> /var/log/pg-backup.log 2>&1" \
   | crontab -u postgres -
-echo "[bootstrap] PostgreSQL daily backup cron installed (02:00 UTC, 7-day local retention)"
+echo "[bootstrap] PostgreSQL daily backup cron installed (02:00 UTC, 7-day local retention${BACKUP_OBJ_BUCKET:+, off-site: ${BACKUP_OBJ_BUCKET}})"
 
 # ── GHCR authentication for docker pull ──────────────────────────────────────
 # GHCR login is handled per-deploy in deploy-container.yml by passing
