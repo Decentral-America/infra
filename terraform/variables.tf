@@ -66,3 +66,21 @@ variable "matcher_api_key_hash" {
   sensitive   = true
   default     = ""
 }
+
+variable "scanner_domain" {
+  description = "Public domain for the scanner/block-explorer, proxied by Caddy with automatic TLS (e.g. explorer.decentralchain.io). Leave empty to skip Caddy config for scanner."
+  type        = string
+  default     = ""
+}
+
+variable "data_service_domain" {
+  description = "Public domain for the data-service REST API, proxied by Caddy with automatic TLS (e.g. data-service.decentralchain.io). Leave empty to skip Caddy config for data-service."
+  type        = string
+  default     = ""
+}
+
+variable "acme_email" {
+  description = "Email address for Let's Encrypt ACME cert expiry notifications (optional). If empty, certificates are requested anonymously."
+  type        = string
+  default     = ""
+}
