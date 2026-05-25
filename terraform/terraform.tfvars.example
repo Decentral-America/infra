@@ -38,3 +38,11 @@ rate_threshold_asset_id = "DCC"
 #   stagenet: grpc://stagenet-node.decentralchain.io:6881
 #   testnet:  grpc://testnet-node.decentralchain.io:6881
 blockchain_updates_url = "grpc://mainnet-node.decentralchain.io:6881"
+
+# DEX Matcher account.dat encryption password (generate with: openssl rand -base64 32)
+# Required to start the matcher; protects the encrypted wallet file.
+matcher_account_password = "CHANGE_ME_strong_matcher_password"
+
+# DEX Matcher API key hash (Base58-encoded SHA256 of the API key)
+# Generate: echo -n 'your-api-key' | openssl dgst -sha256 -binary | base58
+matcher_api_key_hash = "CHANGE_ME_base58_sha256_of_api_key"

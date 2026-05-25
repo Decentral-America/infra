@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# GHCR Image Retention — scheduled cleanup of untagged and stale images
+#
+# Without a retention policy, GHCR accumulates every pushed image indefinitely.
+# Each `docker build-push` creates a new tagged image AND untagged intermediate
+# layers, so storage grows unboundedly. Enterprise policy: keep only the last
+# 10 tagged versions per package; always prune untagged (dangling) images.
+#
+# Schedule: weekly on Sunday at 02:00 UTC (low-traffic window).
+# Manual dispatch: run on demand with a dry-run option for safe inspection.
+#
+# Implementation: dataaxiom/ghcr-cleanup-action v1.2.1 — the maintained
+# community standard for GHCR retention (handles multi-arch, cosign referrers,
+# attestation artifacts, and orphaned manifests correctly).
+#
+# Token requirement: GHCR_TOKEN must be a Classic PAT with:
+#   - write:packages  — list package versions
+#   - delete:packages — delete package versions
+# The built-in GITHUB_TOKEN cannot delete packages from other repositories.
+# Set GHCR_TOKEN at org level: Settings → Secrets → Actions → New org secret.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: GHCR Image Cleanup
+
+on:
+  schedule:
+    # Weekly Sunday at 02:00 UTC — low-traffic window
+    - cron: '0 2 * * 0'
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (true = log only, no deletions)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  cleanup:
+    name: Prune stale GHCR images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Prevent parallel runs that could corrupt the manifest cache
+    concurrency:
+      group: ghcr-cleanup
+      cancel-in-progress: false
+
+    strategy:
+      # Process each package independently; one failure doesn't block others.
+      fail-fast: false
+      matrix:
+        package:
+          - scanner
+          - data-service
+          - blockchain-postgres-sync
+          - node-go
+          - node-scala
+          - matcher
+
+    steps:
+      - name: Clean up ${{ matrix.package }} images
+        uses: dataaxiom/ghcr-cleanup-action@f092b48ba3b604b2a83690dc4b2bbb3392e1045f # v1.2.1
+        with:
+          # GHCR_TOKEN: Classic PAT with write:packages + delete:packages.
+          # Required because this workflow lives in a different repo (infra)
+          # than the packages it manages (DecentralChain).
+          token:         ${{ secrets.GHCR_TOKEN }}
+          owner:         decentral-america
+          package:       ${{ matrix.package }}
+          # Always keep the last 10 tagged versions (sha + semver tags).
+          keep-n-tagged: 10
+          # Always protect `latest` and the buildcache tag regardless of age.
+          exclude-tags:  'latest,buildcache'
+          # Delete all untagged (dangling) image layers — these accumulate
+          # with every build-push and have no referencing tag.
+          delete-untagged: true
+          # Clean up cosign/attestation orphans whose parent digest is gone.
+          delete-orphaned-images: true
+          # Dry-run on manual dispatch if requested; always live on schedule.
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true' }}
+          log-level: info
+
