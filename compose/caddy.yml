@@ -1,0 +1,81 @@
+# docker-compose for DCC Caddy TLS reverse proxy
+# Location on server: /opt/dcc/compose/caddy.yml
+#
+# Caddy handles automatic TLS termination (Let's Encrypt ACME) for:
+#   - Scanner/block-explorer  (127.0.0.1:3000 → HTTPS)
+#   - Data-service REST API   (127.0.0.1:8080 → HTTPS)
+#
+# The Caddyfile is written by bootstrap.sh using the SCANNER_DOMAIN and
+# DATA_SERVICE_DOMAIN UDF variables. If neither is set, this service is
+# a no-op (empty Caddyfile).
+#
+# Caddy is infrastructure, not an application — it is started once by
+# bootstrap.sh and auto-restarts on reboot. It is NOT deployed via the
+# deploy-container.yml pipeline.
+#
+# First-time start (run once after bootstrap):
+#   NETWORK=mainnet docker compose -f /opt/dcc/compose/caddy.yml up -d
+#
+# Caddy 2.11.3 released 2025-06 — includes 4 security patches:
+#   - fastcgi path traversal fix
+#   - vars placeholder GHSA-m2w3-8f23-hxxf
+#   - admin socket auth bypass (×2 patches)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  caddy:
+    # Pinned to a specific release. Renovate keeps this current.
+    image: caddy:2.11.3-alpine
+    container_name: "caddy-${NETWORK:-mainnet}"
+    # host network mode: Caddy binds directly to the host's port 80 and 443.
+    # This lets it forward to scanner (127.0.0.1:3000) and data-service
+    # (127.0.0.1:8080) without Docker bridge networking overhead.
+    network_mode: host
+    restart: unless-stopped
+
+    # ── Container security hardening ─────────────────────────────────────────
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Required to bind to privileged ports 80 and 443 as a non-root process.
+      - NET_BIND_SERVICE
+
+    # ── Persistent volumes ────────────────────────────────────────────────────
+    # caddy-data: TLS certificates and ACME account state (survives restarts).
+    # caddy-config: Caddy runtime config persistence (fast restarts).
+    volumes:
+      - /opt/dcc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+    # ── Health check ──────────────────────────────────────────────────────────
+    # Caddy's admin API at localhost:2019 confirms the server is running.
+    # GET /config/ returns the loaded Caddyfile configuration as JSON.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:2019/config/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  caddy-data:
+    # Network-scoped volume name: caddy-data-mainnet / caddy-data-stagenet / etc.
+    name: "caddy-data-${NETWORK:-mainnet}"
+  caddy-config:
+    name: "caddy-config-${NETWORK:-mainnet}"
