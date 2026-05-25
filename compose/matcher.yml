@@ -55,6 +55,21 @@ services:
       timeout: 10s
       start_period: 120s
       retries: 5
+    # ── Container security hardening ───────────────────────────────────────────
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The matcher writes its LevelDB order book to the bind-mounted data volume;
+    # root filesystem cannot be fully read-only. tmpfs for JVM temp scratch.
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 2g
 
     logging:
       driver: json-file

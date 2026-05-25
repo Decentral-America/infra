@@ -1,0 +1,177 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Infrastructure Drift Detection — scheduled OpenTofu plan
+#
+# Runs `tofu plan` against each active workspace (mainnet/stagenet/testnet)
+# weekly and posts a summary of any detected drift to the GitHub Step Summary.
+# If drift is found, the job fails and triggers a GitHub notification to admins.
+#
+# "Drift" = differences between the desired state in terraform/ and the actual
+# state of live Linode resources. Causes: manual console changes, provider
+# updates, resource replacement, Linode-side modifications.
+#
+# This workflow is READ-ONLY — it plans but never applies. Changes are only
+# applied via the manual provision.yml workflow_dispatch with human approval.
+#
+# Schedule: weekly on Monday at 06:00 UTC (after the Sunday GHCR cleanup,
+# before business hours in US/EU time zones).
+#
+# Required secrets (infra repo level, same as provision.yml):
+#   LINODE_TOKEN          — Linode API token (read-only is sufficient for plan)
+#   LINODE_OBJ_ACCESS_KEY — Object Storage access key (state read)
+#   LINODE_OBJ_SECRET_KEY — Object Storage secret key (state read)
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Infrastructure Drift Detection
+
+on:
+  schedule:
+    # Weekly Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Network to check (or "all" for all networks)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mainnet
+          - stagenet
+          - testnet
+
+permissions:
+  contents: read
+
+# Only one drift-detect run at a time — concurrent plans against the same
+# workspace can interleave state reads and produce inconsistent output.
+concurrency:
+  group: infra-drift-detect
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  drift:
+    name: Drift check (${{ matrix.network }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: terraform/
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # On manual dispatch for a single network, the matrix still runs all
+        # entries but the filter step below skips the irrelevant ones.
+        # GHA doesn't support dynamic matrix from workflow_dispatch inputs,
+        # so we filter at the step level.
+        network: [mainnet, stagenet, testnet]
+
+    steps:
+      - name: Skip if not requested network
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.network != 'all' &&
+          inputs.network != matrix.network
+        run: |
+          echo "Skipping ${{ matrix.network }} (requested: ${{ inputs.network }})"
+          exit 0
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@847eaa4afeb791b06daa46e8eafa8b1b68d7cfb4 # v2.0.1
+        with:
+          tofu_version: '1.12.0'
+
+      - name: OpenTofu Init
+        run: |
+          tofu init \
+            -backend-config="access_key=${{ secrets.LINODE_OBJ_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.LINODE_OBJ_SECRET_KEY }}"
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+
+      - name: Select workspace
+        run: tofu workspace select -or-create "${{ matrix.network }}"
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+
+      - name: OpenTofu Plan (drift detection)
+        id: plan
+        # -detailed-exitcode:
+        #   0 = no changes (clean)
+        #   1 = error
+        #   2 = changes detected (drift)
+        # We capture the exit code and convert it to a readable status.
+        run: |
+          set +e
+          tofu plan \
+            -detailed-exitcode \
+            -input=false \
+            -out=tfplan-${{ matrix.network }} \
+            2>&1 | tee plan-output.txt
+          PLAN_EXIT=$?
+          set -e
+
+          case $PLAN_EXIT in
+            0)
+              echo "status=clean"       >> "$GITHUB_OUTPUT"
+              echo "exit_code=0"        >> "$GITHUB_OUTPUT"
+              ;;
+            2)
+              echo "status=drift"       >> "$GITHUB_OUTPUT"
+              echo "exit_code=2"        >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "status=error"       >> "$GITHUB_OUTPUT"
+              echo "exit_code=$PLAN_EXIT" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+
+      - name: Write drift summary
+        if: always()
+        run: |
+          NETWORK="${{ matrix.network }}"
+          STATUS="${{ steps.plan.outputs.status }}"
+
+          echo "## Drift Detection: $NETWORK" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          case "$STATUS" in
+            clean)
+              echo "✅ **No drift detected** — live infrastructure matches the desired state." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            drift)
+              echo "⚠️ **Drift detected** — live infrastructure differs from terraform state." >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "Run the \`provision.yml\` workflow with \`action=apply\` to reconcile." >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "<details><summary>Plan output</summary>" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              cat plan-output.txt >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            error)
+              echo "❌ **Plan failed** — check workflow logs for details." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+
+      - name: Fail if drift or error detected
+        if: steps.plan.outputs.status != 'clean' && steps.plan.outputs.status != ''
+        run: |
+          echo "::error::Infrastructure drift detected for ${{ matrix.network }}. Review the plan output and apply via provision.yml."
+          exit 1

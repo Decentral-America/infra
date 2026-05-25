@@ -22,6 +22,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    # ── Container security hardening ───────────────────────────────────────────
+    # no-new-privileges: prevents the process from acquiring new capabilities
+    # via setuid/setgid binaries or file capabilities after exec.
+    security_opt:
+      - no-new-privileges:true
+    # Drop ALL Linux capabilities; add back only what the app actually needs.
+    # Scanner is a stateless Next.js SSR app — it needs no special capabilities.
+    cap_drop:
+      - ALL
+    # Read-only root filesystem: prevents the container from writing to its own
+    # image layers. Combined with cap_drop, limits blast radius of a compromise.
+    read_only: true
+    # tmpfs: writable directories that Next.js needs at runtime (tmp + cache).
+    # These are in-memory and do not survive container restarts.
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=128m
+    # Resource limits: cap memory so one container can't starve the host.
+    # Scanner serves SSR pages; 512 MB is generous for typical traffic.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
     logging:
       driver: "json-file"
       options:
