@@ -1,0 +1,91 @@
+# ── DecentralChain Scala Node ──────────────────────────────────────────────────
+#
+# Prerequisites (set by bootstrap.sh and deploy-container.yml):
+#   IMAGE_TAG — full image reference, e.g. ghcr.io/decentral-america/node-scala:abc123
+#   NETWORK   — mainnet | testnet | stagenet
+#
+# Volumes:
+#   node-scala-state-<NETWORK> — persistent blockchain state (named, survives upgrades)
+#
+# Ports (all except P2P are localhost-only):
+#   6869 — REST API     (internal; expose via reverse proxy only)
+#   6868 — P2P          (must be externally reachable for peer discovery)
+#   6881 — BlockchainUpdates gRPC extension (used by blockchain-postgres-sync)
+#   6887 — DEX extension gRPC              (used by the matcher)
+#   6870 — metrics                         (internal; scrape via Prometheus)
+#
+# Dependency note:
+#   The DEX matcher (matcher.yml) connects to THIS node on localhost:6887 and
+#   localhost:6881. Deploy node-scala BEFORE the matcher on any new server.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  node-scala:
+    image: "${IMAGE_TAG:?IMAGE_TAG is required}"
+    container_name: "node-scala-${NETWORK:-mainnet}"
+    restart: unless-stopped
+
+    # Secrets are written by bootstrap.sh; never baked into the image.
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+
+    # Constants only — never duplicate env_file keys here.
+    environment:
+      # JVM heap size — node-scala is a JVM process; 6g heap leaves headroom
+      # for the OS and the matcher on a 16 GB host. Tune per instance type.
+      WAVES_JVM_ARGS: "-Xmx6g -Xms2g"
+
+    ports:
+      # REST API — localhost only; expose via Caddy reverse proxy
+      - "127.0.0.1:6869:6869"
+      # P2P — world-reachable for peer discovery (firewall allows TCP 6868)
+      - "6868:6868"
+      # BlockchainUpdates gRPC — localhost only; blockchain-postgres-sync connects here
+      - "127.0.0.1:6881:6881"
+      # DEX extension gRPC — localhost only; matcher connects here
+      - "127.0.0.1:6887:6887"
+      # Prometheus metrics — localhost only
+      - "127.0.0.1:6870:6870"
+
+    volumes:
+      # Blockchain state — named volume survives image upgrades and docker rm
+      - "node-scala-state-${NETWORK:-mainnet}:/var/lib/waves"
+
+    # docker compose up --wait blocks until the container is running/healthy.
+    # /node/version is the canonical liveness endpoint on the Scala node REST API.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6869/node/version"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+
+    # ── Container security hardening ──────────────────────────────────────────
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The JVM writes blockchain state and LevelDB files to the bind-mounted volume;
+    # root filesystem cannot be read-only. tmpfs for JVM scratch and native tmp files.
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    deploy:
+      resources:
+        limits:
+          # JVM heap (6g) + off-heap (native buffers, metaspace, OS) ≈ 8-10 GB peak.
+          # Set limit at 10g; alert if consistently above 8g.
+          memory: 10g
+        reservations:
+          # Reserve 2g to ensure the scheduler keeps this container running.
+          memory: 2g
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+volumes:
+  node-scala-state-mainnet:
+  node-scala-state-stagenet:
+  node-scala-state-testnet:
