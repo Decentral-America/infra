@@ -50,6 +50,11 @@ on:
         required: false
         type: string
         default: '/opt/dcc/compose'
+      wait_timeout:
+        description: 'Seconds to wait for container to become healthy (docker compose up --wait-timeout). Increase for JVM services that have long startup: node-scala needs 180+.'
+        required: false
+        type: number
+        default: 120
 
 permissions:
   contents: read
@@ -87,7 +92,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a0 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref:      '${{ inputs.image }}'
           format:         'sarif'
@@ -180,7 +185,7 @@ jobs:
               --detach \
               --remove-orphans \
               --wait \
-              --wait-timeout 60 \
+              --wait-timeout ${{ inputs.wait_timeout }} \
               "$SERVICE"; then
 
               echo "::error::Health check failed for $SERVICE on $NETWORK."
@@ -193,7 +198,7 @@ jobs:
                   --detach \
                   --remove-orphans \
                   --wait \
-                  --wait-timeout 60 \
+                  --wait-timeout ${{ inputs.wait_timeout }} \
                   "$SERVICE" \
                   && echo "Rollback successful: $PREV_IMAGE is running." \
                   || echo "::error::Rollback also failed — manual intervention required."
