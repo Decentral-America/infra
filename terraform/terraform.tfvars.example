@@ -66,3 +66,28 @@ data_service_domain = "data-service.decentralchain.io"
 # Email address for Let's Encrypt expiry notifications (optional).
 # If empty, certificates are requested anonymously (still works, no reminders).
 acme_email = "ops@decentralchain.io"
+
+# ── PostgreSQL off-site backup (Linode Object Storage) ────────────────────────
+# rclone copies each pg_dump archive to object storage after the local dump.
+# Backup bucket must already exist before the server is bootstrapped.
+# All four variables must be set to enable off-site backup.
+# Leave them empty ("") to use local rotation only (7-day /opt/dcc/backups/).
+#
+# Create a Linode Object Storage bucket: linode-cli obj mb dcc-backups-mainnet --cluster us-east-1
+# Create an access key in the Linode dashboard (limited to the backup bucket only).
+
+# Linode Object Storage (or any S3-compatible) access key
+backup_obj_access_key = "CHANGE_ME_access_key"
+
+# Linode Object Storage (or any S3-compatible) secret key
+backup_obj_secret_key = "CHANGE_ME_secret_key"
+
+# Bucket name (must already exist; create per-network for isolation)
+# mainnet: dcc-backups-mainnet  stagenet: dcc-backups-stagenet  testnet: dcc-backups-testnet
+backup_obj_bucket = "dcc-backups-mainnet"
+
+# Endpoint for the Linode Object Storage region (same region as the Linode instance)
+# Available regions: us-east-1, us-central, eu-central-1, ap-south-1, etc.
+# Full list: https://rclone.org/s3/#linode
+backup_obj_endpoint = "us-east-1.linodeobjects.com"
+

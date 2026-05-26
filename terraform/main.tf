@@ -100,6 +100,10 @@ resource "linode_instance" "backend" {
     SCANNER_DOMAIN                       = var.scanner_domain
     DATA_SERVICE_DOMAIN                  = var.data_service_domain
     ACME_EMAIL                           = var.acme_email
+    BACKUP_OBJ_ACCESS_KEY                = var.backup_obj_access_key
+    BACKUP_OBJ_SECRET_KEY                = var.backup_obj_secret_key
+    BACKUP_OBJ_BUCKET                    = var.backup_obj_bucket
+    BACKUP_OBJ_ENDPOINT                  = var.backup_obj_endpoint
   }
 
   # Prevent accidental destruction of the backend server.
@@ -138,6 +142,17 @@ resource "linode_firewall" "backend" {
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "443"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
+  inbound {
+    # DCC node P2P (node-go and node-scala). Required for blockchain peer discovery.
+    # node-go binds :6868, node-scala binds :6868 — same port, one node at a time.
+    label    = "allow-node-p2p"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "6868"
     ipv4     = ["0.0.0.0/0"]
     ipv6     = ["::/0"]
   }
