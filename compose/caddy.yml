@@ -45,16 +45,20 @@ services:
     # ── Persistent volumes ────────────────────────────────────────────────────
     # caddy-data: TLS certificates and ACME account state (survives restarts).
     # caddy-config: Caddy runtime config persistence (fast restarts).
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     volumes:
       - /opt/dcc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+      - caddy-admin:/run/caddy
 
     # ── Health check ──────────────────────────────────────────────────────────
-    # Caddy's admin API at localhost:2019 confirms the server is running.
-    # GET /config/ returns the loaded Caddyfile configuration as JSON.
+    # Admin API is restricted to a Unix socket (not TCP) — prevents network
+    # access to runtime configuration. (Audit P6 HIGH-6)
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:2019/config/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null --header 'Host: localhost' http://unix:/run/caddy/admin.sock:/config/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,3 +83,5 @@ volumes:
     name: "caddy-data-${NETWORK:-mainnet}"
   caddy-config:
     name: "caddy-config-${NETWORK:-mainnet}"
+  caddy-admin:
+    name: "caddy-admin-${NETWORK:-mainnet}"
