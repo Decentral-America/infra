@@ -7,7 +7,7 @@ variable "linode_region" {
 variable "linode_type" {
   description = "Linode instance plan"
   type        = string
-  default     = "g6-standard-2"  # 2 vCPU / 4 GB RAM
+  default     = "g6-standard-8"  # 8 vCPU / 16 GB RAM — minimum for node-scala (10g) + matcher (4g)
 }
 
 variable "root_password" {
@@ -45,11 +45,20 @@ variable "rate_threshold_asset_id" {
 }
 
 variable "blockchain_updates_url" {
-  description = "DCC node Blockchain Updates gRPC endpoint URL for blockchain-postgres-sync (e.g. grpc://mainnet-node.decentralchain.io:6881)"
+  description = "DCC node Blockchain Updates gRPC endpoint URL for blockchain-postgres-sync (e.g. grpc://mainnet-node.decentralchain.io:6881). Use grpc:// for localhost connections only."
   type        = string
   validation {
     condition     = can(regex("^grpcs?://[^:]+:6881$", var.blockchain_updates_url))
     error_message = "blockchain_updates_url must use grpc:// or grpcs:// scheme and port 6881 (BlockchainUpdates). Got: ${var.blockchain_updates_url}"
+  }
+  validation {
+    # Enforce grpcs:// for non-localhost connections (Audit P6 HIGH-5).
+    # Unencrypted grpc:// is only safe for localhost/127.0.0.1 connections.
+    condition = (
+      startswith(var.blockchain_updates_url, "grpcs://") ||
+      can(regex("^grpc://(localhost|127\\.0\\.0\\.1):6881$", var.blockchain_updates_url))
+    )
+    error_message = "Non-localhost blockchain_updates_url must use grpcs:// (encrypted). Unencrypted grpc:// is only permitted for localhost/127.0.0.1."
   }
 }
 

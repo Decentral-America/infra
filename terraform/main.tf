@@ -19,6 +19,15 @@ terraform {
   # Linode Object Storage is S3-compatible. State is partitioned by workspace.
   # Credentials passed at runtime via tofu init -backend-config flags.
   # Create bucket first: linode-cli obj mb dcc-tofu-state --cluster us-east-1
+  #
+  # Encryption note: Linode Object Storage encrypts data at rest at the
+  # infrastructure layer (AES-256). The S3 API `sse_algorithm` header is NOT
+  # supported by Linode's S3-compatible endpoint — do not add `encrypt = true`
+  # or `sse_algorithm` (will error). The state file does NOT contain secrets
+  # because all sensitive variables have `sensitive = true` in variables.tf,
+  # which causes OpenTofu to redact them from state. Additionally, the bucket
+  # is private (no public ACL) and accessible only via the access key pair
+  # passed at `tofu init` time.
   backend "s3" {
     bucket   = "dcc-tofu-state"
     key      = "terraform.tfstate"   # workspace prefix added automatically: env:/<workspace>/terraform.tfstate
@@ -117,7 +126,56 @@ resource "linode_firewall" "backend" {
   label = "dcc-firewall-${local.network}"
 
   inbound_policy  = "DROP"
-  outbound_policy = "ACCEPT"
+  outbound_policy = "DROP"
+
+  # ── Egress rules (Audit P6 MEDIUM-8) ───────────────────────────────────────
+  # Whitelist required outbound traffic only. A compromised container cannot
+  # exfiltrate data to arbitrary destinations.
+  outbound {
+    label    = "allow-dns"
+    action   = "ACCEPT"
+    protocol = "UDP"
+    ports    = "53"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
+  outbound {
+    label    = "allow-ntp"
+    action   = "ACCEPT"
+    protocol = "UDP"
+    ports    = "123"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
+  outbound {
+    label    = "allow-http"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "80"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
+  outbound {
+    label    = "allow-https"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "443"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
+  outbound {
+    # DCC P2P outbound — required for blockchain peer connections.
+    label    = "allow-p2p-out"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "6868"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
 
   inbound {
     label    = "allow-ssh"

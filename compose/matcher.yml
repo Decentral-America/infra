@@ -61,7 +61,8 @@ services:
     cap_drop:
       - ALL
     # The matcher writes its LevelDB order book to the bind-mounted data volume;
-    # root filesystem cannot be fully read-only. tmpfs for JVM temp scratch.
+    # root filesystem is read-only — only named/bind-mounted volumes are writable.
+    read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
     deploy:
