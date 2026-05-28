@@ -119,12 +119,12 @@ or `blockchain-postgres-sync` repo.
 | **Org** | `MAVEN_CENTRAL_PASSWORD` | 1 | ✅ set |
 | **Org** | `CODECOV_TOKEN` | 1 | ✅ set |
 | **Org** | `DOCKERHUB_TOKEN` | 1 | ✅ set |
-| **Org** | `GHCR_TOKEN` | 1 | ❌ missing |
-| **Org** | `CLOUDFLARE_API_TOKEN` | 1 | ❌ missing |
-| **Org** | `CLOUDFLARE_ACCOUNT_ID` | 1 | ❌ missing |
-| **Org** | `SENTRY_AUTH_TOKEN` | 1 | ❌ missing |
-| **Org** | `MAVEN_GPG_KEY_ID` | 1 | ❌ missing |
-| **Org** | `NVD_API_KEY` | 1 | ❌ missing |
+| **Org** | `GHCR_TOKEN` | 1 | ✅ set |
+| **Org** | `CLOUDFLARE_API_TOKEN` | 1 | ✅ set |
+| **Org** | `CLOUDFLARE_ACCOUNT_ID` | 1 | ✅ set |
+| **Org** | `SENTRY_AUTH_TOKEN` | 1 | ✅ set |
+| **Org** | `MAVEN_GPG_KEY_ID` | 1 | ✅ set |
+| **Org** | `NVD_API_KEY` | 1 | ✅ set |
 | **Org** | `CHROME_EXTENSION_ID` | 1 | ❌ missing |
 | **Org** | `CHROME_CLIENT_ID` | 1 | ❌ missing |
 | **Org** | `CHROME_CLIENT_SECRET` | 1 | ❌ missing |
@@ -929,12 +929,12 @@ Not one secret, variable, or file value is omitted. Every layer is listed.
 | `MAVEN_CENTRAL_PASSWORD` | ✅ set | All 7 JVM publish workflows | Sonatype Central Portal token password. |
 | `CODECOV_TOKEN` | ✅ set | CI coverage jobs | Repo upload token from codecov.io. |
 | `DOCKERHUB_TOKEN` | ✅ set | Docker Hub image push | Access token from hub.docker.com. |
-| `GHCR_TOKEN` | ❌ missing | `deploy-container.yml` (infra, via SSH) | PAT `read:packages` only. Forwarded to Linode server for `docker login ghcr.io`. |
-| `CLOUDFLARE_API_TOKEN` | ❌ missing | `deploy-exchange.yml` | CF API token, `account:cloudflare_pages:edit` scope. Skipped gracefully when absent. |
-| `CLOUDFLARE_ACCOUNT_ID` | ❌ missing | `deploy-exchange.yml` | 32-char hex from `dash.cloudflare.com/<ACCOUNT_ID>`. |
-| `SENTRY_AUTH_TOKEN` | ❌ missing | `deploy-exchange.yml` (build env), `deploy-scanner.yml` (Docker secret) | Source-map upload. Scopes: `project:read`, `project:write`, `project:releases`. No-ops when absent. |
+| `GHCR_TOKEN` | ✅ set | `deploy-container.yml` (infra, via SSH) | PAT `read:packages` only. Forwarded to Linode server for `docker login ghcr.io`. |
+| `CLOUDFLARE_API_TOKEN` | ✅ set | `deploy-exchange.yml` | CF API token, `account:cloudflare_pages:edit` scope. Skipped gracefully when absent. |
+| `CLOUDFLARE_ACCOUNT_ID` | ✅ set | `deploy-exchange.yml` | 32-char hex from `dash.cloudflare.com/<ACCOUNT_ID>`. |
+| `SENTRY_AUTH_TOKEN` | ✅ set | `deploy-exchange.yml` (build env), `deploy-scanner.yml` (Docker secret) | Source-map upload. Scopes: `project:read`, `project:write`, `project:releases`. No-ops when absent. |
 | `MAVEN_GPG_KEY_ID` | ❌ missing | `publish-blst.yml`, `publish-curve25519.yml`, `publish-groth16.yml`, `publish-java-sdk.yml`, `publish-ride.yml`, `publish-transactions.yml` | 8-char GPG short key ID: `gpg --list-secret-keys --keyid-format=short` |
-| `NVD_API_KEY` | ❌ missing | 5 JVM publish workflows | NIST NVD API key. Free, no approval — nvd.nist.gov/developers/request-an-api-key. |
+| `NVD_API_KEY` | ✅ set | 5 JVM publish workflows | NIST NVD API key. Free, no approval — nvd.nist.gov/developers/request-an-api-key. |
 | `CHROME_EXTENSION_ID` | ❌ missing | `deploy-cubensis.yml` | Chrome Web Store extension ID (32-char string). |
 | `CHROME_CLIENT_ID` | ❌ missing | `deploy-cubensis.yml` | Google OAuth 2.0 client ID. |
 | `CHROME_CLIENT_SECRET` | ❌ missing | `deploy-cubensis.yml` | Google OAuth 2.0 client secret. |

@@ -67,8 +67,8 @@ services:
       - ALL
     # Node needs NET_BIND_SERVICE only if binding ports <1024; our ports are all
     # >1024 (6868, 6869, 7475, 6870), so no capabilities are needed.
-    # Root filesystem cannot be read-only: the node writes blockchain state to
-    # /home/gowaves/data (mounted volume). tmpfs for the process scratch space.
+    # Root filesystem is read-only — only named/bind-mounted volumes are writable.
+    read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
     deploy:
