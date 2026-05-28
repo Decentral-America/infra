@@ -24,7 +24,13 @@
 # <UDF name="BACKUP_OBJ_ENDPOINT"   label="Object storage endpoint for rclone S3 provider (e.g. us-east-1.linodeobjects.com)" default="" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+# Redirect stdout/stderr to bootstrap.log. The log is restricted to root:adm
+# (mode 0640) because credential-related commands may echo sensitive values.
+# We use `set +x` before credential operations as an additional safeguard.
 exec > >(tee /var/log/bootstrap.log) 2>&1
+chmod 640 /var/log/bootstrap.log
 
 echo "[bootstrap] Starting DCC backend node bootstrap for network: $NETWORK"
 
@@ -169,6 +175,9 @@ esac
 # POSTGRES_PASSWORD values containing $, `, \, or ! are silently corrupted.
 # printf '%s' never interprets its argument as a format string, making it safe
 # for all password values regardless of content. (Audit finding F-07.)
+#
+# Suppress trace/verbose output during secret operations (Audit P6 CRITICAL-1).
+set +x 2>/dev/null || true
 {
   printf '# DecentralChain %s secrets — managed by OpenTofu bootstrap\n' "${NETWORK}"
   printf '# DO NOT store this file in version control.\n'
@@ -200,6 +209,7 @@ esac
 
 chmod 640 "/opt/dcc/secrets/${NETWORK}.env"
 chown root:deploy "/opt/dcc/secrets/${NETWORK}.env"
+echo "[bootstrap] Server secrets written to /opt/dcc/secrets/${NETWORK}.env"
 
 # ── Matcher network-specific config ──────────────────────────────────────────
 # The DEX matcher image includes this file via:
@@ -243,6 +253,8 @@ chown root:deploy "/opt/dcc/config/matcher-${NETWORK}/local.conf"
 # ── PostgreSQL setup ──────────────────────────────────────────────────────────
 systemctl enable --now postgresql
 
+# Suppress trace output during credential operations (Audit P6 CRITICAL-1).
+set +x 2>/dev/null || true
 sudo -u postgres psql -c "
   DO \$\$
   BEGIN
@@ -251,12 +263,21 @@ sudo -u postgres psql -c "
     END IF;
   END
   \$\$;
-"
+" >/dev/null 2>&1
 
 sudo -u postgres psql -tc \
   "SELECT 1 FROM pg_database WHERE datname = 'dcc_${NETWORK}'" \
   | grep -q 1 || \
   sudo -u postgres createdb -O dcc "dcc_${NETWORK}"
+
+# ── PostgreSQL hardening (Audit P6 LOW-3) ────────────────────────────────────
+# Enforce scram-sha-256 instead of md5 for password hashing.
+# Enable connection logging for security audit trail.
+sudo -u postgres psql -c "ALTER SYSTEM SET password_encryption = 'scram-sha-256';" >/dev/null 2>&1
+sudo -u postgres psql -c "ALTER SYSTEM SET log_connections = on;" >/dev/null 2>&1
+sudo -u postgres psql -c "ALTER SYSTEM SET log_disconnections = on;" >/dev/null 2>&1
+systemctl reload postgresql
+echo "[bootstrap] PostgreSQL hardened: scram-sha-256, connection logging enabled"
 
 # ── rclone v1.74.2 (for PostgreSQL off-site backup) ─────────────────────────
 # Install from the official Debian package — no curl-pipe-to-sh pattern.
@@ -314,43 +335,55 @@ echo "[pg-backup] $(date -Iseconds) local backup complete: ${BACKUP_FILE}"
 
 # ── Off-site upload via rclone ─────────────────────────────────────────────
 # Only runs if BACKUP_OBJ_BUCKET is non-empty.
-# Credentials are taken from env vars — never written to disk.
+# Credentials are injected via cron environment (Audit P6 CRITICAL-4).
+# RCLONE_S3_ACCESS_KEY_ID and RCLONE_S3_SECRET_ACCESS_KEY are set in crontab,
+# NOT embedded in this script.
 BACKUP_OBJ_BUCKET="__BACKUP_OBJ_BUCKET__"
 BACKUP_OBJ_ENDPOINT="__BACKUP_OBJ_ENDPOINT__"
 
 if [[ -n "${BACKUP_OBJ_BUCKET}" && -n "${BACKUP_OBJ_ENDPOINT}" ]]; then
-  export RCLONE_S3_ACCESS_KEY_ID="__BACKUP_OBJ_ACCESS_KEY__"
-  export RCLONE_S3_SECRET_ACCESS_KEY="__BACKUP_OBJ_SECRET_KEY__"
-  export RCLONE_S3_ENDPOINT="${BACKUP_OBJ_ENDPOINT}"
-  export RCLONE_CONFIG_DCC_BACKUP_TYPE=s3
-  export RCLONE_CONFIG_DCC_BACKUP_PROVIDER=Linode
-  export RCLONE_CONFIG_DCC_BACKUP_ENV_AUTH=false
-
-  if rclone copyto \
-    "${BACKUP_FILE}" \
-    ":s3,provider=Linode,endpoint=${BACKUP_OBJ_ENDPOINT}:${BACKUP_OBJ_BUCKET}/$(basename "${BACKUP_FILE}")" \
-    --no-traverse \
-    2>&1; then
-    echo "[pg-backup] $(date -Iseconds) off-site upload complete: s3://${BACKUP_OBJ_BUCKET}/$(basename "${BACKUP_FILE}")"
+  # Credentials must be set in the cron environment — see crontab setup below.
+  if [[ -z "${RCLONE_S3_ACCESS_KEY_ID:-}" || -z "${RCLONE_S3_SECRET_ACCESS_KEY:-}" ]]; then
+    echo "[pg-backup] $(date -Iseconds) ERROR: rclone credentials not set in environment — skipping off-site upload" >&2
   else
-    # Off-site failure is non-fatal — local backup is already complete.
-    echo "[pg-backup] $(date -Iseconds) WARNING: off-site upload failed (local backup preserved)" >&2
+    export RCLONE_S3_ENDPOINT="${BACKUP_OBJ_ENDPOINT}"
+    export RCLONE_CONFIG_DCC_BACKUP_TYPE=s3
+    export RCLONE_CONFIG_DCC_BACKUP_PROVIDER=Linode
+    export RCLONE_CONFIG_DCC_BACKUP_ENV_AUTH=false
+
+    if rclone copyto \
+      "${BACKUP_FILE}" \
+      ":s3,provider=Linode,endpoint=${BACKUP_OBJ_ENDPOINT}:${BACKUP_OBJ_BUCKET}/$(basename "${BACKUP_FILE}")" \
+      --no-traverse \
+      2>&1; then
+      echo "[pg-backup] $(date -Iseconds) off-site upload complete: s3://${BACKUP_OBJ_BUCKET}/$(basename "${BACKUP_FILE}")"
+    else
+      # Off-site failure is non-fatal — local backup is already complete.
+      echo "[pg-backup] $(date -Iseconds) WARNING: off-site upload failed (local backup preserved)" >&2
+    fi
   fi
 fi
 CRONEOF
 # Inject the actual network name and backup config at bootstrap time.
 # All values are alphanumeric or empty — safe for sed substitution.
+# Credentials are NOT embedded in the script — they are passed via crontab env.
 sed -i "s/__NETWORK__/${NETWORK}/" /opt/dcc/scripts/pg-backup.sh
 sed -i "s|__BACKUP_OBJ_BUCKET__|${BACKUP_OBJ_BUCKET:-}|" /opt/dcc/scripts/pg-backup.sh
 sed -i "s|__BACKUP_OBJ_ENDPOINT__|${BACKUP_OBJ_ENDPOINT:-}|" /opt/dcc/scripts/pg-backup.sh
-sed -i "s|__BACKUP_OBJ_ACCESS_KEY__|${BACKUP_OBJ_ACCESS_KEY:-}|" /opt/dcc/scripts/pg-backup.sh
-sed -i "s|__BACKUP_OBJ_SECRET_KEY__|${BACKUP_OBJ_SECRET_KEY:-}|" /opt/dcc/scripts/pg-backup.sh
 chmod 750 /opt/dcc/scripts/pg-backup.sh
 chown postgres:postgres /opt/dcc/scripts/pg-backup.sh
 
-# Install as postgres crontab (02:00 UTC daily)
-printf '%s\n' "0 2 * * * /opt/dcc/scripts/pg-backup.sh >> /var/log/pg-backup.log 2>&1" \
-  | crontab -u postgres -
+# Install as postgres crontab (02:00 UTC daily).
+# Backup credentials are passed via crontab environment variables — NOT embedded
+# in the backup script. This prevents credential leakage via script file reads.
+# (Audit P6 CRITICAL-4)
+{
+  if [[ -n "${BACKUP_OBJ_ACCESS_KEY:-}" && -n "${BACKUP_OBJ_SECRET_KEY:-}" ]]; then
+    printf 'RCLONE_S3_ACCESS_KEY_ID=%s\n' "${BACKUP_OBJ_ACCESS_KEY}"
+    printf 'RCLONE_S3_SECRET_ACCESS_KEY=%s\n' "${BACKUP_OBJ_SECRET_KEY}"
+  fi
+  printf '%s\n' "0 2 * * * /opt/dcc/scripts/pg-backup.sh >> /var/log/pg-backup.log 2>&1"
+} | crontab -u postgres -
 echo "[bootstrap] PostgreSQL daily backup cron installed (02:00 UTC, 7-day local retention${BACKUP_OBJ_BUCKET:+, off-site: ${BACKUP_OBJ_BUCKET}})"
 
 # ── GHCR authentication for docker pull ──────────────────────────────────────
@@ -371,6 +404,10 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
   {
     printf '# Generated by DCC bootstrap — do not edit manually\n'
     printf '{\n'
+    # Restrict admin API to a Unix socket — prevents network-accessible config
+    # manipulation. Healthcheck uses the socket via curl --unix-socket.
+    # (Audit P6 HIGH-6)
+    printf '    admin unix//run/caddy/admin.sock\n'
     if [[ -n "${ACME_EMAIL:-}" ]]; then
       printf '    email %s\n' "${ACME_EMAIL}"
     fi
@@ -384,7 +421,18 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
       printf '        X-Content-Type-Options "nosniff"\n'
       printf '        X-Frame-Options "DENY"\n'
       printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
-      printf '        X-XSS-Protection "1; mode=block"\n'
+      # OWASP 2026: disable the legacy XSS auditor — setting to 1 can itself
+      # introduce XSS vulnerabilities in old browsers. Modern browsers ignore it.
+      printf '        X-XSS-Protection "0"\n'
+      # CSP for the block explorer SSR app (React Router v7 / Vite 8).
+      # unsafe-inline in script-src is required for React Router's hydration
+      # inline script (window.__DCC_CONFIG__) — no nonce provider at Caddy layer.
+      # frame-ancestors 'none' supersedes X-Frame-Options for CSP-aware browsers.
+      printf '        Content-Security-Policy "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\''; style-src '\''self'\'' '\''unsafe-inline'\''; img-src '\''self'\'' data: blob: https:; font-src '\''self'\'' data:; connect-src '\''self'\'' https://*.decentralchain.io wss://*.decentralchain.io; worker-src '\''self'\'' blob:; frame-ancestors '\''none'\''; base-uri '\''self'\''; form-action '\''self'\''; object-src '\''none'\''"\n'
+      # Disable all browser APIs the block explorer does not need.
+      printf '        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"\n'
+      # COOP: prevent Spectre cross-origin leaks by isolating the browsing context.
+      printf '        Cross-Origin-Opener-Policy "same-origin"\n'
       printf '        -Server\n'
       printf '    }\n'
       printf '    encode gzip zstd\n'

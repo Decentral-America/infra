@@ -65,8 +65,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # The JVM writes blockchain state and LevelDB files to the bind-mounted volume;
-    # root filesystem cannot be read-only. tmpfs for JVM scratch and native tmp files.
+    # The JVM writes blockchain state and LevelDB files to the named volume;
+    # root filesystem is read-only — only named volumes are writable.
+    read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
     deploy:
