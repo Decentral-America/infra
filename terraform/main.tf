@@ -59,11 +59,11 @@ locals {
   network = terraform.workspace # mainnet | stagenet | testnet
 
   # Chain IDs: mainnet=63 ('?'), stagenet=83 ('S'), testnet=33 ('!')
-  chain_id = {
+  chain_id = lookup({
     mainnet  = 63
     stagenet = 83
     testnet  = 33
-  }[local.network]
+  }, local.network, 33) # default to testnet for validation
 
   # Linode region — centralise here for easy migration
   region = var.linode_region
