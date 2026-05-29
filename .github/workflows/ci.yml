@@ -49,6 +49,8 @@ jobs:
 
       # ── Docker Compose validation ─────────────────────────────────────────────
       - name: Validate Docker Compose files
+        env:
+          IMAGE_TAG: 'ghcr.io/decentral-america/ci-validation:latest'
         run: |
           for f in compose/*.yml; do
             echo "Validating $f..."
