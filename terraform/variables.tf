@@ -1,13 +1,13 @@
 variable "linode_region" {
   description = "Linode region slug"
   type        = string
-  default     = "us-central"  # Dallas — change to preferred region
+  default     = "us-central" # Dallas — change to preferred region
 }
 
 variable "linode_type" {
   description = "Linode instance plan"
   type        = string
-  default     = "g6-standard-8"  # 8 vCPU / 16 GB RAM — minimum for node-scala (10g) + matcher (4g)
+  default     = "g6-standard-8" # 8 vCPU / 16 GB RAM — minimum for node-scala (10g) + matcher (4g)
 }
 
 variable "root_password" {
