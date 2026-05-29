@@ -190,7 +190,7 @@ required reviewers — CI deploys must be fast and automated.
 
 **Where:** Org level (`Decentral-America`) or infra repo level.
 **Used by:** `deploy-container.yml` — passed via SSH to the server for `docker login ghcr.io`.
-**Status:** ❌ missing.
+**Status:** ✅ already set.
 
 The server must authenticate to GHCR before pulling private images. The deploy
 workflow forwards this token into the SSH session via `appleboy/ssh-action`'s
@@ -217,7 +217,7 @@ This reduces blast radius if the token is ever compromised.
 
 **Where:** Org level.
 **Used by:** `deploy-exchange.yml` — passed to `cloudflare/wrangler-action`.
-**Status:** ❌ missing.
+**Status:** ✅ already set.
 
 Controls uploads to Cloudflare Pages for the exchange SPA. Three separate CF Pages
 projects are used (one per network: `dcc-exchange-mainnet`, `dcc-exchange-stagenet`,
@@ -240,7 +240,7 @@ projects are used (one per network: `dcc-exchange-mainnet`, `dcc-exchange-stagen
 
 **Where:** Org level.
 **Used by:** `deploy-exchange.yml` alongside `CLOUDFLARE_API_TOKEN`.
-**Status:** ❌ missing.
+**Status:** ✅ already set.
 
 The account ID scopes the API token to the correct Cloudflare account.
 
@@ -319,7 +319,7 @@ The passphrase protecting `MAVEN_GPG_PRIVATE_KEY`. The sbt build calls
 
 #### `MAVEN_GPG_KEY_ID`
 
-**Where:** Org level — ❌ missing.
+**Where:** Org level — ✅ already set.
 **Used by:** `publish-blst.yml`, `publish-curve25519.yml`, `publish-groth16.yml`,
 `publish-java-sdk.yml`, `publish-ride.yml`, `publish-transactions.yml`.
 
@@ -368,7 +368,7 @@ for how to obtain. The naming inconsistency is documented — see ⚠ in the
 
 #### `NVD_API_KEY`
 
-**Where:** Org level — ❌ missing.
+**Where:** Org level — ✅ already set.
 **Used by:** `publish-blst.yml`, `publish-curve25519.yml`, `publish-groth16.yml`,
 `publish-java-sdk.yml`, `publish-transactions.yml`.
 
@@ -386,7 +386,7 @@ unauthenticated rate limits (300 req/day without a key vs. 2,000/day with).
 
 #### `SENTRY_AUTH_TOKEN`
 
-**Where:** Org level — ❌ missing.
+**Where:** Org level ✅ already set.
 **Used by:** `deploy-exchange.yml`, `deploy-scanner.yml` — at Vite build time by
 `@sentry/vite-plugin` to upload source maps and create Sentry releases.
 
