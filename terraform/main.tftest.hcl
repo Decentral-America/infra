@@ -16,7 +16,7 @@ run "validate_configuration" {
 
   # Expect plan to succeed (no provider API calls needed for validation)
   assert {
-    condition     = true
+    condition     = var.root_password != ""
     error_message = "Configuration should be syntactically valid"
   }
 }
@@ -41,7 +41,7 @@ run "accept_unencrypted_localhost_grpc" {
   }
 
   assert {
-    condition     = true
+    condition     = var.blockchain_updates_url == "grpc://localhost:6881"
     error_message = "Localhost grpc:// should be accepted"
   }
 }
