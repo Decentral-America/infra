@@ -7,12 +7,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 terraform {
-  required_version = ">= 1.12.0"  # floor: 1.11.4 (SECURITY: malicious .zip in tofu init)
+  required_version = ">= 1.12.0" # floor: 1.11.4 (SECURITY: malicious .zip in tofu init)
 
   required_providers {
     linode = {
       source  = "linode/linode"
-      version = "~> 3.13"  # floor: 3.9.0 (CVE-2026-27900 sensitive-info-in-logs)
+      version = "~> 3.13" # floor: 3.9.0 (CVE-2026-27900 sensitive-info-in-logs)
     }
   }
 
@@ -30,7 +30,7 @@ terraform {
   # passed at `tofu init` time.
   backend "s3" {
     bucket   = "dcc-tofu-state"
-    key      = "terraform.tfstate"   # workspace prefix added automatically: env:/<workspace>/terraform.tfstate
+    key      = "terraform.tfstate" # workspace prefix added automatically: env:/<workspace>/terraform.tfstate
     region   = "us-east-1"
     endpoint = "https://us-east-1.linodeobjects.com"
 
@@ -56,7 +56,7 @@ provider "linode" {
 
 # ── Network-specific locals ───────────────────────────────────────────────────
 locals {
-  network = terraform.workspace  # mainnet | stagenet | testnet
+  network = terraform.workspace # mainnet | stagenet | testnet
 
   # Chain IDs: mainnet=63 ('?'), stagenet=83 ('S'), testnet=33 ('!')
   chain_id = {
@@ -81,7 +81,7 @@ locals {
 resource "linode_instance" "backend" {
   label  = "dcc-backend-${local.network}"
   region = local.region
-  type   = var.linode_type  # e.g. "g6-standard-2" (2 vCPU, 4 GB)
+  type   = var.linode_type # e.g. "g6-standard-2" (2 vCPU, 4 GB)
 
   image     = "linode/debian12"
   root_pass = var.root_password
@@ -94,25 +94,25 @@ resource "linode_instance" "backend" {
   firewall_id = linode_firewall.backend.id
 
   # Bootstrap script: install Docker, create deploy user, write secrets
-  stackscript_id   = linode_stackscript.bootstrap.id
+  stackscript_id = linode_stackscript.bootstrap.id
   stackscript_data = {
-    DEPLOY_PUBLIC_KEY                    = var.deploy_ssh_public_key
-    NETWORK                              = local.network
-    CHAIN_ID                             = tostring(local.chain_id)
-    POSTGRES_PASSWORD                    = var.postgres_password
-    DEFAULT_MATCHER                      = var.default_matcher
+    DEPLOY_PUBLIC_KEY                     = var.deploy_ssh_public_key
+    NETWORK                               = local.network
+    CHAIN_ID                              = tostring(local.chain_id)
+    POSTGRES_PASSWORD                     = var.postgres_password
+    DEFAULT_MATCHER                       = var.default_matcher
     RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
-    RATE_THRESHOLD_ASSET_ID              = var.rate_threshold_asset_id
-    BLOCKCHAIN_UPDATES_URL               = var.blockchain_updates_url
-    MATCHER_ACCOUNT_PASSWORD             = var.matcher_account_password
-    MATCHER_API_KEY_HASH                 = var.matcher_api_key_hash
-    SCANNER_DOMAIN                       = var.scanner_domain
-    DATA_SERVICE_DOMAIN                  = var.data_service_domain
-    ACME_EMAIL                           = var.acme_email
-    BACKUP_OBJ_ACCESS_KEY                = var.backup_obj_access_key
-    BACKUP_OBJ_SECRET_KEY                = var.backup_obj_secret_key
-    BACKUP_OBJ_BUCKET                    = var.backup_obj_bucket
-    BACKUP_OBJ_ENDPOINT                  = var.backup_obj_endpoint
+    RATE_THRESHOLD_ASSET_ID               = var.rate_threshold_asset_id
+    BLOCKCHAIN_UPDATES_URL                = var.blockchain_updates_url
+    MATCHER_ACCOUNT_PASSWORD              = var.matcher_account_password
+    MATCHER_API_KEY_HASH                  = var.matcher_api_key_hash
+    SCANNER_DOMAIN                        = var.scanner_domain
+    DATA_SERVICE_DOMAIN                   = var.data_service_domain
+    ACME_EMAIL                            = var.acme_email
+    BACKUP_OBJ_ACCESS_KEY                 = var.backup_obj_access_key
+    BACKUP_OBJ_SECRET_KEY                 = var.backup_obj_secret_key
+    BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
+    BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
   }
 
   # Prevent accidental destruction of the backend server.
