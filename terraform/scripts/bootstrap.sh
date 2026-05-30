@@ -135,9 +135,9 @@ echo "[bootstrap] fail2ban enabled: SSH jail active (5 retries / 10 min → 1 h 
 install -d -m 755 -o deploy -g deploy \
   /opt/dcc/compose \
   /opt/dcc/secrets \
-  /opt/dcc/data/node-wallet-${NETWORK} \
-  /opt/dcc/data/matcher-${NETWORK} \
-  /opt/dcc/config/matcher-${NETWORK} \
+  "/opt/dcc/data/node-wallet-${NETWORK}" \
+  "/opt/dcc/data/matcher-${NETWORK}" \
+  "/opt/dcc/config/matcher-${NETWORK}" \
   /opt/dcc/caddy
 
 # Backup directory: postgres-owned (pg_dump writes here via cron).
