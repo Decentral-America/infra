@@ -32,5 +32,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# nektos/act (local GitHub Actions)
+.secrets
+.artifacts/
+
 # ─── Logs ────────────────────────────────────────────────────────────────────
 *.log
