@@ -33,7 +33,7 @@ services:
     environment:
       # JVM heap size — node-scala is a JVM process; 6g heap leaves headroom
       # for the OS and the matcher on a 16 GB host. Tune per instance type.
-      WAVES_JVM_ARGS: "-Xmx6g -Xms2g"
+      DCC_HEAP_SIZE: "6g"
 
     ports:
       # REST API — localhost only; expose via Caddy reverse proxy
@@ -49,7 +49,7 @@ services:
 
     volumes:
       # Blockchain state — named volume survives image upgrades and docker rm
-      - "node-scala-state-${NETWORK:-mainnet}:/var/lib/waves"
+      - "node-scala-state-${NETWORK:-mainnet}:/var/lib/dcc"
 
     # docker compose up --wait blocks until the container is running/healthy.
     # /node/version is the canonical liveness endpoint on the Scala node REST API.

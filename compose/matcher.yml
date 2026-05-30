@@ -6,8 +6,7 @@
 #
 # Dependency:
 #   Requires a running node-scala (with DEX extension on :6887 and BlockchainUpdates
-#   extension on :6881) on the same host.  node-go does NOT implement these extension
-#   gRPC interfaces; the matcher must target node-scala.
+#   extension on :6881) on the same host.
 #
 # Volumes:
 #   /opt/dcc/data/matcher-<NETWORK>        — persistent matcher DB + account.dat
@@ -31,10 +30,9 @@ services:
     # Constants only — never duplicate env_file keys here.
     environment:
       MATCHER_HEAP_SIZE: "2g"
-      # WAVES_DEX_ROOT is read by the entrypoint to set -Dwaves.dex.root-directory.
-      # It must point at the bind-mounted data directory so the DB and account.dat
-      # survive image upgrades.
-      WAVES_DEX_ROOT: "/var/lib/decentralchain-dex"
+      # Data directory — must point at the bind-mounted path so the DB and
+      # account.dat survive image upgrades.
+      DCC_DEX_ROOT: "/var/lib/decentralchain-dex"
 
     ports:
       # REST API — localhost only; expose externally via nginx/Caddy

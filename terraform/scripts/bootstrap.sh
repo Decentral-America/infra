@@ -232,10 +232,10 @@ esac
   printf '# DecentralChain DEX Matcher local config — managed by OpenTofu bootstrap\n'
   printf '# Network: %s  Chain ID: %s\n' "${NETWORK}" "${CHAIN_ID}"
   printf '# DO NOT store this file in version control.\n'
-  printf 'waves.dex {\n'
+  printf 'dcc.dex {\n'
   printf '  address-scheme-character = "%s"\n'                             "${ADDR_SCHEME}"
-  printf '  waves-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
-  printf '  waves-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"\n'
+  printf '  dcc-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
+  printf '  dcc-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"\n'
   printf '  account-storage {\n'
   printf '    type = "encrypted-file"\n'
   printf '    encrypted-file {\n'
