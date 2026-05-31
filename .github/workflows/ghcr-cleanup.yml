@@ -20,7 +20,7 @@
 # Set GHCR_TOKEN at org level: Settings → Secrets → Actions → New org secret.
 # ──────────────────────────────────────────────────────────────────────────────
 
-name: GHCR Image Cleanup
+name: GHCR Cleanup
 
 on:
   schedule:
