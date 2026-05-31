@@ -161,7 +161,7 @@ case "$NETWORK" in
     ;;
   testnet)
     DCC_NODE_URL="https://testnet-node.decentralchain.io"
-    DCC_MATCHER_URL="https://matcher.decentralchain.io/matcher"
+    DCC_MATCHER_URL="https://testnet-matcher.decentralchain.io/matcher"
     DCC_DATA_SERVICE_URL="https://testnet-data-service.decentralchain.io/v0"
     ;;
 esac
