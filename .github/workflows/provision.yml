@@ -18,7 +18,7 @@
 #   infra-mainnet-provision, infra-stagenet-provision, infra-testnet-provision
 # ──────────────────────────────────────────────────────────────────────────────
 
-name: Provision Infrastructure (OpenTofu)
+name: Provision
 
 on:
   workflow_dispatch:
