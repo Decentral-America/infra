@@ -21,7 +21,7 @@
 #   LINODE_OBJ_SECRET_KEY — Object Storage secret key (state read)
 # ──────────────────────────────────────────────────────────────────────────────
 
-name: Infrastructure Drift Detection
+name: Drift Detection
 
 on:
   schedule:
