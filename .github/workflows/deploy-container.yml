@@ -55,6 +55,18 @@ on:
         required: false
         type: number
         default: 120
+    secrets:
+      GHCR_TOKEN:
+        required: true
+        description: 'PAT with read:packages for GHCR pull on server'
+      DEPLOY_HOST:
+        required: true
+      DEPLOY_USER:
+        required: true
+      DEPLOY_SSH_KEY:
+        required: true
+      DEPLOY_HOST_FINGERPRINT:
+        required: true
 
 permissions:
   contents: read
@@ -64,9 +76,6 @@ permissions:
 concurrency:
   group: deploy-${{ inputs.service }}-${{ inputs.network }}
   cancel-in-progress: false
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Container security scan ─────────────────────────────────────────────────
@@ -103,7 +112,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: trivy-results.sarif
@@ -148,19 +157,24 @@ jobs:
           # Forwarded to the SSH session via envs: so the server can authenticate
           # to GHCR before pulling (packages are private by default on GHCR).
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          INPUT_IMAGE: ${{ inputs.image }}
+          INPUT_NETWORK: ${{ inputs.network }}
+          INPUT_SERVICE: ${{ inputs.service }}
+          INPUT_COMPOSE_DIR: ${{ inputs.compose_dir }}
+          INPUT_WAIT_TIMEOUT: ${{ inputs.wait_timeout }}
         with:
           host:        ${{ secrets.DEPLOY_HOST }}
           username:    ${{ secrets.DEPLOY_USER }}
           key:         ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
-          envs:        GHCR_TOKEN
+          envs:        GHCR_TOKEN,INPUT_IMAGE,INPUT_NETWORK,INPUT_SERVICE,INPUT_COMPOSE_DIR,INPUT_WAIT_TIMEOUT
           script: |
             set -euo pipefail
 
-            export IMAGE_TAG="${{ inputs.image }}"
-            export NETWORK="${{ inputs.network }}"
-            SERVICE="${{ inputs.service }}"
-            COMPOSE_DIR="${{ inputs.compose_dir }}"
+            export IMAGE_TAG="$INPUT_IMAGE"
+            export NETWORK="$INPUT_NETWORK"
+            SERVICE="$INPUT_SERVICE"
+            COMPOSE_DIR="$INPUT_COMPOSE_DIR"
 
             echo "Authenticating with GHCR..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
@@ -185,7 +199,7 @@ jobs:
               --detach \
               --remove-orphans \
               --wait \
-              --wait-timeout ${{ inputs.wait_timeout }} \
+              --wait-timeout "$INPUT_WAIT_TIMEOUT" \
               "$SERVICE"; then
 
               echo "::error::Health check failed for $SERVICE on $NETWORK."
@@ -198,7 +212,7 @@ jobs:
                   --detach \
                   --remove-orphans \
                   --wait \
-                  --wait-timeout ${{ inputs.wait_timeout }} \
+                  --wait-timeout "$INPUT_WAIT_TIMEOUT" \
                   "$SERVICE" \
                   && echo "Rollback successful: $PREV_IMAGE is running." \
                   || echo "::error::Rollback also failed — manual intervention required."

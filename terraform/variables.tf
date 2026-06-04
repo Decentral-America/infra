@@ -21,6 +21,30 @@ variable "deploy_ssh_public_key" {
   type        = string
 }
 
+variable "postgres_host" {
+  description = "PostgreSQL hostname. Default localhost (co-located). Override for managed/remote databases."
+  type        = string
+  default     = "localhost"
+}
+
+variable "postgres_port" {
+  description = "PostgreSQL port. Default 5432 (standard). Override for non-standard configurations."
+  type        = string
+  default     = "5432"
+}
+
+variable "postgres_user" {
+  description = "PostgreSQL role name. Default dcc. Override for managed databases with different role naming."
+  type        = string
+  default     = "dcc"
+}
+
+variable "postgres_database" {
+  description = "PostgreSQL database name. Default dcc_<network>. Override for managed databases."
+  type        = string
+  default     = ""
+}
+
 variable "postgres_password" {
   description = "PostgreSQL password written to /opt/dcc/secrets/<network>.env on the server"
   type        = string
@@ -122,4 +146,20 @@ variable "backup_obj_endpoint" {
   description = "Object storage endpoint URL for rclone S3 provider (e.g. us-east-1.linodeobjects.com for Linode Object Storage). Leave empty to disable off-site backup."
   type        = string
   default     = ""
+}
+
+# ── Node wallet ──────────────────────────────────────────────────────────────
+# The node-scala entrypoint injects these into a temp config file (chmod 600)
+# and unsets the env vars immediately after reading them.
+
+variable "node_wallet_seed" {
+  description = "Base58-encoded seed for the node-scala wallet. Required for block mining. Must match one of the genesis wallet addresses."
+  type        = string
+  sensitive   = true
+}
+
+variable "node_wallet_password" {
+  description = "Encryption password for the node-scala wallet file (account.dat). Used to encrypt/decrypt the wallet seed on disk."
+  type        = string
+  sensitive   = true
 }

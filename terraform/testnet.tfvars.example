@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# DCC Testnet — OpenTofu Input Variables
+# ──────────────────────────────────────────────────────────────────────────────
+# Copy to testnet.tfvars and fill in ALL values before running:
+#   tofu workspace select testnet
+#   tofu plan  -var-file=testnet.tfvars
+#   tofu apply -var-file=testnet.tfvars
+#
+# NEVER commit testnet.tfvars — it contains secrets.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Infrastructure ───────────────────────────────────────────────────────────
+linode_region = "us-central"          # Dallas — or your preferred region
+linode_type   = "g6-standard-8"       # 8 vCPU / 16 GB — minimum for full stack
+
+# ── Server access ───────────────────────────────────────────────────────────
+root_password         = ""            # openssl rand -base64 32
+deploy_ssh_public_key = ""            # cat deploy_key_testnet.pub
+
+# ── PostgreSQL ───────────────────────────────────────────────────────────────
+# postgres_host     = "localhost"     # default — co-located
+# postgres_port     = "5432"          # default
+# postgres_user     = "dcc"           # default
+# postgres_database = ""              # default: dcc_testnet (auto from workspace)
+postgres_password = ""                # openssl rand -base64 32
+
+# ── DCC node wallet ─────────────────────────────────────────────────────────
+node_wallet_seed     = ""             # 15-word mnemonic or base58-encoded seed
+node_wallet_password = ""             # openssl rand -base64 32
+
+# ── Matcher (DEX) ───────────────────────────────────────────────────────────
+default_matcher          = ""         # DCC address of the matcher account
+matcher_account_password = ""         # openssl rand -base64 32
+matcher_api_key_hash     = ""         # base58(sha256(api-key)) — see docs
+
+# ── Blockchain Updates (BPS) ────────────────────────────────────────────────
+blockchain_updates_url = "grpc://localhost:6881"   # co-located node
+
+# ── TLS / Caddy reverse proxy ───────────────────────────────────────────────
+scanner_domain      = ""              # e.g. testnet-explorer.decentralchain.io
+data_service_domain = ""              # e.g. testnet-api.decentralchain.io
+acme_email          = ""              # e.g. admin@decentralchain.io
+
+# ── Off-site backup (Linode Object Storage) ──────────────────────────────────
+backup_obj_access_key = ""            # Linode OBJ access key (can reuse infra key)
+backup_obj_secret_key = ""            # Linode OBJ secret key
+backup_obj_bucket     = ""            # e.g. dcc-backups-testnet
+backup_obj_endpoint   = ""            # e.g. us-east-1.linodeobjects.com

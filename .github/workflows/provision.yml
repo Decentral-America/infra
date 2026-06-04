@@ -9,9 +9,11 @@
 #   linode-cli obj mb dcc-tofu-state --cluster us-east-1
 #
 # Required secrets (infra repo level, not environment-scoped):
-#   LINODE_TOKEN          — Linode API token (read/write)
-#   LINODE_OBJ_ACCESS_KEY — Object Storage access key (for state backend)
-#   LINODE_OBJ_SECRET_KEY — Object Storage secret key (for state backend)
+#   LINODE_TOKEN        — Linode API token (read/write)
+#   R2_ACCESS_KEY_ID    — Cloudflare R2 API token Access Key ID (for state backend)
+#   R2_SECRET_ACCESS_KEY — Cloudflare R2 API token Secret Access Key (for state backend)
+# Required org secret (read by all repos in Decentral-America org):
+#   CLOUDFLARE_ACCOUNT_ID — Cloudflare account ID (used to build R2 endpoint URL)
 #
 # IMPORTANT: Configure required reviewers for the following GitHub Environments
 # in Settings → Environments to gate apply/destroy with human approval:
@@ -56,9 +58,6 @@ concurrency:
   group: infra-provision-${{ inputs.network }}
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   tofu:
     name: OpenTofu ${{ inputs.action }} (${{ inputs.network }})
@@ -77,11 +76,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Safety check for mainnet destroy
         if: inputs.action == 'destroy'
+        env:
+          INPUT_NETWORK: ${{ inputs.network }}
+          INPUT_CONFIRM_DESTROY: ${{ inputs.confirm_destroy }}
         run: |
-          if [[ "${{ inputs.network }}" == "mainnet" && "${{ inputs.confirm_destroy }}" != "YES" ]]; then
+          set -euo pipefail
+          if [[ "$INPUT_NETWORK" == "mainnet" && "$INPUT_CONFIRM_DESTROY" != "YES" ]]; then
             echo "ERROR: Destroying mainnet requires entering YES in the confirm_destroy input."
             exit 1
           fi
@@ -91,11 +96,23 @@ jobs:
         with:
           tofu_version: '1.12.1'
 
+      - name: Write backend config
+        run: |
+          set -euo pipefail
+          printf 'bucket   = "dcc-tofu-state"\n'                                        > backend.hcl
+          printf 'region   = "auto"\n'                                                  >> backend.hcl
+          printf 'endpoint = "https://%s.r2.cloudflarestorage.com"\n' "$CF_ACCOUNT_ID" >> backend.hcl
+          printf 'access_key = "%s"\n' "$R2_ACCESS_KEY_ID"                             >> backend.hcl
+          printf 'secret_key = "%s"\n' "$R2_SECRET_ACCESS_KEY"                         >> backend.hcl
+        env:
+          CF_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID:   ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
       - name: OpenTofu Init
         run: |
-          tofu init \
-            -backend-config="access_key=${{ secrets.LINODE_OBJ_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.LINODE_OBJ_SECRET_KEY }}"
+          set -euo pipefail
+          tofu init -backend-config=backend.hcl -input=false
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
 
@@ -106,18 +123,42 @@ jobs:
 
       - name: OpenTofu Plan
         if: inputs.action == 'plan' || inputs.action == 'apply'
-        run: tofu plan -out=tfplan -input=false
+        run: tofu plan -var-file="${{ inputs.network }}.tfvars" -out=tfplan -input=false
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
+          TF_VAR_postgres_password:        ${{ secrets.TF_VAR_postgres_password }}
+          TF_VAR_node_wallet_seed:         ${{ secrets.TF_VAR_node_wallet_seed }}
+          TF_VAR_node_wallet_password:     ${{ secrets.TF_VAR_node_wallet_password }}
+          TF_VAR_matcher_account_password: ${{ secrets.TF_VAR_matcher_account_password }}
+          TF_VAR_matcher_api_key_hash:     ${{ secrets.TF_VAR_matcher_api_key_hash }}
+          TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
+          TF_VAR_default_matcher:          ${{ secrets.TF_VAR_default_matcher }}
 
       - name: OpenTofu Apply
         if: inputs.action == 'apply'
         run: tofu apply -auto-approve tfplan
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
+          TF_VAR_postgres_password:        ${{ secrets.TF_VAR_postgres_password }}
+          TF_VAR_node_wallet_seed:         ${{ secrets.TF_VAR_node_wallet_seed }}
+          TF_VAR_node_wallet_password:     ${{ secrets.TF_VAR_node_wallet_password }}
+          TF_VAR_matcher_account_password: ${{ secrets.TF_VAR_matcher_account_password }}
+          TF_VAR_matcher_api_key_hash:     ${{ secrets.TF_VAR_matcher_api_key_hash }}
+          TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
+          TF_VAR_default_matcher:          ${{ secrets.TF_VAR_default_matcher }}
 
       - name: OpenTofu Destroy
         if: inputs.action == 'destroy'
-        run: tofu destroy -auto-approve -input=false
+        run: tofu destroy -var-file="${{ inputs.network }}.tfvars" -auto-approve -input=false
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
+          TF_VAR_postgres_password:        ${{ secrets.TF_VAR_postgres_password }}
+          TF_VAR_node_wallet_seed:         ${{ secrets.TF_VAR_node_wallet_seed }}
+          TF_VAR_node_wallet_password:     ${{ secrets.TF_VAR_node_wallet_password }}
+          TF_VAR_matcher_account_password: ${{ secrets.TF_VAR_matcher_account_password }}
+          TF_VAR_matcher_api_key_hash:     ${{ secrets.TF_VAR_matcher_api_key_hash }}
+          TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
+          TF_VAR_default_matcher:          ${{ secrets.TF_VAR_default_matcher }}
