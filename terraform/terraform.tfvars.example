@@ -91,3 +91,22 @@ backup_obj_bucket = "dcc-backups-mainnet"
 # Full list: https://rclone.org/s3/#linode
 backup_obj_endpoint = "us-east-1.linodeobjects.com"
 
+# ── Node wallet ──────────────────────────────────────────────────────────────
+# The node-scala entrypoint reads these env vars, writes them to a temp config
+# file (chmod 600), and unsets the env vars immediately — they never appear in
+# /proc/<pid>/environ or `docker inspect`.
+#
+# To generate a wallet seed:
+#   sbt "node/runMain com.decentralchain.GenesisBlockGenerator node/genesis-dcc-testnet.conf"
+# The generator prints Base58-encoded seeds for each genesis wallet.
+#
+# IMPORTANT: the seed must be Base58-encoded (not the raw seed text).
+# The raw seed text (e.g. "dcc-testnet-wallet-1") is the human-readable label
+# used in genesis config; the ACTUAL seed is the Base58 encoding of that text.
+
+# Base58-encoded seed for the node wallet (must match a genesis wallet address)
+node_wallet_seed = "CHANGE_ME_base58_encoded_seed"
+
+# Encryption password for the wallet file (generate with: openssl rand -base64 32)
+node_wallet_password = "CHANGE_ME_strong_wallet_password"
+

@@ -16,26 +16,21 @@ terraform {
     }
   }
 
-  # Linode Object Storage is S3-compatible. State is partitioned by workspace.
-  # Credentials passed at runtime via tofu init -backend-config flags.
-  # Create bucket first: linode-cli obj mb dcc-tofu-state --cluster us-east-1
+  # Cloudflare R2 is S3-compatible and has a permanent free tier.
+  # State is partitioned by workspace: env:/<workspace>/terraform.tfstate
+  # Region and endpoint are passed at runtime via -backend-config=backend.hcl
+  # (written by provision.yml / drift-detect.yml using CF_ACCOUNT_ID + R2 credentials).
+  # Create bucket first: Cloudflare Dashboard → R2 → Create bucket → dcc-tofu-state
   #
-  # Encryption note: Linode Object Storage encrypts data at rest at the
-  # infrastructure layer (AES-256). The S3 API `sse_algorithm` header is NOT
-  # supported by Linode's S3-compatible endpoint — do not add `encrypt = true`
-  # or `sse_algorithm` (will error). The state file does NOT contain secrets
-  # because all sensitive variables have `sensitive = true` in variables.tf,
-  # which causes OpenTofu to redact them from state. Additionally, the bucket
-  # is private (no public ACL) and accessible only via the access key pair
-  # passed at `tofu init` time.
+  # Encryption note: R2 encrypts data at rest (AES-256). The state file does NOT
+  # contain secrets because all sensitive variables have `sensitive = true` in
+  # variables.tf, which causes OpenTofu to redact them from state. The bucket
+  # is private and accessible only via the R2 API token passed at tofu init time.
   backend "s3" {
-    bucket   = "dcc-tofu-state"
-    key      = "terraform.tfstate" # workspace prefix added automatically: env:/<workspace>/terraform.tfstate
-    region   = "us-east-1"
-    endpoint = "https://us-east-1.linodeobjects.com"
+    bucket = "dcc-tofu-state"
+    key    = "terraform.tfstate" # workspace prefix added automatically: env:/<workspace>/terraform.tfstate
 
-    # Linode Object Storage is S3-compatible but not AWS.
-    # These flags prevent OpenTofu from calling AWS-specific endpoints.
+    # R2 is S3-compatible but not AWS — suppress AWS-specific endpoint calls.
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_region_validation      = true
@@ -44,9 +39,14 @@ terraform {
     workspace_key_prefix = "env:"
 
     # Native S3 state locking via conditional writes (OpenTofu ≥ 1.10).
-    # Prevents concurrent tofu apply without requiring DynamoDB (unavailable on Linode).
+    # R2 supports conditional writes — no DynamoDB required.
     # Creates a .tflock object alongside the state file in the bucket.
     use_lockfile = true
+
+    # region and endpoint are intentionally omitted here.
+    # They are injected at runtime via -backend-config=backend.hcl:
+    #   region   = "auto"
+    #   endpoint = "https://<CF_ACCOUNT_ID>.r2.cloudflarestorage.com"
   }
 }
 
@@ -99,6 +99,10 @@ resource "linode_instance" "backend" {
     DEPLOY_PUBLIC_KEY                     = var.deploy_ssh_public_key
     NETWORK                               = local.network
     CHAIN_ID                              = tostring(local.chain_id)
+    POSTGRES_HOST                         = var.postgres_host
+    POSTGRES_PORT                         = var.postgres_port
+    POSTGRES_USER                         = var.postgres_user
+    POSTGRES_DATABASE                     = var.postgres_database != "" ? var.postgres_database : "dcc_${local.network}"
     POSTGRES_PASSWORD                     = var.postgres_password
     DEFAULT_MATCHER                       = var.default_matcher
     RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
@@ -113,6 +117,8 @@ resource "linode_instance" "backend" {
     BACKUP_OBJ_SECRET_KEY                 = var.backup_obj_secret_key
     BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
     BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
+    NODE_WALLET_SEED                      = var.node_wallet_seed
+    NODE_WALLET_PASSWORD                  = var.node_wallet_password
   }
 
   # Prevent accidental destruction of the backend server.

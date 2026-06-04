@@ -16,9 +16,11 @@
 # before business hours in US/EU time zones).
 #
 # Required secrets (infra repo level, same as provision.yml):
-#   LINODE_TOKEN          — Linode API token (read-only is sufficient for plan)
-#   LINODE_OBJ_ACCESS_KEY — Object Storage access key (state read)
-#   LINODE_OBJ_SECRET_KEY — Object Storage secret key (state read)
+#   LINODE_TOKEN         — Linode API token (read-only is sufficient for plan)
+#   R2_ACCESS_KEY_ID     — Cloudflare R2 API token Access Key ID (state read)
+#   R2_SECRET_ACCESS_KEY — Cloudflare R2 API token Secret Access Key (state read)
+# Required org secret:
+#   CLOUDFLARE_ACCOUNT_ID — Cloudflare account ID (used to build R2 endpoint URL)
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Drift Detection
@@ -50,9 +52,6 @@ concurrency:
   group: infra-drift-detect
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   drift:
     name: Drift check (${{ matrix.network }})
@@ -78,33 +77,74 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           inputs.network != 'all' &&
           inputs.network != matrix.network
+        env:
+          MATRIX_NETWORK: ${{ matrix.network }}
+          INPUT_NETWORK: ${{ inputs.network }}
         run: |
-          echo "Skipping ${{ matrix.network }} (requested: ${{ inputs.network }})"
+          echo "Skipping ${MATRIX_NETWORK} (requested: ${INPUT_NETWORK})"
           exit 0
 
       - name: Checkout
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.network == 'all' ||
+          inputs.network == matrix.network
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up OpenTofu
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.network == 'all' ||
+          inputs.network == matrix.network
         uses: opentofu/setup-opentofu@847eaa4afeb791b06daa46e8eafa8b1b68d7cfb4 # v2.0.1
         with:
           tofu_version: '1.12.1'
 
-      - name: OpenTofu Init
+      - name: Write backend config
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.network == 'all' ||
+          inputs.network == matrix.network
         run: |
-          tofu init \
-            -backend-config="access_key=${{ secrets.LINODE_OBJ_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.LINODE_OBJ_SECRET_KEY }}"
+          set -euo pipefail
+          printf 'bucket   = "dcc-tofu-state"\n'                                        > backend.hcl
+          printf 'region   = "auto"\n'                                                  >> backend.hcl
+          printf 'endpoint = "https://%s.r2.cloudflarestorage.com"\n' "$CF_ACCOUNT_ID" >> backend.hcl
+          printf 'access_key = "%s"\n' "$R2_ACCESS_KEY_ID"                             >> backend.hcl
+          printf 'secret_key = "%s"\n' "$R2_SECRET_ACCESS_KEY"                         >> backend.hcl
+        env:
+          CF_ACCOUNT_ID:       ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID:    ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+      - name: OpenTofu Init
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.network == 'all' ||
+          inputs.network == matrix.network
+        run: |
+          set -euo pipefail
+          tofu init -backend-config=backend.hcl -input=false
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
 
       - name: Select workspace
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.network == 'all' ||
+          inputs.network == matrix.network
         run: tofu workspace select -or-create "${{ matrix.network }}"
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
 
       - name: OpenTofu Plan (drift detection)
         id: plan
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.network == 'all' ||
+          inputs.network == matrix.network
         # -detailed-exitcode:
         #   0 = no changes (clean)
         #   1 = error
@@ -116,9 +156,10 @@ jobs:
             -detailed-exitcode \
             -input=false \
             -out=tfplan-${{ matrix.network }} \
-            2>&1 | tee plan-output.txt
+            > plan-output.txt 2>&1
           PLAN_EXIT=$?
           set -e
+          cat plan-output.txt
 
           case $PLAN_EXIT in
             0)
@@ -138,7 +179,12 @@ jobs:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
 
       - name: Write drift summary
-        if: always()
+        if: >-
+          always() && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
         run: |
           NETWORK="${{ matrix.network }}"
           STATUS="${{ steps.plan.outputs.status }}"
@@ -167,11 +213,13 @@ jobs:
               echo "❌ **Plan failed** — check workflow logs for details." >> "$GITHUB_STEP_SUMMARY"
               ;;
           esac
-        env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
 
       - name: Fail if drift or error detected
-        if: steps.plan.outputs.status != 'clean' && steps.plan.outputs.status != ''
+        if: >-
+          (steps.plan.outputs.status != 'clean' && steps.plan.outputs.status != '') &&
+          (github.event_name != 'workflow_dispatch' ||
+           inputs.network == 'all' ||
+           inputs.network == matrix.network)
         run: |
           echo "::error::Infrastructure drift detected for ${{ matrix.network }}. Review the plan output and apply via provision.yml."
           exit 1
