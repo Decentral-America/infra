@@ -1054,7 +1054,7 @@ Not GitHub secrets. Baked into the build by Vite/Docker at CI time. Every variab
 | Variable | Committed value | Action |
 |----------|----------------|--------|
 | `VITE_SENTRY_DSN` | _(empty)_ | **⚠ fill in** — DSN from `dcc-scanner` Sentry project |
-| `VITE_APP_VERSION` | `0.1.0` | ✅ — CI overrides via `SENTRY_RELEASE` Docker build arg. Local-dev fallback only. |
+| `VITE_APP_VERSION` | `0.0.0` | ✅ — CI overrides via `SENTRY_RELEASE` Docker build arg. Local-dev fallback only. |
 
 **`apps/cubensis-connect/.env`** — bundled into the extension at build time
 

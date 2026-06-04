@@ -41,19 +41,15 @@ on:
 permissions:
   contents: read
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
 
 jobs:
   cleanup:
     name: Prune stale GHCR images
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    # Prevent parallel runs that could corrupt the manifest cache
-    concurrency:
-      group: ghcr-cleanup
-      cancel-in-progress: false
 
     strategy:
       # Process each package independently; one failure doesn't block others.
