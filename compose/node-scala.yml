@@ -31,6 +31,10 @@ services:
 
     # Constants only — never duplicate env_file keys here.
     environment:
+      # Map the env_file NETWORK var to DCC_NETWORK for the entrypoint.
+      # Without this, DCC_NETWORK defaults to "mainnet" (Dockerfile ENV) and
+      # non-mainnet deploys start with the wrong blockchain type.
+      DCC_NETWORK: "${NETWORK:-mainnet}"
       # JVM heap size — node-scala is a JVM process; 6g heap leaves headroom
       # for the OS and the matcher on a 16 GB host. Tune per instance type.
       DCC_HEAP_SIZE: "6g"

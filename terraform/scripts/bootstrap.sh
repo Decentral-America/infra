@@ -22,6 +22,8 @@
 # <UDF name="BACKUP_OBJ_SECRET_KEY" label="Object storage secret key for pg_dump off-site backup" default="" private="true" />
 # <UDF name="BACKUP_OBJ_BUCKET"     label="Object storage bucket name for pg_dump backups (e.g. dcc-backups-mainnet)" default="" />
 # <UDF name="BACKUP_OBJ_ENDPOINT"   label="Object storage endpoint for rclone S3 provider (e.g. us-east-1.linodeobjects.com)" default="" />
+# <UDF name="NODE_WALLET_SEED"      label="Base58-encoded seed for node-scala wallet (required for mining)" private="true" />
+# <UDF name="NODE_WALLET_PASSWORD"  label="Encryption password for node-scala wallet file" private="true" />
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -183,14 +185,11 @@ set +x 2>/dev/null || true
   printf '# DO NOT store this file in version control.\n'
   printf 'NETWORK=%s\n'                                "${NETWORK}"
   printf 'CHAIN_ID=%s\n'                               "${CHAIN_ID}"
-  printf '# PostgreSQL\n'
-  printf 'POSTGRES_PASSWORD=%s\n'                      "${POSTGRES_PASSWORD}"
-  printf 'POSTGRES_USER=dcc\n'
-  printf 'POSTGRES_DB=dcc_%s\n'                        "${NETWORK}"
-  printf 'PGHOST=localhost\n'
-  printf 'PGPORT=5432\n'
-  printf 'PGDATABASE=dcc_%s\n'                         "${NETWORK}"
-  printf 'PGUSER=dcc\n'
+  printf '# PostgreSQL — both data-service (libpq PG*) and BPS (envy PG prefix) read these\n'
+  printf 'PGHOST=%s\n'                                 "${POSTGRES_HOST}"
+  printf 'PGPORT=%s\n'                                 "${POSTGRES_PORT}"
+  printf 'PGDATABASE=%s\n'                             "${POSTGRES_DATABASE}"
+  printf 'PGUSER=%s\n'                                 "${POSTGRES_USER}"
   printf 'PGPASSWORD=%s\n'                             "${POSTGRES_PASSWORD}"
   printf '# DCC public endpoints (scanner uses these at runtime)\n'
   printf 'DCC_NODE_URL=%s\n'                           "${DCC_NODE_URL}"
@@ -202,9 +201,9 @@ set +x 2>/dev/null || true
   printf 'DEFAULT_MATCHER=%s\n'                        "${DEFAULT_MATCHER}"
   printf 'RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=%s\n'  "${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}"
   printf 'RATE_THRESHOLD_ASSET_ID=%s\n'                "${RATE_THRESHOLD_ASSET_ID}"
-  printf '# DEX Matcher secrets\n'
-  printf 'MATCHER_ACCOUNT_PASSWORD=%s\n'               "${MATCHER_ACCOUNT_PASSWORD}"
-  printf 'MATCHER_API_KEY_HASH=%s\n'                   "${MATCHER_API_KEY_HASH}"
+  printf '# Node wallet (entrypoint.sh reads these, writes to temp config, then unsets)\n'
+  printf 'DCC_WALLET_SEED=%s\n'                        "${NODE_WALLET_SEED}"
+  printf 'DCC_WALLET_PASSWORD=%s\n'                    "${NODE_WALLET_PASSWORD}"
 } > "/opt/dcc/secrets/${NETWORK}.env"
 
 chmod 640 "/opt/dcc/secrets/${NETWORK}.env"
