@@ -1,5 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "baseBranches": ["dev"],
   "extends": ["config:best-practices", ":semanticCommitTypeAll(chore)"],
   "labels": ["dependencies"],
   "osvVulnerabilityAlerts": true,
@@ -10,6 +11,11 @@
   "prCreation": "not-pending",
   "platformAutomerge": true,
   "packageRules": [
+    {
+      "description": "Group Linode provider + OpenTofu version — infra-level changes reviewed together",
+      "groupName": "OpenTofu + Linode provider",
+      "matchPackageNames": ["opentofu", "linode/linode", "opentofu/setup-opentofu"]
+    },
     {
       "description": "Pin GitHub Actions to full SHA for supply chain security — Renovate keeps them current",
       "matchManagers": ["github-actions"],
