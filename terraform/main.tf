@@ -250,11 +250,12 @@ resource "linode_stackscript" "bootstrap" {
 
   images = ["linode/debian12"]
 
-  # UDF variables injected at instance creation time
+  # Non-sensitive UDF variables injected at instance creation time.
+  # SENSITIVE secrets (passwords, seeds, API keys) are NOT in this list —
+  # they are pushed post-boot via SSH (push-secrets.yml) using SOPS encryption.
   # <UDF name="DEPLOY_PUBLIC_KEY" label="Deploy SSH public key" />
   # <UDF name="NETWORK" label="Network name" />
   # <UDF name="CHAIN_ID" label="DCC chain ID" />
-  # <UDF name="POSTGRES_PASSWORD" label="PostgreSQL password" default="" private="true" />
   # <UDF name="DEFAULT_MATCHER" label="DCC matcher blockchain address" />
   # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
   # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
