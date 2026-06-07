@@ -40,10 +40,20 @@ chmod 640 /var/log/bootstrap.log
 
 echo "[bootstrap] Starting DCC backend node bootstrap for network: $NETWORK"
 
+# Suppress all dpkg/debconf interactive prompts — required for unattended
+# operation. Without this, apt-get upgrade blocks on config file conflicts
+# (e.g. openssh-server sshd_config updates) and hangs indefinitely.
+export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
+
 # -- System updates ------------------------------------------------------------
 install -m 0755 -d /etc/apt/keyrings
 apt-get update -qq
-apt-get upgrade -y -qq
+# -o Dpkg::Options keeps existing config files on conflict — never overwrite
+# files bootstrap.sh manages (sshd_config, etc.)
+apt-get upgrade -y -qq \
+  -o Dpkg::Options::="--force-confold" \
+  -o Dpkg::Options::="--force-confdef"
 apt-get install -y -qq \
   curl \
   ca-certificates \
