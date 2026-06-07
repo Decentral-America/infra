@@ -35,6 +35,10 @@ terraform {
     skip_metadata_api_check     = true
     skip_region_validation      = true
 
+    # R2 uses path-style URLs: endpoint/bucket (not bucket.endpoint).
+    # Without this the SDK tries virtual-hosted style which R2 rejects with 404.
+    use_path_style = true
+
     # Workspaces are stored as: env:/<workspace>/terraform.tfstate
     workspace_key_prefix = "env:"
 
