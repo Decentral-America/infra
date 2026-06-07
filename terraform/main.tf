@@ -34,16 +34,22 @@ terraform {
     method "aes_gcm" "state" {
       keys = key_provider.pbkdf2.state
     }
+    # Migration fallback: reads existing unencrypted state from R2 and
+    # re-encrypts it on the next successful write.
+    # Remove this entire method + fallback blocks once all workspaces have
+    # been applied at least once and state is fully encrypted.
+    method "unencrypted" "migrate" {}
     state {
       method = method.aes_gcm.state
-      # Migration fallback: allows reading existing unencrypted state from R2.
-      # On the next successful write, OpenTofu re-encrypts automatically.
-      # Remove this fallback block once all workspaces have been applied at least once.
-      fallback {}
+      fallback {
+        method = method.unencrypted.migrate
+      }
     }
     plan {
       method = method.aes_gcm.state
-      fallback {}
+      fallback {
+        method = method.unencrypted.migrate
+      }
     }
   }
 
