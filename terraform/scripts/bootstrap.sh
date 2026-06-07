@@ -122,14 +122,77 @@ grep -qF "$DEPLOY_PUBLIC_KEY" /home/deploy/.ssh/authorized_keys 2>/dev/null \
 chmod 600 /home/deploy/.ssh/authorized_keys
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 
-# -- SSH hardening -------------------------------------------------------------
-# Disable root password login (key-based root access preserved for emergency).
-# Disable all password authentication -- SSH keys only.
-sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-systemctl restart sshd
-echo "[bootstrap] SSH hardened: PermitRootLogin=prohibit-password, PasswordAuthentication=no"
+# -- SSH hardening (CIS Debian 12 Benchmark v1.1.0 + Mozilla Modern) ----------
+#
+# We write to /etc/ssh/sshd_config.d/99-dcc-hardening.conf (a drop-in file)
+# rather than modifying sshd_config directly with sed. This approach:
+#   1. Survives openssh-server package upgrades without dpkg conflict prompts
+#      (the root cause of the interactive dialog that blocked bootstrap)
+#   2. Is auditable — all hardening in one place, not scattered across sed calls
+#   3. Takes precedence over sshd_config (Include directive runs alphabetically,
+#      99-* always wins over defaults)
+#
+# Algorithm choices:
+#   Ciphers:       chacha20-poly1305 first (no AES timing side-channel),
+#                  AES-GCM (authenticated), AES-CTR (counter mode). No CBC.
+#   KexAlgorithms: - prefix removes weak algorithms while preserving the full
+#                  default list — including sntrup761x25519-sha512 (post-quantum
+#                  hybrid, default since OpenSSH 9.0 on Debian 12 / 9.2p1).
+#                  Removes NIST ECDH curves and group14 (2048-bit, weak for 2026).
+#   MACs:          ETM (Encrypt-then-MAC) variants first; non-ETM as fallback.
+#                  Removes SHA-1 and UMAC-64.
+
+cat > /etc/ssh/sshd_config.d/99-dcc-hardening.conf << 'SSHEOF'
+# DCC backend node SSH hardening
+# CIS Debian 12 Benchmark v1.1.0 + Mozilla OpenSSH Modern (2025)
+
+# -- Access control -----------------------------------------------------------
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AllowUsers deploy
+
+# -- Session limits -----------------------------------------------------------
+MaxAuthTries 3
+LoginGraceTime 30
+ClientAliveInterval 300
+ClientAliveCountMax 0
+
+# -- Disable unused features --------------------------------------------------
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+PermitUserEnvironment no
+Compression no
+PrintMotd no
+
+# -- Cryptographic algorithm hardening ----------------------------------------
+# Ciphers: no CBC mode, no legacy ciphers
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+
+# KexAlgorithms: remove weak algorithms via - prefix, preserve PQ hybrid
+# (sntrup761x25519-sha512@openssh.com is default on OpenSSH 9.2p1 / Debian 12)
+KexAlgorithms -ecdh-sha2-nistp256,-ecdh-sha2-nistp384,-ecdh-sha2-nistp521,-diffie-hellman-group14-sha256,-diffie-hellman-group14-sha1,-diffie-hellman-group1-sha1
+
+# MACs: ETM (Encrypt-then-MAC) variants preferred; remove SHA-1 and UMAC-64
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
+
+# HostKeyAlgorithms: prefer Ed25519 (modern, fast), keep RSA for compatibility
+HostKeyAlgorithms ssh-ed25519,ssh-ed25519-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-256
+SSHEOF
+
+chmod 600 /etc/ssh/sshd_config.d/99-dcc-hardening.conf
+
+# Filter out weak Diffie-Hellman moduli (< 3072 bits) from /etc/ssh/moduli
+# This hardens the diffie-hellman-group-exchange-sha256 key exchange
+awk '$5 >= 3071' /etc/ssh/moduli > /tmp/moduli.safe \
+  && mv /tmp/moduli.safe /etc/ssh/moduli \
+  && echo "[bootstrap] DH moduli filtered: only >= 3072-bit groups retained"
+
+sshd -t && systemctl restart sshd \
+  || { echo "[bootstrap] FATAL: sshd config test failed -- check /etc/ssh/sshd_config.d/99-dcc-hardening.conf"; exit 1; }
+echo "[bootstrap] SSH hardened: CIS Debian 12 + Mozilla Modern profile applied via drop-in"
 
 # -- fail2ban (SSH brute-force protection) ------------------------------------
 apt-get install -y -qq fail2ban
