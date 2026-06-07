@@ -150,6 +150,8 @@ jobs:
         id: capture
         if: inputs.action == 'apply'
         run: echo "server_ip=$(tofu output -raw backend_ip)" >> "$GITHUB_OUTPUT"
+        env:
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
 
       - name: OpenTofu Destroy
         if: inputs.action == 'destroy'
