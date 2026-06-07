@@ -74,7 +74,7 @@ echo "deb [arch=$(dpkg --print-architecture) \
   > /etc/apt/sources.list.d/pgdg.list
 
 apt-get update -qq
-apt-get install -y -qq postgresql-17 postgresql-client-17
+apt-get install -y -qq postgresql-18 postgresql-client-18
 
 # -- Docker --------------------------------------------------------------------
 install -m 0755 -d /etc/apt/keyrings
@@ -291,16 +291,14 @@ sudo -u postgres psql -c "ALTER SYSTEM SET log_disconnections = on;" >/dev/null 
 systemctl reload postgresql
 echo "[bootstrap] PostgreSQL hardened: scram-sha-256, connection logging enabled"
 
-# -- rclone v1.74.2 (for PostgreSQL off-site backup) -------------------------
+# -- rclone v1.74.3 (for PostgreSQL off-site backup) -------------------------
 # Install from the official Debian package -- no curl-pipe-to-sh pattern.
 # Only installed if BACKUP_OBJ_BUCKET is non-empty; safe no-op otherwise.
 if [[ -n "${BACKUP_OBJ_BUCKET:-}" ]]; then
   echo "[bootstrap] Installing rclone for off-site backup..."
-  RCLONE_DEB="rclone-v1.74.2-linux-amd64.deb"
-  RCLONE_URL="https://github.com/rclone/rclone/releases/download/v1.74.2/${RCLONE_DEB}"
-  # SHA-256 of rclone-v1.74.2-linux-amd64.deb (from rclone.org SHA256SUMS)
-  RCLONE_SHA256="$(curl -fsSL https://github.com/rclone/rclone/releases/download/v1.74.2/SHA256SUMS \
-    | grep "${RCLONE_DEB}" | awk '{print $1}')"
+  RCLONE_DEB="rclone-v1.74.3-linux-amd64.deb"
+  RCLONE_URL="https://github.com/rclone/rclone/releases/download/v1.74.3/${RCLONE_DEB}"
+  RCLONE_SHA256="408cde598307dedc26b7108553cb2147a8d2d12853100447e802f47454582ecc"
   curl -fsSL "${RCLONE_URL}" -o "/tmp/${RCLONE_DEB}"
   echo "${RCLONE_SHA256}  /tmp/${RCLONE_DEB}" | sha256sum --check --status \
     || { echo "[bootstrap] FATAL: rclone SHA256 mismatch -- aborting"; exit 1; }
