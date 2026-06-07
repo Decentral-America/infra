@@ -55,6 +55,7 @@ variable "postgres_password" {
   description = "DEPRECATED: no longer passed via StackScript UDF. Kept to avoid breaking existing state. Will be removed in a future cleanup."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "default_matcher" {
