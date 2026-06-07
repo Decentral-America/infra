@@ -1,6 +1,6 @@
 output "backend_ip" {
   description = "Public IPv4 address of the backend Linode instance"
-  value       = linode_instance.backend.ip_address
+  value       = tolist(linode_instance.backend.ipv4)[0]
 }
 
 output "backend_ipv6" {
