@@ -35,9 +35,9 @@ services:
       # Without this, DCC_NETWORK defaults to "mainnet" (Dockerfile ENV) and
       # non-mainnet deploys start with the wrong blockchain type.
       DCC_NETWORK: "${NETWORK:-mainnet}"
-      # JVM heap size — node-scala is a JVM process; 6g heap leaves headroom
-      # for the OS and the matcher on a 16 GB host. Tune per instance type.
-      DCC_HEAP_SIZE: "6g"
+      # JVM heap size — 2g is sufficient for testnet (low chain history, low load).
+      # Scale to 6g for stagenet/mainnet on a 16 GB host.
+      DCC_HEAP_SIZE: "2g"
 
     ports:
       # REST API — localhost only; expose via Caddy reverse proxy
@@ -77,12 +77,11 @@ services:
     deploy:
       resources:
         limits:
-          # JVM heap (6g) + off-heap (native buffers, metaspace, OS) ≈ 8-10 GB peak.
-          # Set limit at 10g; alert if consistently above 8g.
-          memory: 10g
+          # JVM heap (2g) + RocksDB native + JVM overhead ≈ 3.5 GB peak for testnet.
+          # Scale to 10g for stagenet/mainnet on a 16 GB host.
+          memory: 4g
         reservations:
-          # Reserve 2g to ensure the scheduler keeps this container running.
-          memory: 2g
+          memory: 1g
 
     logging:
       driver: json-file
