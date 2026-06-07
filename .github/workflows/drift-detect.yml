@@ -129,6 +129,7 @@ jobs:
           tofu init -backend-config=backend.hcl -input=false
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
 
       - name: Select workspace
         if: >-
@@ -138,6 +139,7 @@ jobs:
         run: tofu workspace select -or-create "${{ matrix.network }}"
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
 
       - name: OpenTofu Plan (drift detection)
         id: plan
@@ -177,6 +179,7 @@ jobs:
           esac
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
 
       - name: Write drift summary
         if: >-
