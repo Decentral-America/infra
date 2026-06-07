@@ -8,6 +8,10 @@
 # <UDF name="DEPLOY_PUBLIC_KEY" label="Deploy SSH public key" />
 # <UDF name="NETWORK"           label="Network name (mainnet/stagenet/testnet)" />
 # <UDF name="CHAIN_ID"          label="DCC chain ID (63/83/33)" />
+# <UDF name="POSTGRES_HOST"     label="PostgreSQL host" default="localhost" />
+# <UDF name="POSTGRES_PORT"     label="PostgreSQL port" default="5432" />
+# <UDF name="POSTGRES_USER"     label="PostgreSQL user" default="dcc" />
+# <UDF name="POSTGRES_DATABASE" label="PostgreSQL database name" default="" />
 # <UDF name="POSTGRES_PASSWORD" label="PostgreSQL password" default="" private="true" />
 # <UDF name="DEFAULT_MATCHER"   label="DCC matcher blockchain address" />
 # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
