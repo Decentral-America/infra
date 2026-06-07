@@ -21,11 +21,27 @@ terraform {
   # Region and endpoint are passed at runtime via -backend-config=backend.hcl
   # (written by provision.yml / drift-detect.yml using CF_ACCOUNT_ID + R2 credentials).
   # Create bucket first: Cloudflare Dashboard → R2 → Create bucket → dcc-tofu-state
-  #
-  # Encryption note: R2 encrypts data at rest (AES-256). The state file does NOT
-  # contain secrets because all sensitive variables have `sensitive = true` in
-  # variables.tf, which causes OpenTofu to redact them from state. The bucket
-  # is private and accessible only via the R2 API token passed at tofu init time.
+
+  # State encryption (OpenTofu ≥ 1.7 native AES-256-GCM).
+  # Passphrase is passed via TF_VAR_state_encryption_passphrase env var (GitHub secret).
+  # Even if R2 credentials are compromised, the state file is unreadable without the passphrase.
+  # NOTE: sensitive=true suppresses log output but does NOT prevent plaintext state storage
+  # without this encryption block — both are required for full protection.
+  encryption {
+    key_provider "pbkdf2" "state" {
+      passphrase = var.state_encryption_passphrase
+    }
+    method "aes_gcm" "state" {
+      keys = key_provider.pbkdf2.state
+    }
+    state {
+      method = method.aes_gcm.state
+    }
+    plan {
+      method = method.aes_gcm.state
+    }
+  }
+
   backend "s3" {
     bucket = "dcc-tofu-state"
     key    = "terraform.tfstate" # workspace prefix added automatically: env:/<workspace>/terraform.tfstate
@@ -97,7 +113,11 @@ resource "linode_instance" "backend" {
   # those services bind to loopback only and are proxied by Caddy with auto-TLS.
   firewall_id = linode_firewall.backend.id
 
-  # Bootstrap script: install Docker, create deploy user, write secrets
+  # Bootstrap script: install Docker, PostgreSQL, create deploy user, set up directories.
+  # SENSITIVE secrets (wallet seed, passwords, API keys) are NOT passed here.
+  # They are pushed via SSH by provision.yml after the instance boots, using
+  # SOPS-encrypted secrets/testnet.env decrypted with the age key (AGE_SECRET_KEY).
+  # This keeps sensitive values out of Linode's infrastructure entirely.
   stackscript_id = linode_stackscript.bootstrap.id
   stackscript_data = {
     DEPLOY_PUBLIC_KEY                     = var.deploy_ssh_public_key
@@ -107,22 +127,15 @@ resource "linode_instance" "backend" {
     POSTGRES_PORT                         = var.postgres_port
     POSTGRES_USER                         = var.postgres_user
     POSTGRES_DATABASE                     = var.postgres_database != "" ? var.postgres_database : "dcc_${local.network}"
-    POSTGRES_PASSWORD                     = var.postgres_password
     DEFAULT_MATCHER                       = var.default_matcher
     RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
     RATE_THRESHOLD_ASSET_ID               = var.rate_threshold_asset_id
     BLOCKCHAIN_UPDATES_URL                = var.blockchain_updates_url
-    MATCHER_ACCOUNT_PASSWORD              = var.matcher_account_password
-    MATCHER_API_KEY_HASH                  = var.matcher_api_key_hash
     SCANNER_DOMAIN                        = var.scanner_domain
     DATA_SERVICE_DOMAIN                   = var.data_service_domain
     ACME_EMAIL                            = var.acme_email
-    BACKUP_OBJ_ACCESS_KEY                 = var.backup_obj_access_key
-    BACKUP_OBJ_SECRET_KEY                 = var.backup_obj_secret_key
     BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
     BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
-    NODE_WALLET_SEED                      = var.node_wallet_seed
-    NODE_WALLET_PASSWORD                  = var.node_wallet_password
   }
 
   # Prevent accidental destruction of the backend server.
