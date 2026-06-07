@@ -12,22 +12,22 @@
 # <UDF name="POSTGRES_PORT"     label="PostgreSQL port" default="5432" />
 # <UDF name="POSTGRES_USER"     label="PostgreSQL user" default="dcc" />
 # <UDF name="POSTGRES_DATABASE" label="PostgreSQL database name" default="" />
-# <UDF name="POSTGRES_PASSWORD" label="PostgreSQL password" default="" private="true" />
 # <UDF name="DEFAULT_MATCHER"   label="DCC matcher blockchain address" />
 # <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
 # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
-# <UDF name="BLOCKCHAIN_UPDATES_URL"              label="DCC node Blockchain Updates gRPC URL (e.g. grpc://mainnet-node.decentralchain.io:6881)" />
-# <UDF name="MATCHER_ACCOUNT_PASSWORD"            label="DEX Matcher account.dat encryption password" default="" private="true" />
-# <UDF name="MATCHER_API_KEY_HASH"                label="DEX Matcher API key hash (Base58-encoded SHA256)" default="" private="true" />
-# <UDF name="SCANNER_DOMAIN"      label="Scanner/block-explorer domain for Caddy TLS (e.g. explorer.decentralchain.io)" default="" />
-# <UDF name="DATA_SERVICE_DOMAIN" label="Data-service API domain for Caddy TLS (e.g. data-service.decentralchain.io)" default="" />
+# <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL (e.g. grpc://localhost:6881)" />
+# <UDF name="SCANNER_DOMAIN"      label="Scanner/block-explorer domain for Caddy TLS" default="" />
+# <UDF name="DATA_SERVICE_DOMAIN" label="Data-service API domain for Caddy TLS" default="" />
 # <UDF name="ACME_EMAIL"          label="ACME/Let's Encrypt email for TLS cert expiry alerts (optional)" default="" />
-# <UDF name="BACKUP_OBJ_ACCESS_KEY" label="Object storage access key for pg_dump off-site backup (rclone Linode/S3 provider)" default="" private="true" />
-# <UDF name="BACKUP_OBJ_SECRET_KEY" label="Object storage secret key for pg_dump off-site backup" default="" private="true" />
-# <UDF name="BACKUP_OBJ_BUCKET"     label="Object storage bucket name for pg_dump backups (e.g. dcc-backups-mainnet)" default="" />
-# <UDF name="BACKUP_OBJ_ENDPOINT"   label="Object storage endpoint for rclone S3 provider (e.g. us-east-1.linodeobjects.com)" default="" />
-# <UDF name="NODE_WALLET_SEED"      label="Base58-encoded seed for node-scala wallet (required for mining)" private="true" />
-# <UDF name="NODE_WALLET_PASSWORD"  label="Encryption password for node-scala wallet file" private="true" />
+# <UDF name="BACKUP_OBJ_BUCKET"   label="Object storage bucket name for pg_dump backups (leave empty to disable)" default="" />
+# <UDF name="BACKUP_OBJ_ENDPOINT" label="Object storage endpoint for rclone S3 provider" default="" />
+#
+# SENSITIVE SECRETS ARE NOT ACCEPTED VIA UDF.
+# POSTGRES_PASSWORD, NODE_WALLET_SEED, NODE_WALLET_PASSWORD,
+# MATCHER_ACCOUNT_PASSWORD, MATCHER_API_KEY_HASH,
+# BACKUP_OBJ_ACCESS_KEY, BACKUP_OBJ_SECRET_KEY
+# are all injected post-boot via SSH push (SOPS-encrypted secrets file)
+# by the provision.yml workflow. They never transit Linode infrastructure.
 # ----------------------------------------------------------------------------
 set -euo pipefail
 
@@ -172,47 +172,37 @@ case "$NETWORK" in
     ;;
 esac
 
-# -- Server secrets file -------------------------------------------------------
-# Tier 3 secrets: never stored in GitHub. Written once here by bootstrap.
-# Containers source this file at startup via env_file: in docker-compose.
-#
-# IMPORTANT -- printf, not heredoc:
-# An unquoted heredoc (<<EOF) expands shell metacharacters inside the body, so
-# POSTGRES_PASSWORD values containing $, `, \, or ! are silently corrupted.
-# printf '%s' never interprets its argument as a format string, making it safe
-# for all password values regardless of content. (Audit finding F-07.)
-#
-# Suppress trace/verbose output during secret operations (Audit P6 CRITICAL-1).
+# -- Server secrets file (non-sensitive values only) ---------------------------
+# Sensitive values (PGPASSWORD, DCC_WALLET_SEED, DCC_WALLET_PASSWORD,
+# MATCHER_ACCOUNT_PASSWORD, MATCHER_API_KEY_HASH, RCLONE credentials) are
+# NOT written here. They are appended by the SSH push step in provision.yml
+# using SOPS-decrypted secrets. This file is safe to create with UDF values.
 set +x 2>/dev/null || true
 {
-  printf '# DecentralChain %s secrets -- managed by OpenTofu bootstrap\n' "${NETWORK}"
+  printf '# DecentralChain %s runtime config -- non-sensitive values\n' "${NETWORK}"
+  printf '# Sensitive values are appended by provision.yml SSH push (SOPS).\n'
   printf '# DO NOT store this file in version control.\n'
   printf 'NETWORK=%s\n'                                "${NETWORK}"
   printf 'CHAIN_ID=%s\n'                               "${CHAIN_ID}"
-  printf '# PostgreSQL -- both data-service (libpq PG*) and BPS (envy PG prefix) read these\n'
+  printf '# PostgreSQL connection (password appended by SSH push)\n'
   printf 'PGHOST=%s\n'                                 "${POSTGRES_HOST}"
   printf 'PGPORT=%s\n'                                 "${POSTGRES_PORT}"
   printf 'PGDATABASE=%s\n'                             "${POSTGRES_DATABASE}"
   printf 'PGUSER=%s\n'                                 "${POSTGRES_USER}"
-  printf 'PGPASSWORD=%s\n'                             "${POSTGRES_PASSWORD}"
-  printf '# DCC public endpoints (scanner uses these at runtime)\n'
+  printf '# DCC public endpoints\n'
   printf 'DCC_NODE_URL=%s\n'                           "${DCC_NODE_URL}"
   printf 'DCC_MATCHER_URL=%s\n'                        "${DCC_MATCHER_URL}"
   printf 'DCC_DATA_SERVICE_URL=%s\n'                   "${DCC_DATA_SERVICE_URL}"
-  printf '# blockchain-postgres-sync gRPC endpoint (provided as UDF at instance creation)\n'
   printf 'BLOCKCHAIN_UPDATES_URL=%s\n'                 "${BLOCKCHAIN_UPDATES_URL}"
-  printf '# Data-service matcher config\n'
   printf 'DEFAULT_MATCHER=%s\n'                        "${DEFAULT_MATCHER}"
   printf 'RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=%s\n'  "${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}"
   printf 'RATE_THRESHOLD_ASSET_ID=%s\n'                "${RATE_THRESHOLD_ASSET_ID}"
-  printf '# Node wallet (entrypoint.sh reads these, writes to temp config, then unsets)\n'
-  printf 'DCC_WALLET_SEED=%s\n'                        "${NODE_WALLET_SEED}"
-  printf 'DCC_WALLET_PASSWORD=%s\n'                    "${NODE_WALLET_PASSWORD}"
 } > "/opt/dcc/secrets/${NETWORK}.env"
 
 chmod 640 "/opt/dcc/secrets/${NETWORK}.env"
 chown root:deploy "/opt/dcc/secrets/${NETWORK}.env"
-echo "[bootstrap] Server secrets written to /opt/dcc/secrets/${NETWORK}.env"
+echo "[bootstrap] Non-sensitive config written to /opt/dcc/secrets/${NETWORK}.env"
+echo "[bootstrap] Awaiting SSH push for sensitive secrets (PGPASSWORD, wallet seed, matcher credentials)"
 
 # -- Matcher network-specific config ------------------------------------------
 # The DEX matcher image includes this file via:
@@ -231,10 +221,13 @@ case "$CHAIN_ID" in
   *)  ADDR_SCHEME="D" ;;   # devnet / unknown -- fail loudly at matcher startup
 esac
 
+# Write matcher config skeleton -- sensitive values injected by SSH push.
+# MATCHER_ACCOUNT_PASSWORD and MATCHER_API_KEY_HASH are never passed via UDF.
+# provision.yml SSH push rewrites this file with real values after boot.
 {
-  printf '# DecentralChain DEX Matcher local config -- managed by OpenTofu bootstrap\n'
+  printf '# DecentralChain DEX Matcher local config -- skeleton written by bootstrap\n'
   printf '# Network: %s  Chain ID: %s\n' "${NETWORK}" "${CHAIN_ID}"
-  printf '# DO NOT store this file in version control.\n'
+  printf '# SENSITIVE VALUES (password, api-key-hashes) are injected by SSH push (SOPS).\n'
   printf 'dcc.dex {\n'
   printf '  address-scheme-character = "%s"\n'                             "${ADDR_SCHEME}"
   printf '  dcc-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
@@ -243,10 +236,10 @@ esac
   printf '    type = "encrypted-file"\n'
   printf '    encrypted-file {\n'
   printf '      path = "/var/lib/decentralchain-dex/account.dat"\n'
-  printf '      password = "%s"\n'                                          "${MATCHER_ACCOUNT_PASSWORD}"
+  printf '      password = "PLACEHOLDER_INJECTED_BY_SSH_PUSH"\n'
   printf '    }\n'
   printf '  }\n'
-  printf '  rest-api.api-key-hashes = ["%s"]\n'                            "${MATCHER_API_KEY_HASH}"
+  printf '  rest-api.api-key-hashes = ["PLACEHOLDER_INJECTED_BY_SSH_PUSH"]\n'
   printf '}\n'
 } > "/opt/dcc/config/matcher-${NETWORK}/local.conf"
 
@@ -256,17 +249,23 @@ chown root:deploy "/opt/dcc/config/matcher-${NETWORK}/local.conf"
 # -- PostgreSQL setup ----------------------------------------------------------
 systemctl enable --now postgresql
 
-# Suppress trace output during credential operations (Audit P6 CRITICAL-1).
+# Create the dcc role with a TEMPORARY random password.
+# The real POSTGRES_PASSWORD (from SOPS) is set by the SSH push step in
+# provision.yml immediately after bootstrap completes, before any service starts.
+# The temp password is never stored, transmitted, or logged.
 set +x 2>/dev/null || true
+TEMP_POSTGRES_PASS=$(openssl rand -hex 32)
 sudo -u postgres psql -c "
   DO \$\$
   BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dcc') THEN
-      CREATE ROLE dcc LOGIN PASSWORD '${POSTGRES_PASSWORD}';
+      CREATE ROLE dcc LOGIN PASSWORD '${TEMP_POSTGRES_PASS}';
     END IF;
   END
   \$\$;
 " >/dev/null 2>&1
+TEMP_POSTGRES_PASS=""
+unset TEMP_POSTGRES_PASS
 
 sudo -u postgres psql -tc \
   "SELECT 1 FROM pg_database WHERE datname = 'dcc_${NETWORK}'" \
@@ -380,14 +379,13 @@ chown postgres:postgres /opt/dcc/scripts/pg-backup.sh
 # Backup credentials are passed via crontab environment variables -- NOT embedded
 # in the backup script. This prevents credential leakage via script file reads.
 # (Audit P6 CRITICAL-4)
+# Install backup crontab WITHOUT credentials.
+# RCLONE_S3_ACCESS_KEY_ID and RCLONE_S3_SECRET_ACCESS_KEY are injected by
+# the SSH push step in provision.yml (SOPS). They never transit Linode UDFs.
 {
-  if [[ -n "${BACKUP_OBJ_ACCESS_KEY:-}" && -n "${BACKUP_OBJ_SECRET_KEY:-}" ]]; then
-    printf 'RCLONE_S3_ACCESS_KEY_ID=%s\n' "${BACKUP_OBJ_ACCESS_KEY}"
-    printf 'RCLONE_S3_SECRET_ACCESS_KEY=%s\n' "${BACKUP_OBJ_SECRET_KEY}"
-  fi
   printf '%s\n' "0 2 * * * /opt/dcc/scripts/pg-backup.sh >> /var/log/pg-backup.log 2>&1"
 } | crontab -u postgres -
-echo "[bootstrap] PostgreSQL daily backup cron installed (02:00 UTC, 7-day local retention${BACKUP_OBJ_BUCKET:+, off-site: ${BACKUP_OBJ_BUCKET}})"
+echo "[bootstrap] PostgreSQL daily backup cron installed (credentials injected by SSH push)"
 
 # -- GHCR authentication for docker pull --------------------------------------
 # GHCR login is handled per-deploy in deploy-container.yml by passing
@@ -474,3 +472,9 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
 fi
 
 echo "[bootstrap] Bootstrap complete. Network: $NETWORK, Chain ID: $CHAIN_ID"
+
+# Signal to provision.yml SSH push step that bootstrap is done and the server
+# is ready to receive sensitive secrets (PGPASSWORD, wallet seed, matcher creds).
+touch /opt/dcc/.bootstrap-complete
+chmod 644 /opt/dcc/.bootstrap-complete
+echo "[bootstrap] Ready for SSH secrets push. Waiting for provision.yml to inject sensitive values."
