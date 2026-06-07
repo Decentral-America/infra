@@ -4,9 +4,9 @@
 # Triggered manually via workflow_dispatch with a target (plan | apply | destroy).
 # Uses OpenTofu 1.12.1 (stable) with the Linode provider v3.13.
 #
-# State backend: Linode Object Storage (S3-compatible).
+# State backend: Cloudflare R2 (S3-compatible, free tier).
 # Create the state bucket before first run:
-#   linode-cli obj mb dcc-tofu-state --cluster us-east-1
+#   Cloudflare Dashboard → R2 → Create bucket → name: dcc-tofu-state
 #
 # Required secrets (infra repo level, not environment-scoped):
 #   LINODE_TOKEN        — Linode API token (read/write)

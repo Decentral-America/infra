@@ -9,6 +9,11 @@
 # Sensitive variable files — operators create their own from terraform.tfvars.example
 *.tfvars
 *.tfvars.json
+# Network-specific non-sensitive defaults ARE committed — they contain no secrets.
+# Secrets are injected as TF_VAR_* environment variables by provision.yml.
+!testnet.tfvars
+!stagenet.tfvars
+!mainnet.tfvars
 
 # Plan files — binary, potentially contain sensitive values
 tfplan
