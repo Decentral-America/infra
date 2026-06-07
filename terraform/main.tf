@@ -152,7 +152,7 @@ resource "linode_instance" "backend" {
   # Prevent accidental destruction of the backend server.
   # To intentionally tear down, temporarily set this to false, apply, then destroy.
   lifecycle {
-    prevent_destroy = false
+    prevent_destroy = true
   }
 }
 
