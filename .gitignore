@@ -41,5 +41,15 @@ Thumbs.db
 .secrets
 .artifacts/
 
+# ─── SOPS / age ──────────────────────────────────────────────────────────────
+# age private key files — must NEVER be committed
+# Public keys are safe (they're in .sops.yaml). Private keys stay in KeePassium + GitHub.
+*.age.key
+*.agekey
+age-*.key
+age_*.key
+# SOPS editor backup files
+*.sops.bak
+
 # ─── Logs ────────────────────────────────────────────────────────────────────
 *.log
