@@ -111,7 +111,7 @@ jobs:
           set -euo pipefail
           printf 'bucket   = "dcc-tofu-state"\n'                                        > backend.hcl
           printf 'region   = "auto"\n'                                                  >> backend.hcl
-          printf 'endpoint = "https://%s.r2.cloudflarestorage.com"\n' "$CF_ACCOUNT_ID" >> backend.hcl
+          printf 'endpoint = "https://%s.eu.r2.cloudflarestorage.com"\n' "$CF_ACCOUNT_ID" >> backend.hcl
           printf 'access_key = "%s"\n' "$R2_ACCESS_KEY_ID"                             >> backend.hcl
           printf 'secret_key = "%s"\n' "$R2_SECRET_ACCESS_KEY"                         >> backend.hcl
         env:
