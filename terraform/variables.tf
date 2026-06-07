@@ -45,8 +45,14 @@ variable "postgres_database" {
   default     = ""
 }
 
+variable "state_encryption_passphrase" {
+  description = "Passphrase for OpenTofu state file AES-GCM encryption on R2. Passed as TF_VAR_state_encryption_passphrase."
+  type        = string
+  sensitive   = true
+}
+
 variable "postgres_password" {
-  description = "PostgreSQL password written to /opt/dcc/secrets/<network>.env on the server"
+  description = "DEPRECATED: no longer passed via StackScript UDF. Kept to avoid breaking existing state. Will be removed in a future cleanup."
   type        = string
   sensitive   = true
 }
@@ -87,14 +93,14 @@ variable "blockchain_updates_url" {
 }
 
 variable "matcher_account_password" {
-  description = "DEX Matcher account.dat encryption password (used to decrypt the matcher wallet on startup)"
+  description = "DEPRECATED: no longer passed via StackScript UDF. Injected via SOPS SSH push. Kept to avoid breaking existing state."
   type        = string
   sensitive   = true
   default     = ""
 }
 
 variable "matcher_api_key_hash" {
-  description = "DEX Matcher API key hash (Base58-encoded SHA256 of the API key) for authenticated REST endpoints"
+  description = "DEPRECATED: no longer passed via StackScript UDF. Injected via SOPS SSH push. Kept to avoid breaking existing state."
   type        = string
   sensitive   = true
   default     = ""
@@ -123,14 +129,14 @@ variable "acme_email" {
 # Leave all four variables empty to disable off-site backup (local rotation only).
 
 variable "backup_obj_access_key" {
-  description = "Object storage access key for pg_dump off-site upload (rclone S3/Linode provider). Leave empty to disable off-site backup."
+  description = "DEPRECATED: no longer passed via StackScript UDF. Injected via SOPS SSH push. Kept to avoid breaking existing state."
   type        = string
   sensitive   = true
   default     = ""
 }
 
 variable "backup_obj_secret_key" {
-  description = "Object storage secret key for pg_dump off-site upload (rclone S3/Linode provider). Leave empty to disable off-site backup."
+  description = "DEPRECATED: no longer passed via StackScript UDF. Injected via SOPS SSH push. Kept to avoid breaking existing state."
   type        = string
   sensitive   = true
   default     = ""
@@ -153,13 +159,15 @@ variable "backup_obj_endpoint" {
 # and unsets the env vars immediately after reading them.
 
 variable "node_wallet_seed" {
-  description = "Base58-encoded seed for the node-scala wallet. Required for block mining. Must match one of the genesis wallet addresses."
+  description = "DEPRECATED: no longer passed via StackScript UDF. Injected via SOPS SSH push. Kept to avoid breaking existing state."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "node_wallet_password" {
-  description = "Encryption password for the node-scala wallet file (account.dat). Used to encrypt/decrypt the wallet seed on disk."
+  description = "DEPRECATED: no longer passed via StackScript UDF. Injected via SOPS SSH push. Kept to avoid breaking existing state."
   type        = string
   sensitive   = true
+  default     = ""
 }
