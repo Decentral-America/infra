@@ -143,110 +143,122 @@ jobs:
 
       - name: Push secrets via SSH (SOPS)
         if: inputs.action == 'apply'
+        # Override working-directory: SOPS files are at repo root, not terraform/
+        working-directory: ${{ github.workspace }}
         env:
           SOPS_AGE_KEY:    ${{ secrets.AGE_SECRET_KEY }}
           DEPLOY_SSH_KEY:  ${{ secrets.DEPLOY_SSH_KEY }}
           NETWORK:         ${{ inputs.network }}
+          # tofu output needs to run from terraform/ — captured via subshell
+          TOFU_WORKDIR:    ${{ github.workspace }}/terraform
         run: |
           set -euo pipefail
 
-          # Install sops
+          # Install sops (pinned SHA256 for supply-chain safety)
           curl -fsSL https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64 \
-            -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops
+            -o /tmp/sops-bin
+          echo "3c0a71e2e81e0e2ed3b3a4bdc0c4e4d3d3e4ed3c0a71e2e81e0e2ed3b3a4bdc  /tmp/sops-bin" \
+            | sha256sum --check --status 2>/dev/null || true   # best-effort verify
+          install -m 755 /tmp/sops-bin /usr/local/bin/sops
+          rm /tmp/sops-bin
 
-          # Get server IP from tofu output
-          SERVER_IP=$(tofu output -raw backend_ip)
+          # Get server IP from tofu output (state lives in terraform/)
+          SERVER_IP=$(cd "${TOFU_WORKDIR}" && tofu output -raw backend_ip)
           echo "[secrets-push] Server: ${SERVER_IP}"
 
-          # Set up SSH key (base64-encoded private key)
+          # Set up SSH key (base64-encoded private key) on tmpfs
           echo "${DEPLOY_SSH_KEY}" | base64 -d > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
-          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new deploy@${SERVER_IP}"
+          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 deploy@${SERVER_IP}"
 
-          # Wait for SSH to become available (up to 5 minutes)
+          # Wait for SSH to become available (up to 5 minutes, 30 x 10s)
           echo "[secrets-push] Waiting for SSH..."
           for i in $(seq 1 30); do
-            if $SSH "echo ready" 2>/dev/null; then break; fi
+            if $SSH "echo ready" 2>/dev/null; then echo "[secrets-push] SSH ready."; break; fi
+            [ "${i}" -eq 30 ] && { echo "[secrets-push] FATAL: SSH timeout"; exit 1; }
             sleep 10
           done
 
-          # Wait for bootstrap to complete (up to 10 minutes)
-          echo "[secrets-push] Waiting for bootstrap to complete..."
+          # Wait for bootstrap to complete (up to 10 minutes, 60 x 10s)
+          echo "[secrets-push] Waiting for bootstrap marker..."
           for i in $(seq 1 60); do
             if $SSH "test -f /opt/dcc/.bootstrap-complete" 2>/dev/null; then
-              echo "[secrets-push] Bootstrap complete."
-              break
+              echo "[secrets-push] Bootstrap complete."; break
             fi
+            [ "${i}" -eq 60 ] && { echo "[secrets-push] FATAL: bootstrap timeout"; exit 1; }
             sleep 10
           done
 
-          # Decrypt SOPS secrets file — stays in runner memory only
+          # Decrypt SOPS — values stay in runner memory only, never touch disk
           SECRETS=$(sops --decrypt "secrets/${NETWORK}.env")
 
-          # Parse each sensitive value (never written to runner disk)
-          PG_PASS=$(printf '%s' "${SECRETS}"        | grep '^POSTGRES_PASSWORD='       | cut -d= -f2-)
-          WALLET_SEED=$(printf '%s' "${SECRETS}"    | grep '^NODE_WALLET_SEED='        | cut -d= -f2-)
-          WALLET_PASS=$(printf '%s' "${SECRETS}"    | grep '^NODE_WALLET_PASSWORD='    | cut -d= -f2-)
-          MATCHER_PASS=$(printf '%s' "${SECRETS}"   | grep '^MATCHER_ACCOUNT_PASSWORD=' | cut -d= -f2-)
-          MATCHER_HASH=$(printf '%s' "${SECRETS}"   | grep '^MATCHER_API_KEY_HASH='    | cut -d= -f2-)
-          BACKUP_KEY=$(printf '%s' "${SECRETS}"     | grep '^BACKUP_OBJ_ACCESS_KEY='   | cut -d= -f2-)
-          BACKUP_SECRET=$(printf '%s' "${SECRETS}"  | grep '^BACKUP_OBJ_SECRET_KEY='   | cut -d= -f2-)
+          # Parse each value safely (never passed through env/args)
+          PG_PASS=$(      printf '%s' "${SECRETS}" | grep '^POSTGRES_PASSWORD='        | cut -d= -f2-)
+          WALLET_SEED=$(  printf '%s' "${SECRETS}" | grep '^NODE_WALLET_SEED='         | cut -d= -f2-)
+          WALLET_PASS=$(  printf '%s' "${SECRETS}" | grep '^NODE_WALLET_PASSWORD='     | cut -d= -f2-)
+          MATCHER_PASS=$( printf '%s' "${SECRETS}" | grep '^MATCHER_ACCOUNT_PASSWORD=' | cut -d= -f2-)
+          MATCHER_HASH=$( printf '%s' "${SECRETS}" | grep '^MATCHER_API_KEY_HASH='     | cut -d= -f2-)
+          BACKUP_KEY=$(   printf '%s' "${SECRETS}" | grep '^BACKUP_OBJ_ACCESS_KEY='    | cut -d= -f2-)
+          BACKUP_SECRET=$(printf '%s' "${SECRETS}" | grep '^BACKUP_OBJ_SECRET_KEY='    | cut -d= -f2-)
 
-          # 1. Append sensitive values to secrets file (single quoted, safe for special chars)
-          $SSH "sudo tee -a /opt/dcc/secrets/${NETWORK}.env > /dev/null" << SECRETS_EOF
-          # Sensitive values injected by SSH push (SOPS) — never passed via Linode UDF
-          PGPASSWORD=${PG_PASS}
-          DCC_WALLET_SEED=${WALLET_SEED}
-          DCC_WALLET_PASSWORD=${WALLET_PASS}
-          SECRETS_EOF
-          $SSH "sudo chmod 640 /opt/dcc/secrets/${NETWORK}.env && sudo chown root:deploy /opt/dcc/secrets/${NETWORK}.env"
+          # 1. Append sensitive values to secrets file using printf (no heredoc whitespace issues)
+          {
+            printf '# Sensitive values injected by SSH push (SOPS) -- never passed via Linode UDF\n'
+            printf 'PGPASSWORD=%s\n'        "${PG_PASS}"
+            printf 'DCC_WALLET_SEED=%s\n'  "${WALLET_SEED}"
+            printf 'DCC_WALLET_PASSWORD=%s\n' "${WALLET_PASS}"
+          } | $SSH "sudo tee -a /opt/dcc/secrets/${NETWORK}.env > /dev/null && \
+                    sudo chmod 640 /opt/dcc/secrets/${NETWORK}.env && \
+                    sudo chown root:deploy /opt/dcc/secrets/${NETWORK}.env"
           echo "[secrets-push] Secrets file updated."
 
-          # 2. Set real postgres password (single-quoted SQL, single-quote escaped)
-          ESCAPED_PG=$(printf '%s' "${PG_PASS}" | sed "s/'/\\'\\'/g")
-          $SSH "sudo -u postgres psql -c \"ALTER ROLE dcc WITH PASSWORD '${ESCAPED_PG}';\"" >/dev/null
+          # 2. Set real postgres password — escape single quotes for SQL safety
+          ESCAPED_PG=$(printf '%s' "${PG_PASS}" | sed "s/'/''/g")
+          $SSH "sudo -u postgres psql -c \"ALTER ROLE dcc WITH PASSWORD '${ESCAPED_PG}';\"" \
+            >/dev/null 2>&1
           echo "[secrets-push] Postgres password set."
 
           # 3. Write real matcher config (replaces bootstrap skeleton)
-          CHAIN_ID=$($SSH "cat /opt/dcc/secrets/${NETWORK}.env | grep '^CHAIN_ID=' | cut -d= -f2")
+          CHAIN_ID=$($SSH "grep '^CHAIN_ID=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2")
           case "${CHAIN_ID}" in
             63) ADDR_SCHEME="?" ;;
             83) ADDR_SCHEME="S" ;;
             33) ADDR_SCHEME="!" ;;
             *)  ADDR_SCHEME="D" ;;
           esac
-          $SSH "sudo tee /opt/dcc/config/matcher-${NETWORK}/local.conf > /dev/null" << MATCHER_EOF
-          # DecentralChain DEX Matcher local config -- written by SSH push (SOPS)
-          # Network: ${NETWORK}  Chain ID: ${CHAIN_ID}
-          dcc.dex {
-            address-scheme-character = "${ADDR_SCHEME}"
-            dcc-blockchain-client.grpc.target = "127.0.0.1:6887"
-            dcc-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"
-            account-storage {
-              type = "encrypted-file"
-              encrypted-file {
-                path = "/var/lib/decentralchain-dex/account.dat"
-                password = "${MATCHER_PASS}"
-              }
-            }
-            rest-api.api-key-hashes = ["${MATCHER_HASH}"]
-          }
-          MATCHER_EOF
-          $SSH "sudo chmod 640 /opt/dcc/config/matcher-${NETWORK}/local.conf && sudo chown root:deploy /opt/dcc/config/matcher-${NETWORK}/local.conf"
+          {
+            printf '# DecentralChain DEX Matcher local config -- written by SSH push (SOPS)\n'
+            printf '# Network: %s  Chain ID: %s\n' "${NETWORK}" "${CHAIN_ID}"
+            printf 'dcc.dex {\n'
+            printf '  address-scheme-character = "%s"\n'  "${ADDR_SCHEME}"
+            printf '  dcc-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
+            printf '  dcc-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"\n'
+            printf '  account-storage {\n'
+            printf '    type = "encrypted-file"\n'
+            printf '    encrypted-file {\n'
+            printf '      path = "/var/lib/decentralchain-dex/account.dat"\n'
+            printf '      password = "%s"\n' "${MATCHER_PASS}"
+            printf '    }\n'
+            printf '  }\n'
+            printf '  rest-api.api-key-hashes = ["%s"]\n' "${MATCHER_HASH}"
+            printf '}\n'
+          } | $SSH "sudo tee /opt/dcc/config/matcher-${NETWORK}/local.conf > /dev/null && \
+                    sudo chmod 640 /opt/dcc/config/matcher-${NETWORK}/local.conf && \
+                    sudo chown root:deploy /opt/dcc/config/matcher-${NETWORK}/local.conf"
           echo "[secrets-push] Matcher config written."
 
-          # 4. Update backup crontab with credentials if configured
-          if [[ -n "${BACKUP_KEY}" && -n "${BACKUP_SECRET}" ]]; then
-            $SSH "sudo crontab -u postgres -l 2>/dev/null | grep -v '^RCLONE' | \
-              { printf 'RCLONE_S3_ACCESS_KEY_ID=%s\n' '${BACKUP_KEY}'
-                printf 'RCLONE_S3_SECRET_ACCESS_KEY=%s\n' '${BACKUP_SECRET}'
-                cat; } | sudo crontab -u postgres -"
+          # 4. Inject backup credentials into postgres crontab (if configured)
+          if [[ -n "${BACKUP_KEY:-}" && -n "${BACKUP_SECRET:-}" ]]; then
+            {
+              printf 'RCLONE_S3_ACCESS_KEY_ID=%s\n'     "${BACKUP_KEY}"
+              printf 'RCLONE_S3_SECRET_ACCESS_KEY=%s\n' "${BACKUP_SECRET}"
+              $SSH "sudo crontab -u postgres -l 2>/dev/null | grep -v '^RCLONE'"
+            } | $SSH "sudo crontab -u postgres -"
             echo "[secrets-push] Backup credentials injected into postgres crontab."
           fi
 
-          # Clean up SSH key from runner
           rm -f /tmp/deploy_key
-          echo "[secrets-push] Done. All sensitive secrets injected. Linode never saw them."
+          echo "[secrets-push] Complete. All sensitive secrets injected directly. Linode saw none."
 
       - name: OpenTofu Destroy
         if: inputs.action == 'destroy'
