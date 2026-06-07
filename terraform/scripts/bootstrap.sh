@@ -49,11 +49,11 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 # -- System updates ------------------------------------------------------------
 install -m 0755 -d /etc/apt/keyrings
 apt-get update -qq
-# -o Dpkg::Options keeps existing config files on conflict — never overwrite
-# files bootstrap.sh manages (sshd_config, etc.)
+# --force-confnew: always install the package maintainer's latest config.
+# bootstrap.sh then applies our hardening on top via sed — so we get
+# upstream security patches AND our customisations.
 apt-get upgrade -y -qq \
-  -o Dpkg::Options::="--force-confold" \
-  -o Dpkg::Options::="--force-confdef"
+  -o Dpkg::Options::="--force-confnew"
 apt-get install -y -qq \
   curl \
   ca-certificates \
