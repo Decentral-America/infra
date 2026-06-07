@@ -29,7 +29,8 @@ services:
 
     # Constants only — never duplicate env_file keys here.
     environment:
-      MATCHER_HEAP_SIZE: "2g"
+      # 1g is sufficient for testnet. Scale to 2g for stagenet/mainnet.
+      MATCHER_HEAP_SIZE: "1g"
       # Data directory — must point at the bind-mounted path so the DB and
       # account.dat survive image upgrades.
       DCC_DEX_ROOT: "/var/lib/decentralchain-dex"
@@ -66,9 +67,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4g
-        reservations:
+          # Scale to 4g for stagenet/mainnet.
           memory: 2g
+        reservations:
+          memory: 512m
 
     logging:
       driver: json-file
