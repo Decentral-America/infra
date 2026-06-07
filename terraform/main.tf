@@ -36,9 +36,14 @@ terraform {
     }
     state {
       method = method.aes_gcm.state
+      # Migration fallback: allows reading existing unencrypted state from R2.
+      # On the next successful write, OpenTofu re-encrypts automatically.
+      # Remove this fallback block once all workspaces have been applied at least once.
+      fallback {}
     }
     plan {
       method = method.aes_gcm.state
+      fallback {}
     }
   }
 
