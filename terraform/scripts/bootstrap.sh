@@ -40,7 +40,7 @@ chmod 640 /var/log/bootstrap.log
 
 echo "[bootstrap] Starting DCC backend node bootstrap for network: $NETWORK"
 
-# Suppress all dpkg/debconf interactive prompts — required for unattended
+# Suppress all dpkg/debconf interactive prompts -- required for unattended
 # operation. Without this, apt-get upgrade blocks on config file conflicts
 # (e.g. openssh-server sshd_config updates) and hangs indefinitely.
 export DEBIAN_FRONTEND=noninteractive
@@ -50,7 +50,7 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 install -m 0755 -d /etc/apt/keyrings
 apt-get update -qq
 # --force-confnew: always install the package maintainer's latest config.
-# bootstrap.sh then applies our hardening on top via sed — so we get
+# bootstrap.sh then applies our hardening on top via sed -- so we get
 # upstream security patches AND our customisations.
 apt-get upgrade -y -qq \
   -o Dpkg::Options::="--force-confnew"
@@ -128,7 +128,7 @@ chown deploy:deploy /home/deploy/.ssh/authorized_keys
 # rather than modifying sshd_config directly with sed. This approach:
 #   1. Survives openssh-server package upgrades without dpkg conflict prompts
 #      (the root cause of the interactive dialog that blocked bootstrap)
-#   2. Is auditable — all hardening in one place, not scattered across sed calls
+#   2. Is auditable -- all hardening in one place, not scattered across sed calls
 #   3. Takes precedence over sshd_config (Include directive runs alphabetically,
 #      99-* always wins over defaults)
 #
@@ -136,7 +136,7 @@ chown deploy:deploy /home/deploy/.ssh/authorized_keys
 #   Ciphers:       chacha20-poly1305 first (no AES timing side-channel),
 #                  AES-GCM (authenticated), AES-CTR (counter mode). No CBC.
 #   KexAlgorithms: - prefix removes weak algorithms while preserving the full
-#                  default list — including sntrup761x25519-sha512 (post-quantum
+#                  default list -- including sntrup761x25519-sha512 (post-quantum
 #                  hybrid, default since OpenSSH 9.0 on Debian 12 / 9.2p1).
 #                  Removes NIST ECDH curves and group14 (2048-bit, weak for 2026).
 #   MACs:          ETM (Encrypt-then-MAC) variants first; non-ETM as fallback.
