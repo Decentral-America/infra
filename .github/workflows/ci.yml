@@ -71,3 +71,16 @@ jobs:
             echo "Checking $script..."
             shellcheck -x "$script"
           done
+
+      # ── StackScript ASCII check ───────────────────────────────────────────────
+      # Linode StackScript API rejects any non-ASCII character (bytes > 0x7F).
+      # This check catches em dashes, Unicode arrows, box-drawing chars, etc.
+      # before they reach the API and cause a cryptic position-N error.
+      - name: Check bootstrap.sh is pure ASCII
+        run: |
+          if LC_ALL=C grep -Pn '[^\x00-\x7F]' terraform/scripts/bootstrap.sh; then
+            echo "FAIL: bootstrap.sh contains non-ASCII characters (shown above)"
+            echo "Linode StackScript API only accepts ASCII. Replace with -- or ->"
+            exit 1
+          fi
+          echo "OK: bootstrap.sh is pure ASCII"
