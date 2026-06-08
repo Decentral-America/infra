@@ -105,12 +105,14 @@ jobs:
           severity:       'HIGH,CRITICAL'
           # Exit 1 if any HIGH or CRITICAL vuln found — hard gate for all networks.
           exit-code:      '1'
-          ignore-unfixed: true
-          scanners:       'vuln'
-          version:        'v0.71.0'
-          # Force fresh DB download — cached DB from same-day runs can have
-          # stale CVE entries that differ from current state.
-          cache:          false
+          ignore-unfixed:              true
+          scanners:                    'vuln'
+          version:                     'v0.71.0'
+          # Restrict SARIF report to configured severity (HIGH,CRITICAL only).
+          # Without this, the action unsets TRIVY_SEVERITY before SARIF generation
+          # so it scans with ALL severities while still using exit-code: 1 —
+          # causing MEDIUM/LOW findings to trigger the gate.
+          limit-severities-for-sarif: 'true'
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
