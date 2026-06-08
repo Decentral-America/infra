@@ -115,6 +115,14 @@ fi
 
 usermod -aG docker deploy
 
+# Grant deploy user passwordless sudo for CI/CD operations.
+# Scope is intentionally broad for a deploy user -- access is gated by
+# SSH key-only authentication (PasswordAuthentication no, AllowUsers deploy).
+echo "deploy ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/deploy
+chmod 440 /etc/sudoers.d/deploy
+visudo -cf /etc/sudoers.d/deploy \
+  || { echo "[bootstrap] FATAL: sudoers syntax error"; exit 1; }
+
 install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
 # Idempotent: append only if key not already present (avoid duplicates on re-run)
 grep -qF "$DEPLOY_PUBLIC_KEY" /home/deploy/.ssh/authorized_keys 2>/dev/null \
