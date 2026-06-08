@@ -108,6 +108,9 @@ jobs:
           ignore-unfixed: true
           scanners:       'vuln'
           version:        'v0.71.0'
+          # Force fresh DB download — cached DB from same-day runs can have
+          # stale CVE entries that differ from current state.
+          cache:          false
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
