@@ -150,7 +150,6 @@ jobs:
           host:             ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           username:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
           key:              ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
-          fingerprint:      ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST_FINGERPRINT || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST_FINGERPRINT || secrets.MAINNET_DEPLOY_HOST_FINGERPRINT }}
           source:           compose/${{ inputs.service }}.yml
           target:           ${{ inputs.compose_dir }}/
           strip_components: 1
@@ -171,7 +170,6 @@ jobs:
           host:        ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           username:    ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
           key:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
-          fingerprint: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST_FINGERPRINT || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST_FINGERPRINT || secrets.MAINNET_DEPLOY_HOST_FINGERPRINT }}
           envs:        GHCR_TOKEN,INPUT_IMAGE,INPUT_NETWORK,INPUT_SERVICE,INPUT_COMPOSE_DIR,INPUT_WAIT_TIMEOUT
           script: |
             set -euo pipefail
