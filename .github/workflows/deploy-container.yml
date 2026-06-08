@@ -154,6 +154,23 @@ jobs:
           target:           ${{ inputs.compose_dir }}/
           strip_components: 1
 
+      - name: Upload node config to server
+        # Only runs for the node-scala service. Pushes the network-specific HOCON config
+        # (containing genesis block, chain ID, miner settings) to /opt/dcc/config/node-<network>/dcc.conf
+        # so the volume mount in node-scala.yml resolves correctly on every deploy.
+        # Layout: node-config/<network>/dcc.conf  →  strip_components: 2 removes
+        # the "node-config/<network>/" prefix, landing the file at:
+        # /opt/dcc/config/node-<network>/dcc.conf
+        if: inputs.service == 'node-scala'
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345  # v1.0.0
+        with:
+          host:             ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          username:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
+          key:              ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
+          source:           node-config/${{ inputs.network }}/dcc.conf
+          target:           /opt/dcc/config/node-${{ inputs.network }}/
+          strip_components: 2
+
       - name: Pull image, deploy, and auto-rollback on failure
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
