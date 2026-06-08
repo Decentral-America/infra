@@ -175,3 +175,4 @@ jobs:
     with:
       network:   ${{ inputs.network }}
       server_ip: ${{ needs.tofu.outputs.server_ip }}
+    secrets: inherit
