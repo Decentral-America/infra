@@ -106,6 +106,8 @@ jobs:
           # Exit 1 if any HIGH or CRITICAL vuln found — hard gate for all networks.
           exit-code:      '1'
           ignore-unfixed: true
+          scanners:       'vuln'
+          version:        'v0.71.0'
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
