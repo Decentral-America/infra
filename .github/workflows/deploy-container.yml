@@ -214,10 +214,13 @@ jobs:
 
             # docker compose up --wait blocks until the container is running/healthy
             # (respects healthcheck if defined, otherwise just waits for running state).
-            # --wait-timeout 60 caps the wait to 60 seconds.
-            if ! docker compose --file "${SERVICE}.yml" up \
+            # --wait-timeout caps the wait. --project-name isolates this service's
+            # compose project so other services in the same directory (e.g. caddy) are
+            # not treated as orphans and removed. Never use --remove-orphans here.
+            if ! docker compose \
+              --project-name "${SERVICE}-${NETWORK}" \
+              --file "${SERVICE}.yml" up \
               --detach \
-              --remove-orphans \
               --wait \
               --wait-timeout "$INPUT_WAIT_TIMEOUT" \
               "$SERVICE"; then
@@ -228,9 +231,10 @@ jobs:
               if [[ -n "$PREV_IMAGE" ]]; then
                 echo "Rolling back to previous image: $PREV_IMAGE"
                 export IMAGE_TAG="$PREV_IMAGE"
-                docker compose --file "${SERVICE}.yml" up \
+                docker compose \
+                  --project-name "${SERVICE}-${NETWORK}" \
+                  --file "${SERVICE}.yml" up \
                   --detach \
-                  --remove-orphans \
                   --wait \
                   --wait-timeout "$INPUT_WAIT_TIMEOUT" \
                   "$SERVICE" \
