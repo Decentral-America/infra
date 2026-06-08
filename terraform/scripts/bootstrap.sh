@@ -225,7 +225,18 @@ install -d -m 755 -o deploy -g deploy \
   "/opt/dcc/data/node-wallet-${NETWORK}" \
   "/opt/dcc/data/matcher-${NETWORK}" \
   "/opt/dcc/config/matcher-${NETWORK}" \
+  "/opt/dcc/config/node-${NETWORK}" \
   /opt/dcc/caddy
+
+# -- Node network config -------------------------------------------------------
+# node-scala's entrypoint.sh only injects wallet secrets (DCC_WALLET_SEED,
+# DCC_WALLET_PASSWORD) when /etc/dcc/dcc.conf exists. Without this file,
+# the entrypoint skips secret injection and the node can't unlock its wallet.
+# This include pulls the bundled network config from the image classpath.
+printf 'include classpath("decentralchain-%s.conf")\n' "${NETWORK}" \
+  > "/opt/dcc/config/node-${NETWORK}/dcc.conf"
+chmod 644 "/opt/dcc/config/node-${NETWORK}/dcc.conf"
+echo "[bootstrap] Node config written: /opt/dcc/config/node-${NETWORK}/dcc.conf"
 
 # Backup directory: postgres-owned (pg_dump writes here via cron).
 install -d -m 750 -o postgres -g postgres /opt/dcc/backups
