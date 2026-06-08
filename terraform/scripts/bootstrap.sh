@@ -228,15 +228,18 @@ install -d -m 755 -o deploy -g deploy \
   "/opt/dcc/config/node-${NETWORK}" \
   /opt/dcc/caddy
 
-# -- Node network config -------------------------------------------------------
+# -- Node network config placeholder ------------------------------------------
 # node-scala's entrypoint.sh only injects wallet secrets (DCC_WALLET_SEED,
-# DCC_WALLET_PASSWORD) when /etc/dcc/dcc.conf exists. Without this file,
-# the entrypoint skips secret injection and the node can't unlock its wallet.
-# This include pulls the bundled network config from the image classpath.
-printf 'include classpath("decentralchain-%s.conf")\n' "${NETWORK}" \
+# DCC_WALLET_PASSWORD) when /etc/dcc/dcc.conf exists. Write a minimal placeholder
+# so the file exists at boot. The deploy-container.yml workflow overwrites this
+# with the full genesis/chain config from infra/node-config/<network>/dcc.conf
+# before starting the container on every deploy.
+# This placeholder alone is not sufficient to run the node — it intentionally
+# fails fast with a clear error if deployed without the CI push step.
+printf '# Placeholder — deploy-container.yml will overwrite this before docker compose up.\n' \
   > "/opt/dcc/config/node-${NETWORK}/dcc.conf"
 chmod 644 "/opt/dcc/config/node-${NETWORK}/dcc.conf"
-echo "[bootstrap] Node config written: /opt/dcc/config/node-${NETWORK}/dcc.conf"
+echo "[bootstrap] Node config placeholder written: /opt/dcc/config/node-${NETWORK}/dcc.conf"
 
 # Backup directory: postgres-owned (pg_dump writes here via cron).
 install -d -m 750 -o postgres -g postgres /opt/dcc/backups
