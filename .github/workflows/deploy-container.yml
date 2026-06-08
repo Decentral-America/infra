@@ -125,10 +125,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: scan
-
-    # Environment declared here → reads secrets from infra repo's environments
-    environment:
-      name: ${{ inputs.network }}
+    # DEPLOY_* secrets are org-level with network prefix (TESTNET_/STAGENET_/MAINNET_).
+    # Cross-repo workflow_call cannot access callee environment secrets, so we use
+    # org-level secrets accessible to all repos without duplication.
 
     steps:
       - name: Checkout infra repository
@@ -145,10 +144,10 @@ jobs:
         # so the file lands at e.g. /opt/dcc/compose/scanner.yml (not .../compose/scanner.yml).
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345  # v1.0.0
         with:
-          host:             ${{ secrets.DEPLOY_HOST }}
-          username:         ${{ secrets.DEPLOY_USER }}
-          key:              ${{ secrets.DEPLOY_SSH_KEY }}
-          fingerprint:      ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          host:             ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          username:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
+          key:              ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
+          fingerprint:      ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST_FINGERPRINT || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST_FINGERPRINT || secrets.MAINNET_DEPLOY_HOST_FINGERPRINT }}
           source:           compose/${{ inputs.service }}.yml
           target:           ${{ inputs.compose_dir }}/
           strip_components: 1
@@ -166,10 +165,10 @@ jobs:
           INPUT_COMPOSE_DIR: ${{ inputs.compose_dir }}
           INPUT_WAIT_TIMEOUT: ${{ inputs.wait_timeout }}
         with:
-          host:        ${{ secrets.DEPLOY_HOST }}
-          username:    ${{ secrets.DEPLOY_USER }}
-          key:         ${{ secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          host:        ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          username:    ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
+          key:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST_FINGERPRINT || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST_FINGERPRINT || secrets.MAINNET_DEPLOY_HOST_FINGERPRINT }}
           envs:        GHCR_TOKEN,INPUT_IMAGE,INPUT_NETWORK,INPUT_SERVICE,INPUT_COMPOSE_DIR,INPUT_WAIT_TIMEOUT
           script: |
             set -euo pipefail
