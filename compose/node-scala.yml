@@ -38,6 +38,10 @@ services:
       # JVM heap size — 2g is sufficient for testnet (low chain history, low load).
       # Scale to 6g for stagenet/mainnet on a 16 GB host.
       DCC_HEAP_SIZE: "2g"
+      # Bind the REST API on all interfaces so Caddy (host-network) can proxy it.
+      # The entrypoint sets -Ddcc.rest-api.bind-address=$DCC_REST_API_BIND (default 127.0.0.1).
+      # Port 6869 is still mapped to 127.0.0.1 on the host — not directly reachable externally.
+      DCC_REST_API_BIND: "0.0.0.0"
 
     ports:
       # REST API — localhost only; expose via Caddy reverse proxy
