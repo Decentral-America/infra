@@ -103,7 +103,7 @@ jobs:
           format:         'sarif'
           output:         'trivy-results.sarif'
           severity:       'HIGH,CRITICAL'
-          # Exit 1 if any HIGH or CRITICAL vuln found — gates the deploy job.
+          # Exit 1 if any HIGH or CRITICAL vuln found — hard gate for all networks.
           exit-code:      '1'
           ignore-unfixed: true
 
