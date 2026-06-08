@@ -54,6 +54,10 @@ services:
     volumes:
       # Blockchain state — named volume survives image upgrades and docker rm
       - "node-scala-state-${NETWORK:-mainnet}:/var/lib/dcc"
+      # Network config — entrypoint.sh requires /etc/dcc/dcc.conf to exist before
+      # it creates the combined config (user config + injected wallet secrets).
+      # Without this mount, DCC_WALLET_SEED and DCC_WALLET_PASSWORD are never applied.
+      - "/opt/dcc/config/node-${NETWORK:-mainnet}/dcc.conf:/etc/dcc/dcc.conf:ro"
 
     # docker compose up --wait blocks until the container is running/healthy.
     # /node/version is the canonical liveness endpoint on the Scala node REST API.
