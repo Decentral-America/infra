@@ -128,7 +128,7 @@ jobs:
         # Checks out THIS (infra) repo so we can upload the latest compose file.
         # This ensures the compose file on the server is always in sync with the
         # version in git — no manual copying required.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           persist-credentials: false
 
