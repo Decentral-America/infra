@@ -113,6 +113,9 @@ jobs:
           # so it scans with ALL severities while still using exit-code: 1 —
           # causing MEDIUM/LOW findings to trigger the gate.
           limit-severities-for-sarif: 'true'
+          # CVEs in OS packages pending Debian 12 backport — not exploitable via
+          # our attack surface. See .trivyignore at root of this repo for details.
+          trivyignores: '.trivyignore'
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
