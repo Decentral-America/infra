@@ -55,12 +55,14 @@ services:
       - caddy-admin:/run/caddy
 
     # ── Health check ──────────────────────────────────────────────────────────
-    # Admin API is restricted to a Unix socket (not TCP) — prevents network
-    # access to runtime configuration. (Audit P6 HIGH-6)
+    # Check that Caddy is listening on port 80 (HTTP→HTTPS redirect) and 443 (TLS).
+    # Reads /proc/net/tcp6 directly — no wget unix-socket tricks (busybox wget in
+    # Alpine does not support http://unix:// URIs). Port 80=0x0050, 443=0x01BB.
+    # Works because Caddy runs in host-network mode and shares the host's /proc.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null --header 'Host: localhost' http://unix:/run/caddy/admin.sock:/config/ || exit 1"]
+      test: ["CMD-SHELL", "grep -qE ':0050 ' /proc/net/tcp6 && grep -qE ':01BB ' /proc/net/tcp6"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 30s
 
