@@ -89,6 +89,13 @@ jobs:
       security-events: write  # upload SARIF to GitHub Security tab
 
     steps:
+      - name: Checkout infra repository
+        # Required to make .trivyignore available in the working directory.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: Decentral-America/infra
+          persist-credentials: false
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
