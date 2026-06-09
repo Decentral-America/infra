@@ -62,6 +62,10 @@ services:
       # it creates the combined config (user config + injected wallet secrets).
       # Without this mount, DCC_WALLET_SEED and DCC_WALLET_PASSWORD are never applied.
       - "/opt/dcc/config/node-${NETWORK:-mainnet}/dcc.conf:/etc/dcc/dcc.conf:ro"
+      # DEX extension plugins — bind-mounted read-only into the node's plugin classpath.
+      # The DEXExtension JAR provides the gRPC service on port 6887 used by the matcher.
+      # Populated by: scp dcc-ext_*.jar deploy@server:/opt/dcc/plugins/<network>/dcc-ext.jar
+      - "/opt/dcc/plugins/${NETWORK:-mainnet}:/usr/share/dcc/lib/plugins:ro"
 
     # docker compose up --wait blocks until the container is running/healthy.
     # /node/version is the canonical liveness endpoint on the Scala node REST API.
