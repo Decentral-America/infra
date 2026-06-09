@@ -97,7 +97,18 @@ services:
         max-size: "100m"
         max-file: "5"
 
+# External volumes — pre-created by bootstrap.sh with a fixed name that has
+# no compose project prefix. This ensures blockchain state is preserved even
+# if the deploy project name changes (docker compose managed volumes are
+# named {project}_{volume}, so changing --project-name orphans the data).
+# bootstrap.sh: docker volume create dcc-node-state-<network>
 volumes:
   node-scala-state-mainnet:
+    external: true
+    name: "dcc-node-state-mainnet"
   node-scala-state-stagenet:
+    external: true
+    name: "dcc-node-state-stagenet"
   node-scala-state-testnet:
+    external: true
+    name: "dcc-node-state-testnet"
