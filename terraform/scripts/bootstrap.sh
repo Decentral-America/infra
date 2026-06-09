@@ -13,7 +13,7 @@
 # <UDF name="POSTGRES_USER"     label="PostgreSQL user" default="dcc" />
 # <UDF name="POSTGRES_DATABASE" label="PostgreSQL database name" default="" />
 # <UDF name="DEFAULT_MATCHER"   label="DCC matcher blockchain address" />
-# <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold" default="0" />
+# <UDF name="RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD" label="Rate pair acceptance volume threshold (must be > 0 for data-service)" default="1" />
 # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
 # <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL (e.g. grpc://localhost:6881)" />
 # <UDF name="SCANNER_DOMAIN"      label="Scanner/block-explorer domain for Caddy TLS" default="" />
@@ -292,6 +292,12 @@ set +x 2>/dev/null || true
   printf 'PGPORT=%s\n'                                 "${POSTGRES_PORT}"
   printf 'PGDATABASE=%s\n'                             "${POSTGRES_DATABASE}"
   printf 'PGUSER=%s\n'                                 "${POSTGRES_USER}"
+  # BPS (blockchain-postgres-sync) reads Postgres config with POSTGRES__ prefix
+  # via envy::prefixed("POSTGRES__"). Mirror the same values under that prefix.
+  printf 'POSTGRES__HOST=%s\n'                         "${POSTGRES_HOST}"
+  printf 'POSTGRES__PORT=%s\n'                         "${POSTGRES_PORT}"
+  printf 'POSTGRES__DATABASE=%s\n'                     "${POSTGRES_DATABASE}"
+  printf 'POSTGRES__USER=%s\n'                         "${POSTGRES_USER}"
   printf '# DCC public endpoints\n'
   printf 'DCC_NODE_URL=%s\n'                           "${DCC_NODE_URL}"
   printf 'DCC_MATCHER_URL=%s\n'                        "${DCC_MATCHER_URL}"
