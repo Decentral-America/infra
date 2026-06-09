@@ -17,10 +17,13 @@ services:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
       NODE_ENV: production
-      # PORT is a hardcoded infrastructure constant (not sourced from env_file), so it
-      # is safe to set here. Container binds to 127.0.0.1:8080 (loopback only);
-      # Caddy proxies it externally with automatic TLS on port 443.
+      # PORT is a hardcoded infrastructure constant, safe to set here.
+      # Container binds to 127.0.0.1:8080; Caddy proxies it with TLS on 443.
       PORT: "8080"
+      # data-service defaults to PGSSLMODE=require. For on-server PostgreSQL
+      # (127.0.0.1 loopback), SSL adds no security benefit and requires a
+      # trusted cert. Disable it for all local deployments.
+      PGSSLMODE: "disable"
     # DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD, RATE_THRESHOLD_ASSET_ID
     # come from env_file. Do NOT add them here — environment: overrides env_file,
     # so an unset shell var would silently clear the value.
