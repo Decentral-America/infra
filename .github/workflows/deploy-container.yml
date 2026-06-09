@@ -214,6 +214,21 @@ jobs:
             PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' "${SERVICE}-${NETWORK}" 2>/dev/null || echo "")
             echo "Previous image: ${PREV_IMAGE:-<none — first deploy>}"
 
+            # ── Clean up project-label mismatch (one-time migration) ──────────
+            # Containers created before --project-name was introduced carry the
+            # directory-based label (e.g. "compose"). docker compose up with a
+            # different --project-name sees no matching container and tries to
+            # CREATE one — but the name is taken → conflict. Detect and remove
+            # the mismatched container so docker compose can recreate it cleanly.
+            EXISTING_PROJECT=$(docker inspect \
+              --format '{{index .Config.Labels "com.docker.compose.project"}}' \
+              "${SERVICE}-${NETWORK}" 2>/dev/null || true)
+            EXPECTED_PROJECT="${SERVICE}-${NETWORK}"
+            if [[ -n "$EXISTING_PROJECT" && "$EXISTING_PROJECT" != "$EXPECTED_PROJECT" ]]; then
+              echo "Removing ${SERVICE}-${NETWORK} (project '$EXISTING_PROJECT' ≠ '$EXPECTED_PROJECT')..."
+              docker rm -f "${SERVICE}-${NETWORK}"
+            fi
+
             echo "Pulling $IMAGE_TAG"
             docker pull "$IMAGE_TAG"
 
