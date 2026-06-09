@@ -196,6 +196,14 @@ jobs:
             SERVICE="$INPUT_SERVICE"
             COMPOSE_DIR="$INPUT_COMPOSE_DIR"
 
+            # ── Pre-flight: ensure writable config dir for node-scala ─────────
+            # bootstrap.sh creates /opt/dcc/config/node-<NETWORK>/ as deploy:deploy,
+            # but manual sudo operations can change ownership to root. Self-heal here
+            # so the node-config SCP step always has a writable target.
+            if [[ "$SERVICE" == "node-scala" ]]; then
+              sudo install -d -m 755 -o deploy -g deploy "/opt/dcc/config/node-${NETWORK}"
+            fi
+
             echo "Authenticating with GHCR..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
 
