@@ -35,9 +35,12 @@ services:
       # account.dat survive image upgrades.
       DCC_DEX_ROOT: "/var/lib/decentralchain-dex"
 
-    ports:
-      # REST API — localhost only; expose externally via nginx/Caddy
-      - "127.0.0.1:6886:6886"
+    # host network mode: matcher connects to node gRPC on localhost:6887 (DEX extension)
+    # and localhost:6881 (BlockchainUpdates). Without host mode, 'localhost' inside the
+    # container resolves to the container's own loopback → Connection refused.
+    # Caddy (also host-network) still reaches the matcher on localhost:6886.
+    # The ports: section is removed — incompatible with host networking.
+    network_mode: host
 
     volumes:
       # Persistent matcher DB + account.dat
