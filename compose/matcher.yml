@@ -49,6 +49,7 @@ services:
       # eliminating com/google/protobuf/JavaFeaturesProto.class that shadowed protobuf-java-4.35.0.
       # Remove once the matcher image is rebuilt from updated source.
       - "/opt/dcc/matcher-patch/${NETWORK:-mainnet}/dcc-grpc-clean.jar:/usr/share/decentralchain-dex/lib/io.decentralchain.dcc-grpc-0.0.0-b3087f23912f5e1f2996a4ee4052aa73be2ef1ed.jar:ro"
+      - "/opt/dcc/matcher-patch/${NETWORK:-mainnet}/dex-pb-clean.jar:/usr/share/decentralchain-dex/lib/io.decentralchain.dex-pb-0.0.0-b3087f23912f5e1f2996a4ee4052aa73be2ef1ed.jar:ro"
 
     # docker compose up --wait blocks here until the healthcheck passes.
     # GET /matcher returns the matcher's Base58 public key when ready to accept orders.
