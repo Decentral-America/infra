@@ -16,10 +16,18 @@ services:
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
-      # BLOCKCHAIN_UPDATES_URL and CHAIN_ID come from env_file.
+      # BLOCKCHAIN_UPDATES_URL and CHAIN_ID come from env_file (standard names).
       # STARTING_HEIGHT: use a literal default of 0 so new deployments start
       # from genesis. Override manually for disaster-recovery scenarios.
       STARTING_HEIGHT: "0"
+      # BPS reads Postgres config with POSTGRES__ prefix (double underscore) via
+      # envy::prefixed("POSTGRES__"). The env_file provides standard libpq names
+      # (PGHOST etc.) — map them here so BPS finds its required fields.
+      POSTGRES__HOST: "${PGHOST:-localhost}"
+      POSTGRES__PORT: "${PGPORT:-5432}"
+      POSTGRES__DATABASE: "${PGDATABASE:-dcc_mainnet}"
+      POSTGRES__USER: "${PGUSER:-dcc}"
+      POSTGRES__PASSWORD: "${PGPASSWORD}"
     # The blockchain-postgres-sync binary serves an axum HTTP server on
     # METRICS_PORT (default 9090) with /health and /readiness endpoints.
     # /readiness also validates the PostgreSQL connection pool.
