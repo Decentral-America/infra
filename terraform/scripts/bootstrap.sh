@@ -228,6 +228,14 @@ install -d -m 755 -o deploy -g deploy \
   "/opt/dcc/config/node-${NETWORK}" \
   /opt/dcc/caddy
 
+# -- External Docker volumes ---------------------------------------------------
+# Declared as external in compose files so the volume name is independent of
+# the compose project name. Compose-managed volumes are named {project}_{vol},
+# so changing --project-name orphans the data. Pre-creating them here with a
+# fixed name prevents data loss if the project name ever changes.
+docker volume create "dcc-node-state-${NETWORK}" 2>/dev/null || true
+echo "[bootstrap] External Docker volumes created for ${NETWORK}"
+
 # -- Node network config placeholder ------------------------------------------
 # node-scala's entrypoint.sh only injects wallet secrets (DCC_WALLET_SEED,
 # DCC_WALLET_PASSWORD) when /etc/dcc/dcc.conf exists. Write a minimal placeholder
