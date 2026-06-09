@@ -21,13 +21,9 @@ services:
       # from genesis. Override manually for disaster-recovery scenarios.
       STARTING_HEIGHT: "0"
       # BPS reads Postgres config with POSTGRES__ prefix (double underscore) via
-      # envy::prefixed("POSTGRES__"). The env_file provides standard libpq names
-      # (PGHOST etc.) — map them here so BPS finds its required fields.
-      POSTGRES__HOST: "${PGHOST:-localhost}"
-      POSTGRES__PORT: "${PGPORT:-5432}"
-      POSTGRES__DATABASE: "${PGDATABASE:-dcc_mainnet}"
-      POSTGRES__USER: "${PGUSER:-dcc}"
-      POSTGRES__PASSWORD: "${PGPASSWORD}"
+      # envy::prefixed("POSTGRES__"). These vars are written to the secrets file
+      # by bootstrap.sh and push-secrets.yml alongside the standard PG* vars.
+      # They are NOT interpolated here from the host shell — they come from env_file.
     # The blockchain-postgres-sync binary serves an axum HTTP server on
     # METRICS_PORT (default 9090) with /health and /readiness endpoints.
     # /readiness also validates the PostgreSQL connection pool.
