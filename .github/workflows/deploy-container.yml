@@ -91,7 +91,7 @@ jobs:
     steps:
       - name: Checkout infra repository
         # Required to make .trivyignore available in the working directory.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           repository: Decentral-America/infra
           persist-credentials: false
@@ -130,7 +130,7 @@ jobs:
         # Scanning rejects uploads from non-default branches ("commit not found").
         # Scan results still appear in annotations. Never block the deploy gate.
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@21eb7f7842f33eafc83782b56fff2a2c43e9696f # v4.36.1
         with:
           sarif_file: trivy-results.sarif
 
@@ -148,7 +148,7 @@ jobs:
         # Checks out THIS (infra) repo so we can upload the latest compose file.
         # This ensures the compose file on the server is always in sync with the
         # version in git — no manual copying required.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           # Explicit repo required: when called via workflow_call from another repo,
           # actions/checkout defaults to the CALLER's repo, not infra's.
