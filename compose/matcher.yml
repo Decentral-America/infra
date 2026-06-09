@@ -63,7 +63,10 @@ services:
     # root filesystem is read-only — only named/bind-mounted volumes are writable.
     read_only: true
     tmpfs:
-      - /tmp:size=128m,mode=1777
+      # exec required: RocksDB JNI extracts librocksdbjni*.so to /tmp and
+      # loads it via dlopen(). Without exec the JNI load fails with
+      # UnsatisfiedLinkError "failed to map segment from shared object".
+      - /tmp:size=256m,mode=1777,exec
     deploy:
       resources:
         limits:
