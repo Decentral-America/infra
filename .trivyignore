@@ -1,0 +1,17 @@
+# GnuTLS CVEs in Debian 12 (bookworm) runtime images.
+#
+# All DCC services use debian:12-slim as the runtime base and install libpq5,
+# which pulls in libgnutls30 as a transitive dependency. None of our services
+# use GnuTLS or DTLS directly — they connect to local PostgreSQL over TCP and
+# to the DCC node over gRPC (backed by hyper/tonic, not GnuTLS).
+#
+# These CVEs are pending Debian 12 security backport. Track at:
+# https://security-tracker.debian.org/tracker/source-package/gnutls28
+#
+# Justification filed: 2026-06-09. Review when Debian releases the backport.
+
+CVE-2026-42009
+CVE-2026-3833
+CVE-2026-33846
+CVE-2026-42010
+CVE-2026-33845
