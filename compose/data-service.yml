@@ -9,10 +9,12 @@ services:
     image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
     container_name: "data-service-${NETWORK:-mainnet}"
     restart: unless-stopped
-    ports:
-      # Bind to loopback only — Caddy terminates TLS on 443 and forwards here.
-      # Direct external access on port 8080 is closed by the Linode firewall.
-      - "127.0.0.1:8080:8080"
+    # host network mode: data-service connects to localhost:5432 (PostgreSQL).
+    # Without this, Docker bridge mode makes 'localhost' resolve to the container's
+    # own loopback — PostgreSQL is unreachable, causing ECONNREFUSED on all DB queries.
+    # Caddy (also host-network) still reaches data-service on localhost:8080.
+    # The ports: section is removed — incompatible with host networking.
+    network_mode: host
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
