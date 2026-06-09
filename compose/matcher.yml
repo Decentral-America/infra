@@ -54,7 +54,7 @@ services:
       # eclipse-temurin:25-jre-noble doesn't ship wget. Use /proc/net/tcp6 to check
       # port 6886 is listening (same pattern as caddy health check).
       # Port 6886 = 0x1AEE in big-endian hex. Alternatively: java is always in PATH.
-      test: ["CMD-SHELL", "grep -q ':1AEE ' /proc/net/tcp6 2>/dev/null || grep -q ':1AEE ' /proc/net/tcp 2>/dev/null"]
+      test: ["CMD-SHELL", "grep -q ':1AE6 ' /proc/net/tcp6 2>/dev/null || grep -q ':1AE6 ' /proc/net/tcp 2>/dev/null"]
       interval: 30s
       timeout: 5s
       start_period: 120s
