@@ -126,6 +126,10 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
+        # continue-on-error: SARIF upload is informational only — GitHub Code
+        # Scanning rejects uploads from non-default branches ("commit not found").
+        # Scan results still appear in annotations. Never block the deploy gate.
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: trivy-results.sarif
