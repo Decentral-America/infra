@@ -141,7 +141,7 @@ variable "lke_region" {
 variable "lke_k8s_version" {
   description = "Kubernetes version for LKE. Must be a version supported by Linode at apply time."
   type        = string
-  default     = "1.32"
+  default     = "1.35"
 }
 
 variable "lke_node_type" {
