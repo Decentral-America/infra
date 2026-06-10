@@ -15,13 +15,10 @@ jobs:
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
       - uses: azure/setup-kubectl@v4
-      - name: Full pod diagnosis
+      - name: Get all logs
         run: |
-          echo "=== PODS ==="
           kubectl get pods -n dcc
-          echo "=== GEN-0 FULL DESCRIBE ==="
-          kubectl describe pod dcc-gen-0-0 -n dcc
-          echo "=== GEN-0 LOGS (current) ==="
-          kubectl logs -n dcc dcc-gen-0-0 2>/dev/null || echo "no current logs"
-          echo "=== GEN-0 LOGS (previous) ==="
-          kubectl logs -n dcc dcc-gen-0-0 --previous 2>/dev/null || echo "no previous logs"
+          echo "=== GEN-0 PREVIOUS LOGS (full) ==="
+          kubectl logs -n dcc dcc-gen-0-0 --previous 2>/dev/null || echo "no previous"
+          echo "=== GEN-0 CURRENT LOGS (full) ==="
+          kubectl logs -n dcc dcc-gen-0-0 2>/dev/null || echo "no current"
