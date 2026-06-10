@@ -161,3 +161,13 @@ variable "lke_ha" {
   type        = bool
   default     = false
 }
+
+variable "lke_ssh_allowed_ips" {
+  description = "IPv4 CIDRs allowed to SSH into LKE worker nodes. Must not be 0.0.0.0/0 in production."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = length(var.lke_ssh_allowed_ips) > 0
+    error_message = "lke_ssh_allowed_ips must contain at least one CIDR. Never use 0.0.0.0/0."
+  }
+}
