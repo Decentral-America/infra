@@ -82,8 +82,8 @@ jobs:
         working-directory: terraform
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-          TF_VAR_state_encryption_passphrase: ${{ secrets.TF_VAR_STATE_ENCRYPTION_PASSPHRASE }}
-          # Required variables (non-sensitive, dummy values — only needed to init, not apply)
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+          # Required variables (non-sensitive, dummy values — only needed to read output, not apply)
           TF_VAR_root_password: "bootstrap-read-only"
           TF_VAR_deploy_ssh_public_key: "ssh-ed25519 AAAAC3 bootstrap"
           TF_VAR_default_matcher: "3P"
@@ -96,7 +96,7 @@ jobs:
         working-directory: terraform
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-          TF_VAR_state_encryption_passphrase: ${{ secrets.TF_VAR_STATE_ENCRYPTION_PASSPHRASE }}
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
           TF_VAR_root_password: "bootstrap-read-only"
           TF_VAR_deploy_ssh_public_key: "ssh-ed25519 AAAAC3 bootstrap"
           TF_VAR_default_matcher: "3P"
