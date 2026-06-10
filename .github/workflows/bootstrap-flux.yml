@@ -54,19 +54,20 @@ jobs:
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          # Find the LKE cluster by label (no OpenTofu/R2 needed)
           CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
             "https://api.linode.com/v4/lke/clusters" | \
             jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
           echo "Cluster ID: $CLUSTER_ID"
-          # Fetch kubeconfig (returned as base64)
-          curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -X POST \
+
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -H "Content-Type: application/json" -X POST \
             "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
-            jq -r '.kubeconfig' | \
-            python3 -c "import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip()))" \
-            > /tmp/kubeconfig
+            jq -r '.kubeconfig')
+
+          echo "First 80 chars: $(echo "$RAW" | head -c 80)"
+
+          # API returns base64 — decode with padding tolerance
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
