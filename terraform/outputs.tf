@@ -23,12 +23,6 @@ output "lke_cluster_id" {
   value       = var.lke_enabled ? linode_lke_cluster.peer_nodes[0].id : null
 }
 
-output "lke_node_instance_ids" {
-  description = "Linode instance IDs of LKE worker nodes (look up IPs via Cloud Manager or kubectl get nodes -o wide)"
-  value = var.lke_enabled ? [
-    for node in linode_lke_cluster.peer_nodes[0].pool[0].nodes : node.instance_id
-  ] : []
-}
 
 output "lke_kubeconfig" {
   description = "Base64-encoded kubeconfig for the LKE cluster"

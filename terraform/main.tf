@@ -34,22 +34,11 @@ terraform {
     method "aes_gcm" "state" {
       keys = key_provider.pbkdf2.state
     }
-    # Migration fallback: reads existing unencrypted state from R2 and
-    # re-encrypts it on the next successful write.
-    # Remove this entire method + fallback blocks once all workspaces have
-    # been applied at least once and state is fully encrypted.
-    method "unencrypted" "migrate" {}
     state {
       method = method.aes_gcm.state
-      fallback {
-        method = method.unencrypted.migrate
-      }
     }
     plan {
       method = method.aes_gcm.state
-      fallback {
-        method = method.unencrypted.migrate
-      }
     }
   }
 
