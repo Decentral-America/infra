@@ -1,0 +1,72 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Cluster Diagnostics — on-demand health + P2P connectivity report for the
+# Frankfurt LKE peer-node cluster. Read-only. Safe to run anytime.
+# ──────────────────────────────────────────────────────────────────────────────
+name: Cluster Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Target network'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - testnet
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+          echo "Cluster ID: $CID"
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -X GET "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Pod + PVC + node status
+        run: |
+          echo "=== NODES ==="; kubectl get nodes -o wide
+          echo "=== PODS ==="; kubectl get pods -n dcc -o wide
+          echo "=== PVCs ==="; kubectl get pvc -n dcc
+          echo "=== RESTART COUNTS ==="; kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.metadata.name}{": restarts="}{.status.containerStatuses[0].restartCount}{"\n"}{end}'
+
+      - name: P2P connectivity via port-forward
+        run: |
+          for pod_port in "dcc-gen-0-0:6869" "dcc-gen-1-0:6870" "dcc-val-0-0:6871"; do
+            POD="${pod_port%%:*}"; PORT="${pod_port##*:}"
+            echo "===== $POD ====="
+            kubectl port-forward -n dcc "$POD" "1$PORT:$PORT" >/dev/null 2>&1 &
+            PF=$!; sleep 4
+            echo "  height: $(curl -s http://127.0.0.1:1$PORT/blocks/height 2>/dev/null)"
+            echo "  version: $(curl -s http://127.0.0.1:1$PORT/node/version 2>/dev/null)"
+            echo "  peer count: $(curl -s http://127.0.0.1:1$PORT/peers/connected 2>/dev/null | head -c 400)"
+            kill $PF 2>/dev/null; true
+          done
+
+      - name: Recent P2P log lines per generator
+        run: |
+          for POD in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "===== $POD (network/peer logs) ====="
+            kubectl logs -n dcc "$POD" --tail=200 2>/dev/null | grep -iE "peer|connect|handshake|declared|blacklist|66.228.55.154|172.104" | tail -15 || echo "  (no matching log lines)"
+          done
+
+      - name: Flux reconciliation status
+        run: |
+          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
+          export PATH=$PATH:/usr/local/bin
+          flux get kustomizations -A 2>/dev/null || kubectl get kustomizations -A
