@@ -1,0 +1,32 @@
+# Flux Kustomization — watches clusters/testnet/apps/ and reconciles every 5 min.
+# SOPS decryption is enabled; kustomize-controller uses the sops-age secret
+# provisioned during bootstrap to decrypt *.secret.yaml files at apply time.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dcc-apps
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./clusters/testnet/apps
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      name: dcc-gen-0
+      namespace: dcc
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      name: dcc-gen-1
+      namespace: dcc
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      name: dcc-val-0
+      namespace: dcc
