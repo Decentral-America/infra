@@ -29,7 +29,8 @@ metadata:
 data:
   dcc.conf: |
     dcc {
-      directory = /data
+      # directory is driven by -Ddcc.directory=$WVDATA (/var/lib/dcc, the PVC).
+      # Do NOT hardcode it here or chain state lands on ephemeral container rootfs.
 
       blockchain {
         type = CUSTOM
@@ -72,6 +73,7 @@ data:
 
       network {
         node-name = "dcc-gen-0-testnet"
+        bind-address = "0.0.0.0"
         port = 6863
         declared-address = "172.104.159.229:6863"
         known-peers = [
@@ -108,7 +110,8 @@ metadata:
 data:
   dcc.conf: |
     dcc {
-      directory = /data
+      # directory is driven by -Ddcc.directory=$WVDATA (/var/lib/dcc, the PVC).
+      # Do NOT hardcode it here or chain state lands on ephemeral container rootfs.
 
       blockchain {
         type = CUSTOM
@@ -151,6 +154,7 @@ data:
 
       network {
         node-name = "dcc-gen-1-testnet"
+        bind-address = "0.0.0.0"
         port = 6864
         declared-address = "172.104.159.229:6864"
         known-peers = [
@@ -187,7 +191,8 @@ metadata:
 data:
   dcc.conf: |
     dcc {
-      directory = /data
+      # directory is driven by -Ddcc.directory=$WVDATA (/var/lib/dcc, the PVC).
+      # Do NOT hardcode it here or chain state lands on ephemeral container rootfs.
 
       blockchain {
         type = CUSTOM
@@ -230,6 +235,7 @@ data:
 
       network {
         node-name = "dcc-val-0-testnet"
+        bind-address = "0.0.0.0"
         port = 6865
         declared-address = "172.104.159.229:6865"
         known-peers = [
@@ -504,6 +510,14 @@ spec:
                 -XX:+UseContainerSupport
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
+            # Validators still need a node wallet/identity to start (the node
+            # otherwise auto-generates a seed and then fails to unlock it:
+            # "CANNOT GET CONSOLE TO ASK WALLET PASSWORD" → exit 61).
+            - name: DCC_WALLET_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: dcc-val0-wallet
+                  key: seed
           ports:
             - containerPort: 6865
               hostPort: 6865

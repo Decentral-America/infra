@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - gen0-wallet.secret.yaml
   - gen1-wallet.secret.yaml
+  - val0-wallet.secret.yaml
   - dcc-nodes.yaml

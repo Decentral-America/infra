@@ -203,10 +203,12 @@ resource "linode_firewall" "backend" {
 
   outbound {
     # DCC P2P outbound — required for blockchain peer connections.
+    # 6868 = this node's P2P; 6863-6865 = Frankfurt LKE peer-node P2P ports,
+    # so Newark can dial the Frankfurt generators/validator for a full mesh.
     label    = "allow-p2p-out"
     action   = "ACCEPT"
     protocol = "TCP"
-    ports    = "6868"
+    ports    = "6863-6868"
     ipv4     = ["0.0.0.0/0"]
     ipv6     = ["::/0"]
   }
