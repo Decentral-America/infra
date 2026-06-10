@@ -39,7 +39,7 @@ backup_obj_endpoint = ""
 # ── LKE peer-node cluster (Frankfurt) ─────────────────────────────────────────
 lke_enabled     = true
 lke_region      = "eu-central" # Frankfurt
-lke_k8s_version = "1.32"
+lke_k8s_version = "1.31"
 lke_node_type   = "g6-standard-2" # 2 vCPU / 4 GB shared — sufficient for 3 JVM pods
 lke_node_count  = 1
 lke_ha          = false # Standard control plane (free). Mainnet uses true.
