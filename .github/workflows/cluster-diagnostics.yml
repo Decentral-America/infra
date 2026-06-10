@@ -60,25 +60,20 @@ jobs:
           echo "=== settle 60s for peer discovery ==="
           sleep 60
 
-      - name: Frankfurt peer/connection logs (fail-safe)
+      - name: DEEP DUMP gen-0 (config + listeners + conns + logs)
         run: |
           set +e
-          for POD in dcc-gen-0-0 dcc-gen-1-0; do
-            echo "===== $POD (peer/connect/network logs) ====="
-            kubectl logs -n dcc "$POD" --tail=400 2>/dev/null \
-              | grep -iE "peer|connect|handshake|declared|blacklist|suspend|66.228.55.154|172.104|network|channel|closed|refused|timeout" \
-              | grep -ivE "utx|observer|gRPC|REST API" | tail -25
-            echo ""
-          done
-          echo "===== dcc-val-0-0 CRASH (describe + last logs) ====="
-          kubectl describe pod dcc-val-0-0 -n dcc 2>/dev/null | grep -A6 "Last State\|Reason\|Exit Code\|Message" | head -20
-          kubectl logs -n dcc dcc-val-0-0 --previous --tail=25 2>/dev/null || kubectl logs -n dcc dcc-val-0-0 --tail=25 2>/dev/null
-          echo "===== in-pod P2P listeners (gen-0/gen-1) ====="
-          for PP in "dcc-gen-0-0:6863" "dcc-gen-1-0:6864"; do
-            POD="${PP%%:*}"; PORT="${PP##*:}"
-            echo "--- $POD expecting 0.0.0.0:$PORT ---"
-            kubectl exec -n dcc "$POD" -- sh -c "cat /proc/net/tcp 2>/dev/null | awk '{print \$2}'" 2>/dev/null | head -20
-          done
+          echo "===== gen-0: effective network block in /etc/dcc/dcc.conf ====="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'sed -n "/network {/,/}/p" /etc/dcc/dcc.conf' 2>/dev/null
+          echo "===== gen-0: combined conf the node actually loads (cmdline + head) ====="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'tr "\0" " " < /proc/1/cmdline; echo; for f in /tmp/dcc-combined*.conf; do echo "--$f--"; head -40 "$f"; done' 2>/dev/null
+          echo "===== gen-0: /proc/net/tcp (hex local:rem) — 1ACF=6863 1AD4=6868 9A37E442=66.228.55.154 ====="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'cat /proc/net/tcp; echo IPV6; cat /proc/net/tcp6' 2>/dev/null | awk '{print $2, $3, $4}' | grep -iE "1ACF|1AD0|1AD1|1AD4|9A37E442|0A" | head -30
+          echo "===== gen-0: FULL last 70 log lines (unfiltered) ====="
+          kubectl logs -n dcc dcc-gen-0-0 --tail=70 2>/dev/null
+          echo "===== val-0 status ====="
+          kubectl get pod dcc-val-0-0 -n dcc 2>/dev/null
+          kubectl logs -n dcc dcc-val-0-0 --tail=8 2>/dev/null | grep -iE "wallet|password|peer|Bound|error|started" | tail -8
 
       - name: Pod + PVC + node status
         run: |
