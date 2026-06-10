@@ -38,6 +38,17 @@ jobs:
 
       - uses: azure/setup-kubectl@v4
 
+      - name: Frankfurt peer/connection logs (fail-safe)
+        run: |
+          set +e
+          for POD in dcc-gen-0-0 dcc-gen-1-0; do
+            echo "===== $POD (peer/connect/network logs) ====="
+            kubectl logs -n dcc "$POD" --tail=400 2>/dev/null \
+              | grep -iE "peer|connect|handshake|declared|blacklist|suspend|66.228.55.154|172.104|network|channel|closed|refused|timeout" \
+              | grep -ivE "utx|observer|gRPC|REST API" | tail -25
+            echo ""
+          done
+
       - name: Pod + PVC + node status
         run: |
           echo "=== NODES ==="; kubectl get nodes -o wide
