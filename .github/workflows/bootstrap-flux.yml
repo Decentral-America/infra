@@ -93,7 +93,9 @@ jobs:
 
       - name: Flux bootstrap with SSH deploy key
         run: |
-          flux bootstrap git \
+          # "y" answers the "Please give the key access to your repository?" prompt.
+          # The key is pre-registered — we confirm it's already in place.
+          echo "y" | flux bootstrap git \
             --url=ssh://git@github.com/Decentral-America/infra.git \
             --branch=main \
             --path=clusters/${{ inputs.network }} \
