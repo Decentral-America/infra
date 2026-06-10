@@ -64,7 +64,9 @@ jobs:
             -H "Content-Type: application/json" \
             -X POST \
             "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
-            jq -r '.kubeconfig' | base64 -d > /tmp/kubeconfig
+            jq -r '.kubeconfig' | \
+            python3 -c "import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip()))" \
+            > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
