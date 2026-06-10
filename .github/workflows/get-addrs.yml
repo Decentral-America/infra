@@ -17,7 +17,9 @@ jobs:
       - uses: azure/setup-kubectl@v4
       - name: Get wallet addresses
         run: |
-          echo "=== GEN-0 ADDRESS (via wget or sh curl) ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'wget -qO- http://127.0.0.1:6869/addresses 2>/dev/null || curl -s http://127.0.0.1:6869/addresses 2>/dev/null' || echo "not available"
-          echo "=== GEN-1 ADDRESS ==="
-          kubectl exec -n dcc dcc-gen-1-0 -- sh -c 'wget -qO- http://127.0.0.1:6870/addresses 2>/dev/null || curl -s http://127.0.0.1:6870/addresses 2>/dev/null' || echo "not available"
+          echo "=== GEN-0 WALLET FILE ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- bash -c 'ls /var/lib/dcc/wallet/ 2>/dev/null && cat /var/lib/dcc/wallet/*.dat 2>/dev/null | strings | head -20' || echo "failed"
+          echo "=== GEN-0 NODE STATUS ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- bash -c 'curl -s http://127.0.0.1:6869/addresses' 2>/dev/null || echo "no curl"
+          echo "=== GEN-0 PORT CHECK ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- bash -c 'ss -tlnp | grep 6869' 2>/dev/null || echo "ss failed"
