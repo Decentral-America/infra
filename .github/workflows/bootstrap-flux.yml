@@ -71,28 +71,14 @@ jobs:
       - name: Verify cluster connectivity
         run: kubectl cluster-info
 
-      - name: Generate SSH deploy key for Flux
-        run: |
-          ssh-keygen -t ed25519 -C "flux-${{ inputs.network }}" \
-            -f /tmp/flux-deploy-key -N ""
-          echo "FLUX_PUBKEY=$(cat /tmp/flux-deploy-key.pub)" >> $GITHUB_ENV
-
-      - name: Register deploy key on GitHub repo
+      - name: Load pre-provisioned Flux deploy key
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLUX_DEPLOY_KEY: ${{ secrets.FLUX_DEPLOY_KEY_testnet }}
         run: |
-          # Remove any existing Flux deploy key first (idempotent re-runs)
-          EXISTING=$(gh api repos/Decentral-America/infra/keys \
-            --jq '.[] | select(.title=="flux-${{ inputs.network }}") | .id' 2>/dev/null)
-          if [ -n "$EXISTING" ]; then
-            gh api --method DELETE repos/Decentral-America/infra/keys/$EXISTING
-            echo "Removed existing deploy key"
-          fi
-          gh api --method POST repos/Decentral-America/infra/keys \
-            -f title="flux-${{ inputs.network }}" \
-            -f key="$(cat /tmp/flux-deploy-key.pub)" \
-            -F read_only=false
-          echo "Deploy key registered"
+          # Key is pre-registered as deploy key on the repo (admin op done once).
+          # Stored as FLUX_DEPLOY_KEY_testnet GitHub secret.
+          echo "$FLUX_DEPLOY_KEY" > /tmp/flux-deploy-key
+          chmod 600 /tmp/flux-deploy-key
 
       - name: Pre-provision flux-system namespace and sops-age secret
         env:
