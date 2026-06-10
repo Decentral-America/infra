@@ -272,4 +272,11 @@ resource "linode_stackscript" "bootstrap" {
   # <UDF name="RATE_THRESHOLD_ASSET_ID" label="Rate threshold asset ID" default="DCC" />
   # <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL" />
   script = file("${path.module}/scripts/bootstrap.sh")
+
+  # The stackscript is already deployed to the running backend instance.
+  # Script changes are captured in git; they apply to new deployments only.
+  # Suppressing drift here prevents apply failures on active deployments.
+  lifecycle {
+    ignore_changes = [script]
+  }
 }
