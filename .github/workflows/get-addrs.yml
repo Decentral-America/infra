@@ -15,19 +15,16 @@ jobs:
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
       - uses: azure/setup-kubectl@v4
-      - name: Get addresses
+      - name: Derive addresses from seeds
         run: |
-          # Use port-forward + public endpoints
-          kubectl port-forward -n dcc dcc-gen-0-0 16869:6869 &
-          PF0=$!; sleep 3
-
-          echo "=== GEN-0 HEIGHT ==="
-          curl -s http://127.0.0.1:16869/blocks/height
-
-          echo "=== GEN-0 WALLET.DAT (base64) ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- bash -c 'base64 /var/lib/dcc/wallet/wallet.dat 2>/dev/null' || echo "failed"
-
-          echo "=== GEN-0 WALLET DIR ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- bash -c 'ls -la /var/lib/dcc/wallet/' || echo "failed"
-
-          kill $PF0 2>/dev/null; true
+          pip install pywaves --quiet 2>/dev/null || pip3 install pywaves --quiet 2>/dev/null
+          python3 << 'PY'
+          import pywaves as pw
+          # Chain ID '!' = testnet
+          pw.setChain('custom', '!')
+          # Seeds are the mnemonic phrases (pywaves accepts raw strings as seeds)
+          a0 = pw.Address(seed="pizza walk tourist speed dress wagon link property answer sell drum random loop high paper")
+          a1 = pw.Address(seed="love earth taxi into alone reopen common blade curtain rookie result depart left ensure state")
+          print(f"GEN-0 address: {a0.address}")
+          print(f"GEN-1 address: {a1.address}")
+          PY
