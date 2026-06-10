@@ -149,3 +149,65 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 | Unblock stuck rollout | `kubectl delete pod <name> -n dcc` |
 | Check block height | `kubectl exec -n dcc dcc-gen-0-0 -- curl -s http://127.0.0.1:6869/blocks/height` |
 | Check peer count | `kubectl exec -n dcc dcc-gen-0-0 -- curl -s http://127.0.0.1:6869/peers/connected` |
+
+---
+
+## Scenario D — Pods Running but Chain Not Advancing / No Peers (P2P peering)
+
+**Symptom:** `kubectl get pods -n dcc` shows generators `1/1 Running`, REST API healthy
+(`/blocks/height` responds), but height is stuck (e.g. at genesis height 1 on the
+Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block production.
+
+**Topology (must hold):**
+
+| Node | Host | P2P bind | declared-address | known-peers |
+|------|------|----------|------------------|-------------|
+| Newark (compose) | 66.228.55.154 | `dcc.network.port = 6868` | `66.228.55.154:6868` | the 3 Frankfurt nodes |
+| dcc-gen-0 (LKE)  | 172.104.159.229 | 6863 | `172.104.159.229:6863` | Newark:6868 + gen-1 + val-0 |
+| dcc-gen-1 (LKE)  | 172.104.159.229 | 6864 | `172.104.159.229:6864` | Newark:6868 + gen-0 + val-0 |
+| dcc-val-0 (LKE)  | 172.104.159.229 | 6865 | `172.104.159.229:6865` | Newark:6868 + gen-0 + gen-1 |
+
+**Layered checklist (work top-down — each layer must pass before the next matters):**
+
+1. **Newark P2P bind == published port.** `dcc.network.port` MUST equal the compose
+   publish (`6868:6868`) and the Linode firewall inbound rule (6868). A mismatch
+   (historically `port = 6863` vs publish 6868) makes Newark unreachable even though
+   docker-proxy shows `0.0.0.0:6868 LISTEN`. Verify: `nc -zv 66.228.55.154 6868` from
+   outside → must succeed.
+2. **Firewall egress.** Newark's Cloud Firewall `outbound_policy = DROP` must allow
+   the Frankfurt P2P ports. `terraform/main.tf` `allow-p2p-out` is `6863-6868`. Test
+   from Newark: `python3 -c "import socket;socket.create_connection(('172.104.159.229',6863),5)"`
+   → OPEN, not TimeoutError. A **timeout** (vs connection-refused) means a firewall is
+   dropping packets; **refused** means the port simply isn't listening.
+3. **Frankfurt inbound.** LKE Cloud Firewall (`linode_firewall.lke_nodes`) must allow
+   inbound 6863-6865. Test from anywhere: `nc -zv 172.104.159.229 6863` → succeed.
+4. **Pod config sanity** (`kubectl exec -n dcc dcc-gen-0-0 -- sed -n '/network {/,/}/p' /etc/dcc/dcc.conf`):
+   `bind-address = "0.0.0.0"`, correct `port`, `declared-address`, and `known-peers`.
+5. **Outbound dial actually happening.** Set `DCC_LOG_LEVEL=DEBUG` on a node, roll it,
+   wait 2-3 min, then `kubectl logs -n dcc dcc-gen-0-0 | grep -iE "Connecting|Connected|handshake|Channel closed"`.
+   Healthy nodes log `Connecting to /<ip>:<port>` then `Connected to ...`.
+
+**KNOWN OPEN ISSUE (as of 2026-06-10):** Layers 1-4 verified GREEN (Newark binds 6868
+and is externally reachable; egress widened to 6863-6868 and applied; Frankfurt P2P
+6863/6864 reachable from both Newark and the public internet; pod config correct with
+known-peers present). However layer 5 fails: the node emits **no outbound connection
+attempt at all** — not even at DEBUG — over multiple minutes, despite
+`max-outbound-connections = 100` (default), correct `known-peers`, and
+`NetworkServerL1.apply` constructing the server + scheduling the connect task
+unconditionally. Newark (long-running, single node) shows the same: it has never had a
+peer. Next diagnostic requires **interactive cluster access** (not 8-min CI cycles):
+  - `kubectl exec` into a generator and confirm the effective logback level for
+    `com.decentralchain.network` (the `-Dlogback.stdout.level` may not lower the
+    network logger; a logback `<logger name="com.decentralchain.network" level="TRACE"/>`
+    override may be required to see `doConnect`).
+  - Confirm `scheduleConnectTask` fires and what `peerDatabase.nextCandidate` returns
+    (it should resolve `settings.knownPeers`); check whether the candidates are being
+    added to `excludedAddresses` (self/declared-address collision) or silently dropped.
+  - Verify the handshake `applicationName` (`Constants.ApplicationName + "!"`) matches
+    between Newark and Frankfurt by capturing a handshake frame.
+  - **Recommended:** pull a kubeconfig locally (`linode-cli lke kubeconfig-view <id>`)
+    for sub-second iteration instead of CI round-trips.
+
+**val-0 specific:** exits 61 `CANNOT GET CONSOLE TO ASK WALLET PASSWORD` if it lacks
+either a seed (`DCC_WALLET_SEED`) or `wallet.password = ""`. Both are now set; if it
+still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-wallet -n dcc`).
