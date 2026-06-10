@@ -1,0 +1,516 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# DCC testnet peer-node manifests
+#
+# Three node-scala instances on the Frankfurt LKE cluster:
+#   dcc-gen-0   generator  P2P :6863   JVM -Xmx768m
+#   dcc-gen-1   generator  P2P :6864   JVM -Xmx640m
+#   dcc-val-0   validator  P2P :6865   JVM -Xmx512m
+#
+# Design decisions:
+#   - hostNetwork: true  — pods bind P2P ports directly to node IP, no NAT
+#   - secrets as volume files (mode 0400), never env vars
+#   - linode-block-storage-retain StorageClass — survives node replacement
+#   - podManagementPolicy: Parallel for generators (independent startup)
+#   - persistentVolumeClaimRetentionPolicy: Retain on all axes
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dcc
+
+---
+# ── ConfigMap: dcc-gen-0 ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcc-gen-0-config
+  namespace: dcc
+data:
+  dcc.conf: |
+    decentralchain {
+      directory = /data
+      network-type = "!"
+
+      network {
+        node-name = "dcc-gen-0-testnet"
+        declared-address = "NODE_IP:6863"
+        bind-address = "0.0.0.0"
+        port = 6863
+        known-peers = [
+          "66.228.55.154:6868"
+          "NODE_IP:6864"
+          "NODE_IP:6865"
+        ]
+      }
+
+      wallet {
+        password = ""
+        seed = ""
+      }
+
+      miner {
+        enable = yes
+        quorum = 2
+        interval-after-last-block-then-generation-is-allowed = 1d
+      }
+
+      rest-api {
+        enable = yes
+        bind-address = "127.0.0.1"
+        port = 6869
+        api-key-hash = ""
+      }
+
+      features.auto-shutdown-on-unsupported-feature = yes
+    }
+
+---
+# ── ConfigMap: dcc-gen-1 ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcc-gen-1-config
+  namespace: dcc
+data:
+  dcc.conf: |
+    decentralchain {
+      directory = /data
+      network-type = "!"
+
+      network {
+        node-name = "dcc-gen-1-testnet"
+        declared-address = "NODE_IP:6864"
+        bind-address = "0.0.0.0"
+        port = 6864
+        known-peers = [
+          "66.228.55.154:6868"
+          "NODE_IP:6863"
+          "NODE_IP:6865"
+        ]
+      }
+
+      wallet {
+        password = ""
+        seed = ""
+      }
+
+      miner {
+        enable = yes
+        quorum = 2
+        interval-after-last-block-then-generation-is-allowed = 1d
+      }
+
+      rest-api {
+        enable = yes
+        bind-address = "127.0.0.1"
+        port = 6870
+        api-key-hash = ""
+      }
+
+      features.auto-shutdown-on-unsupported-feature = yes
+    }
+
+---
+# ── ConfigMap: dcc-val-0 ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcc-val-0-config
+  namespace: dcc
+data:
+  dcc.conf: |
+    decentralchain {
+      directory = /data
+      network-type = "!"
+
+      network {
+        node-name = "dcc-val-0-testnet"
+        declared-address = "NODE_IP:6865"
+        bind-address = "0.0.0.0"
+        port = 6865
+        known-peers = [
+          "66.228.55.154:6868"
+          "NODE_IP:6863"
+          "NODE_IP:6864"
+        ]
+      }
+
+      miner {
+        enable = no
+      }
+
+      rest-api {
+        enable = yes
+        bind-address = "127.0.0.1"
+        port = 6871
+        api-key-hash = ""
+      }
+
+      features.auto-shutdown-on-unsupported-feature = yes
+    }
+
+---
+# ── StatefulSet: dcc-gen-0 ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dcc-gen-0
+  namespace: dcc
+spec:
+  serviceName: dcc-gen-0
+  replicas: 1
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: dcc-gen-0
+  template:
+    metadata:
+      labels:
+        app: dcc-gen-0
+        role: generator
+        network: testnet
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: node
+          image: ghcr.io/decentral-america/node-scala:latest
+          imagePullPolicy: Always
+          env:
+            - name: JAVA_OPTS
+              value: >-
+                -Xmx768m
+                -Xms256m
+                -XX:+UseContainerSupport
+                -XX:+UseG1GC
+                -XX:MaxGCPauseMillis=200
+                -Dconfig.file=/etc/dcc/dcc.conf
+          ports:
+            - containerPort: 6863
+              hostPort: 6863
+              protocol: TCP
+          volumeMounts:
+            - name: chain-data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/dcc
+            - name: wallet-seed
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "400m"
+              memory: "900Mi"
+            limits:
+              cpu: "600m"
+              memory: "1100Mi"
+          livenessProbe:
+            httpGet:
+              path: /node/status
+              port: 6869
+              host: 127.0.0.1
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /node/status
+              port: 6869
+              host: 127.0.0.1
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: dcc-gen-0-config
+        - name: wallet-seed
+          secret:
+            secretName: dcc-gen0-wallet
+            defaultMode: 0400
+  volumeClaimTemplates:
+    - metadata:
+        name: chain-data
+      spec:
+        storageClassName: linode-block-storage-retain
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# ── StatefulSet: dcc-gen-1 ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dcc-gen-1
+  namespace: dcc
+spec:
+  serviceName: dcc-gen-1
+  replicas: 1
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: dcc-gen-1
+  template:
+    metadata:
+      labels:
+        app: dcc-gen-1
+        role: generator
+        network: testnet
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: node
+          image: ghcr.io/decentral-america/node-scala:latest
+          imagePullPolicy: Always
+          env:
+            - name: JAVA_OPTS
+              value: >-
+                -Xmx640m
+                -Xms256m
+                -XX:+UseContainerSupport
+                -XX:+UseG1GC
+                -XX:MaxGCPauseMillis=200
+                -Dconfig.file=/etc/dcc/dcc.conf
+          ports:
+            - containerPort: 6864
+              hostPort: 6864
+              protocol: TCP
+          volumeMounts:
+            - name: chain-data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/dcc
+            - name: wallet-seed
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "750Mi"
+            limits:
+              cpu: "400m"
+              memory: "900Mi"
+          livenessProbe:
+            httpGet:
+              path: /node/status
+              port: 6870
+              host: 127.0.0.1
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /node/status
+              port: 6870
+              host: 127.0.0.1
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: dcc-gen-1-config
+        - name: wallet-seed
+          secret:
+            secretName: dcc-gen1-wallet
+            defaultMode: 0400
+  volumeClaimTemplates:
+    - metadata:
+        name: chain-data
+      spec:
+        storageClassName: linode-block-storage-retain
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# ── StatefulSet: dcc-val-0 ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dcc-val-0
+  namespace: dcc
+spec:
+  serviceName: dcc-val-0
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: dcc-val-0
+  template:
+    metadata:
+      labels:
+        app: dcc-val-0
+        role: validator
+        network: testnet
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: node
+          image: ghcr.io/decentral-america/node-scala:latest
+          imagePullPolicy: Always
+          env:
+            - name: JAVA_OPTS
+              value: >-
+                -Xmx512m
+                -Xms192m
+                -XX:+UseContainerSupport
+                -XX:+UseG1GC
+                -XX:MaxGCPauseMillis=200
+                -Dconfig.file=/etc/dcc/dcc.conf
+          ports:
+            - containerPort: 6865
+              hostPort: 6865
+              protocol: TCP
+          volumeMounts:
+            - name: chain-data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/dcc
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "550Mi"
+            limits:
+              cpu: "200m"
+              memory: "650Mi"
+          livenessProbe:
+            httpGet:
+              path: /node/status
+              port: 6871
+              host: 127.0.0.1
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /node/status
+              port: 6871
+              host: 127.0.0.1
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: dcc-val-0-config
+  volumeClaimTemplates:
+    - metadata:
+        name: chain-data
+      spec:
+        storageClassName: linode-block-storage-retain
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# ── NetworkPolicy: isolate dcc namespace ─────────────────────────────────────
+# Default deny-all, then allowlist only what's needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: dcc
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow P2P inbound from anywhere (Calico enforces; Cloud Firewall is the first layer)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-p2p-ingress
+  namespace: dcc
+spec:
+  podSelector:
+    matchLabels:
+      network: testnet
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 6863
+        - protocol: TCP
+          port: 6864
+        - protocol: TCP
+          port: 6865
+
+---
+# Allow all egress from DCC pods (P2P outbound to any peer, DNS, NTP)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress
+  namespace: dcc
+spec:
+  podSelector:
+    matchLabels:
+      network: testnet
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+
+---
+# ── PodDisruptionBudgets ──────────────────────────────────────────────────────
+# maxUnavailable: 1 (not minAvailable: 1) — avoids drain deadlock on single replicas
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dcc-gen-0-pdb
+  namespace: dcc
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dcc-gen-0
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dcc-gen-1-pdb
+  namespace: dcc
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dcc-gen-1
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dcc-val-0-pdb
+  namespace: dcc
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dcc-val-0
