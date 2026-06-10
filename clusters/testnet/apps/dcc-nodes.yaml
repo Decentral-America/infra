@@ -28,15 +28,52 @@ metadata:
   namespace: dcc
 data:
   dcc.conf: |
-    decentralchain {
+    dcc {
       directory = /data
-      network-type = "!"
+
+      blockchain {
+        type = CUSTOM
+        custom {
+          address-scheme-character = "!"
+          functionality {
+            feature-check-blocks-period = 3000
+            blocks-for-feature-activation = 2700
+            generation-balance-depth-from-50-to-1000-after-height = 0
+            block-version-3-after-height = 0
+            pre-activated-features = null
+            pre-activated-features = {
+              1 = 0, 2 = 0, 3 = 0, 4 = 0, 5 = 0, 6 = 0, 7 = 0, 8 = 0
+              9 = 0, 10 = 0, 11 = 0, 12 = 0, 13 = 0, 15 = 0, 16 = 0
+            }
+            double-features-periods-after-height = 0
+          }
+          rewards {
+            term = 100000
+            term-after-capped-reward-feature = 50000
+            initial = 600000000
+            min-increment = 50000000
+            voting-interval = 10000
+          }
+          genesis {
+            average-block-delay = 60s
+            initial-base-target = 48
+            timestamp = 1780810901602
+            block-timestamp = 1780810901602
+            signature = "5tjyNTWvve3pVnBok5Z91A9qqvVpVN8tXxT26N7PH7W6DgPU6V8F8f7r6gM7VhmbZKqPjd8MYQALQh94CBGHBrjh"
+            initial-balance = 10000000000000000
+            transactions = [
+              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
+              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 3000000000000000 }
+              { recipient = "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6", amount = 5000000000000000 }
+            ]
+          }
+        }
+      }
 
       network {
         node-name = "dcc-gen-0-testnet"
-        declared-address = "172.104.159.229:6863"
-        bind-address = "0.0.0.0"
         port = 6863
+        declared-address = "172.104.159.229:6863"
         known-peers = [
           "66.228.55.154:6868"
           "172.104.159.229:6864"
@@ -45,24 +82,20 @@ data:
       }
 
       wallet {
-        password = ""
         seed = ${?DCC_WALLET_SEED}
+        password = ""
       }
 
       miner {
         enable = yes
         quorum = 2
-        interval-after-last-block-then-generation-is-allowed = 1d
       }
 
       rest-api {
         enable = yes
         bind-address = "127.0.0.1"
         port = 6869
-        api-key-hash = ""
       }
-
-      features.auto-shutdown-on-unsupported-feature = yes
     }
 
 ---
@@ -74,15 +107,52 @@ metadata:
   namespace: dcc
 data:
   dcc.conf: |
-    decentralchain {
+    dcc {
       directory = /data
-      network-type = "!"
+
+      blockchain {
+        type = CUSTOM
+        custom {
+          address-scheme-character = "!"
+          functionality {
+            feature-check-blocks-period = 3000
+            blocks-for-feature-activation = 2700
+            generation-balance-depth-from-50-to-1000-after-height = 0
+            block-version-3-after-height = 0
+            pre-activated-features = null
+            pre-activated-features = {
+              1 = 0, 2 = 0, 3 = 0, 4 = 0, 5 = 0, 6 = 0, 7 = 0, 8 = 0
+              9 = 0, 10 = 0, 11 = 0, 12 = 0, 13 = 0, 15 = 0, 16 = 0
+            }
+            double-features-periods-after-height = 0
+          }
+          rewards {
+            term = 100000
+            term-after-capped-reward-feature = 50000
+            initial = 600000000
+            min-increment = 50000000
+            voting-interval = 10000
+          }
+          genesis {
+            average-block-delay = 60s
+            initial-base-target = 48
+            timestamp = 1780810901602
+            block-timestamp = 1780810901602
+            signature = "5tjyNTWvve3pVnBok5Z91A9qqvVpVN8tXxT26N7PH7W6DgPU6V8F8f7r6gM7VhmbZKqPjd8MYQALQh94CBGHBrjh"
+            initial-balance = 10000000000000000
+            transactions = [
+              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
+              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 3000000000000000 }
+              { recipient = "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6", amount = 5000000000000000 }
+            ]
+          }
+        }
+      }
 
       network {
         node-name = "dcc-gen-1-testnet"
-        declared-address = "172.104.159.229:6864"
-        bind-address = "0.0.0.0"
         port = 6864
+        declared-address = "172.104.159.229:6864"
         known-peers = [
           "66.228.55.154:6868"
           "172.104.159.229:6863"
@@ -91,24 +161,20 @@ data:
       }
 
       wallet {
-        password = ""
         seed = ${?DCC_WALLET_SEED}
+        password = ""
       }
 
       miner {
         enable = yes
         quorum = 2
-        interval-after-last-block-then-generation-is-allowed = 1d
       }
 
       rest-api {
         enable = yes
         bind-address = "127.0.0.1"
         port = 6870
-        api-key-hash = ""
       }
-
-      features.auto-shutdown-on-unsupported-feature = yes
     }
 
 ---
@@ -120,15 +186,52 @@ metadata:
   namespace: dcc
 data:
   dcc.conf: |
-    decentralchain {
+    dcc {
       directory = /data
-      network-type = "!"
+
+      blockchain {
+        type = CUSTOM
+        custom {
+          address-scheme-character = "!"
+          functionality {
+            feature-check-blocks-period = 3000
+            blocks-for-feature-activation = 2700
+            generation-balance-depth-from-50-to-1000-after-height = 0
+            block-version-3-after-height = 0
+            pre-activated-features = null
+            pre-activated-features = {
+              1 = 0, 2 = 0, 3 = 0, 4 = 0, 5 = 0, 6 = 0, 7 = 0, 8 = 0
+              9 = 0, 10 = 0, 11 = 0, 12 = 0, 13 = 0, 15 = 0, 16 = 0
+            }
+            double-features-periods-after-height = 0
+          }
+          rewards {
+            term = 100000
+            term-after-capped-reward-feature = 50000
+            initial = 600000000
+            min-increment = 50000000
+            voting-interval = 10000
+          }
+          genesis {
+            average-block-delay = 60s
+            initial-base-target = 48
+            timestamp = 1780810901602
+            block-timestamp = 1780810901602
+            signature = "5tjyNTWvve3pVnBok5Z91A9qqvVpVN8tXxT26N7PH7W6DgPU6V8F8f7r6gM7VhmbZKqPjd8MYQALQh94CBGHBrjh"
+            initial-balance = 10000000000000000
+            transactions = [
+              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
+              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 3000000000000000 }
+              { recipient = "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6", amount = 5000000000000000 }
+            ]
+          }
+        }
+      }
 
       network {
         node-name = "dcc-val-0-testnet"
-        declared-address = "172.104.159.229:6865"
-        bind-address = "0.0.0.0"
         port = 6865
+        declared-address = "172.104.159.229:6865"
         known-peers = [
           "66.228.55.154:6868"
           "172.104.159.229:6863"
@@ -144,10 +247,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6871
-        api-key-hash = ""
       }
-
-      features.auto-shutdown-on-unsupported-feature = yes
     }
 
 ---
