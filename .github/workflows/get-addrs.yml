@@ -1,0 +1,29 @@
+name: Get Node Addresses
+on:
+  workflow_dispatch:
+jobs:
+  addrs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -X GET "https://api.linode.com/v4/lke/clusters/615553/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - uses: azure/setup-kubectl@v4
+      - name: Get wallet addresses
+        run: |
+          echo "=== POD STATUS ==="
+          kubectl get pods -n dcc
+          echo "=== GEN-0 WALLET ADDRESS ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- curl -s http://127.0.0.1:6869/addresses 2>/dev/null || echo "not ready"
+          echo "=== GEN-1 WALLET ADDRESS ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- curl -s http://127.0.0.1:6870/addresses 2>/dev/null || echo "not ready"
+          echo "=== VAL-0 STATUS ==="
+          kubectl exec -n dcc dcc-val-0-0 -- curl -s http://127.0.0.1:6871/node/status 2>/dev/null || echo "not ready"
+          echo "=== NEWARK PEERS (via gen-0) ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- curl -s 'http://127.0.0.1:6869/peers/connected' 2>/dev/null | head -200 || echo "no response"
