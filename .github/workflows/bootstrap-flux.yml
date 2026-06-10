@@ -83,6 +83,7 @@ jobs:
             --repository=infra \
             --branch=main \
             --path=clusters/${{ inputs.network }} \
+            --token-auth \
             --network-policy=false \
             --components-extra=image-reflector-controller,image-automation-controller
 
