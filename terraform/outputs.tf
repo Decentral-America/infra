@@ -17,3 +17,21 @@ output "chain_id" {
   description = "DCC chain ID for this network"
   value       = local.chain_id
 }
+
+output "lke_cluster_id" {
+  description = "LKE cluster ID (used by CI to download kubeconfig)"
+  value       = var.lke_enabled ? linode_lke_cluster.peer_nodes[0].id : null
+}
+
+output "lke_node_ips" {
+  description = "Public IPv4 addresses of LKE worker nodes (used in known-peers config)"
+  value = var.lke_enabled ? [
+    for node in linode_lke_cluster.peer_nodes[0].pool[0].nodes : node.ipv4_address
+  ] : []
+}
+
+output "lke_kubeconfig" {
+  description = "Base64-encoded kubeconfig for the LKE cluster"
+  sensitive   = true
+  value       = var.lke_enabled ? linode_lke_cluster.peer_nodes[0].kubeconfig : null
+}
