@@ -1,0 +1,23 @@
+name: Get LKE Status
+on:
+  workflow_dispatch:
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download kubeconfig and check status
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -X GET "https://api.linode.com/v4/lke/clusters/615553/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - uses: azure/setup-kubectl@v4
+      - name: Pod + kustomization status
+        run: |
+          echo "=== PODS ===" && kubectl get pods -n dcc -o wide
+          echo "=== KUSTOMIZATIONS ===" && kubectl get kustomizations -A
+          echo "=== PVCs ===" && kubectl get pvc -n dcc
+          echo "=== NODE GEN-0 LOGS (last 15) ===" && kubectl logs -n dcc dcc-gen-0-0 --tail=15 2>/dev/null || echo "not running yet"
