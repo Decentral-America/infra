@@ -34,13 +34,13 @@ data:
 
       network {
         node-name = "dcc-gen-0-testnet"
-        declared-address = "NODE_IP:6863"
+        declared-address = "172.104.159.229:6863"
         bind-address = "0.0.0.0"
         port = 6863
         known-peers = [
           "66.228.55.154:6868"
-          "NODE_IP:6864"
-          "NODE_IP:6865"
+          "172.104.159.229:6864"
+          "172.104.159.229:6865"
         ]
       }
 
@@ -80,13 +80,13 @@ data:
 
       network {
         node-name = "dcc-gen-1-testnet"
-        declared-address = "NODE_IP:6864"
+        declared-address = "172.104.159.229:6864"
         bind-address = "0.0.0.0"
         port = 6864
         known-peers = [
           "66.228.55.154:6868"
-          "NODE_IP:6863"
-          "NODE_IP:6865"
+          "172.104.159.229:6863"
+          "172.104.159.229:6865"
         ]
       }
 
@@ -126,13 +126,13 @@ data:
 
       network {
         node-name = "dcc-val-0-testnet"
-        declared-address = "NODE_IP:6865"
+        declared-address = "172.104.159.229:6865"
         bind-address = "0.0.0.0"
         port = 6865
         known-peers = [
           "66.228.55.154:6868"
-          "NODE_IP:6863"
-          "NODE_IP:6864"
+          "172.104.159.229:6863"
+          "172.104.159.229:6864"
         ]
       }
 
