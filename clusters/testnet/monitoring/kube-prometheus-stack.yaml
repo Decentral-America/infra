@@ -1,0 +1,191 @@
+# ── Helm source: prometheus-community ────────────────────────────────────────
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+
+---
+# ── HelmRelease: kube-prometheus-stack ───────────────────────────────────────
+# Deploys Prometheus Operator + Alertmanager + node-exporter.
+# Grafana is disabled — metrics are shipped to Grafana Cloud (free tier, 10k series).
+# Remote write URL and credentials are injected from the monitoring-credentials secret
+# (SOPS-encrypted, added when Grafana Cloud account is connected).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: ">=65.0.0 <70.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Grafana disabled — using Grafana Cloud remote write instead
+    grafana:
+      enabled: false
+
+    prometheus:
+      prometheusSpec:
+        # Scrape all ServiceMonitors and PodMonitors across all namespaces
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        # Retention: 24h local (Grafana Cloud is the long-term store)
+        retention: 24h
+        retentionSize: "8GB"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 200m
+            memory: 512Mi
+        # Remote write to Grafana Cloud
+        # Credentials come from monitoring-credentials secret (add after Grafana Cloud signup)
+        remoteWrite:
+          - url: "${GRAFANA_REMOTE_WRITE_URL}"
+            basicAuth:
+              username:
+                name: monitoring-credentials
+                key: grafana-user
+              password:
+                name: monitoring-credentials
+                key: grafana-api-key
+
+    alertmanager:
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+      config:
+        global:
+          resolve_timeout: 5m
+        route:
+          group_by: ["alertname", "namespace"]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+          receiver: "null"
+          routes:
+            - matchers:
+                - alertname =~ "Watchdog|InfoInhibitor"
+              receiver: "null"
+            - matchers:
+                - severity = "critical"
+              receiver: pagerduty
+        receivers:
+          - name: "null"
+          - name: pagerduty
+            # PagerDuty key injected from monitoring-credentials secret
+            pagerduty_configs:
+              - routing_key: "${PAGERDUTY_KEY}"
+                description: '{{ template "pagerduty.default.description" . }}'
+
+    # node-exporter on every LKE worker node
+    nodeExporter:
+      enabled: true
+
+    # kube-state-metrics for StatefulSet health
+    kubeStateMetrics:
+      enabled: true
+
+---
+# ── PrometheusRule: DCC blockchain alerts ────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dcc-alerts
+  namespace: dcc
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: dcc.blockchain
+      interval: 60s
+      rules:
+        - alert: DCCBlockHeightStalled
+          expr: |
+            increase(decentralchain_blockchain_height[5m]) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DCC block height not advancing on {{ $labels.pod }}"
+            description: "No new blocks in 5 minutes. Generator may be isolated or crashed."
+
+        - alert: DCCPeerCountLow
+          expr: |
+            decentralchain_peers_connected < 2
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DCC peer count below quorum on {{ $labels.pod }}"
+            description: "Connected peers: {{ $value }}. Generator will pause mining (quorum=2)."
+
+        - alert: DCCPodRestarting
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="dcc"}[10m]) > 3
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DCC pod {{ $labels.pod }} restarting repeatedly"
+
+        - alert: DCCDiskPressure
+          expr: |
+            (kubelet_volume_stats_used_bytes{namespace="dcc"} /
+             kubelet_volume_stats_capacity_bytes{namespace="dcc"}) > 0.85
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DCC chain-data PVC at {{ $value | humanizePercentage }} capacity"
+            description: "Expand PVC before disk fills. StorageClass allows online expansion."
+
+        - alert: DCCJVMHeapPressure
+          expr: |
+            jvm_memory_used_bytes{area="heap", namespace="dcc"} /
+            jvm_memory_max_bytes{area="heap", namespace="dcc"} > 0.90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DCC JVM heap > 90% on {{ $labels.pod }}"
+
+---
+# ── Flux Kustomization for monitoring ────────────────────────────────────────
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dcc-monitoring
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/testnet/monitoring
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: dcc-apps
