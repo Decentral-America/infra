@@ -281,8 +281,8 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:latest
-          imagePullPolicy: Always
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
+          imagePullPolicy: IfNotPresent
           env:
             - name: JAVA_OPTS
               value: >-
@@ -373,8 +373,8 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:latest
-          imagePullPolicy: Always
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
+          imagePullPolicy: IfNotPresent
           env:
             - name: JAVA_OPTS
               value: >-
@@ -465,8 +465,8 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:latest
-          imagePullPolicy: Always
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
+          imagePullPolicy: IfNotPresent
           env:
             - name: JAVA_OPTS
               value: >-
