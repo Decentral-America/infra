@@ -304,7 +304,7 @@ spec:
             - name: DCC_HEAP_SIZE
               value: "768m"
             - name: DCC_LOG_LEVEL
-              value: DEBUG
+              value: INFO
             - name: WVDATA
               value: /var/lib/dcc
             - name: WVLOG
