@@ -14,19 +14,18 @@ jobs:
           echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-
       - name: Install Flux CLI
         run: curl -s https://fluxcd.io/install.sh | bash
-
       - uses: azure/setup-kubectl@v4
-
-      - name: Force reconcile + check status
+      - name: Check status
         run: |
-          echo "=== FORCING FLUX RECONCILE ==="
-          flux reconcile kustomization dcc-apps --timeout=3m
+          echo "=== FLUX RECONCILE (no timeout fail) ==="
+          flux reconcile kustomization dcc-apps --timeout=5m || true
           echo "=== POD STATUS ==="
-          kubectl get pods -n dcc -o wide
-          echo "=== GEN-0 DESCRIBE ==="
-          kubectl describe pod dcc-gen-0-0 -n dcc | grep -A8 "State:\|Last State:\|Reason:\|Exit Code:\|Message:"
+          kubectl get pods -n dcc
+          echo "=== GEN-0 ENV VARS (confirm DCC_WALLET_SEED is set) ==="
+          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.spec.containers[0].env}' | python3 -m json.tool 2>/dev/null || echo "pod not running"
           echo "=== GEN-0 LOGS ==="
-          kubectl logs -n dcc dcc-gen-0-0 --previous --tail=40 2>/dev/null || kubectl logs -n dcc dcc-gen-0-0 --tail=40 2>/dev/null || echo "no logs yet"
+          kubectl logs -n dcc dcc-gen-0-0 --previous --tail=50 2>/dev/null || kubectl logs -n dcc dcc-gen-0-0 --tail=50 2>/dev/null || echo "no logs"
+          echo "=== GEN-0 LAST STATE ==="
+          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.status.containerStatuses[0].lastState}' | python3 -m json.tool 2>/dev/null
