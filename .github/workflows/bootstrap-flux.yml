@@ -2,26 +2,12 @@
 # Bootstrap Flux GitOps on the LKE peer-node cluster
 #
 # Run this ONCE after `provision.yml apply` creates the LKE cluster.
-# It installs Flux, connects it to this repo, and provisions the sops-age
-# decryption key so Flux can reconcile SOPS-encrypted secrets automatically.
+# Kubeconfig is fetched directly from the Linode API (no R2/OpenTofu needed).
 #
-# Order of operations:
-#   1. Download kubeconfig from LKE (via tofu output)
-#   2. flux bootstrap github — installs Flux controllers, creates deploy key,
-#      commits gotk-components.yaml + gotk-sync.yaml to clusters/testnet/flux-system/
-#   3. kubectl create secret sops-age — one-time manual key provisioning
-#      (the only secret that cannot be stored in git)
-#
-# Required GitHub secrets (same environment as provision.yml):
-#   LINODE_TOKEN             — Linode API token
-#   R2_ACCESS_KEY_ID         — Cloudflare R2 access key
-#   R2_SECRET_ACCESS_KEY     — Cloudflare R2 secret key
-#   TF_VAR_STATE_ENCRYPTION_PASSPHRASE — OpenTofu state AES-256 passphrase
-#   GITHUB_TOKEN             — provided automatically; needs contents:write for flux bootstrap
-#   AGE_KEY_testnet          — age private key (AGE-SECRET-KEY-...) for sops-age secret
-#
-# Required org secret:
-#   CLOUDFLARE_ACCOUNT_ID
+# Required secrets (repo-level):
+#   LINODE_TOKEN    — Linode API token
+#   AGE_KEY_testnet — age private key for sops-age in-cluster secret
+#   GITHUB_TOKEN    — auto-provided; needs contents:write for flux bootstrap
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Bootstrap Flux
@@ -38,7 +24,7 @@ on:
           - testnet
 
 permissions:
-  contents: write  # flux bootstrap commits gotk files to the repo
+  contents: write
 
 concurrency:
   group: flux-bootstrap-${{ inputs.network }}
@@ -56,11 +42,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: "1.12.1"
-
       - name: Install Flux CLI
         run: |
           curl -s https://fluxcd.io/install.sh | bash
@@ -69,40 +50,21 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Configure R2 backend
-        run: |
-          cat > backend.hcl <<EOF
-          region   = "auto"
-          endpoint = "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          access_key = "${{ secrets.R2_ACCESS_KEY_ID }}"
-          secret_key = "${{ secrets.R2_SECRET_ACCESS_KEY }}"
-          EOF
-
-      - name: OpenTofu init + workspace
-        working-directory: terraform
+      - name: Download kubeconfig from Linode API
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
-          # Required variables (non-sensitive, dummy values — only needed to read output, not apply)
-          TF_VAR_root_password: "bootstrap-read-only"
-          TF_VAR_deploy_ssh_public_key: "ssh-ed25519 AAAAC3 bootstrap"
-          TF_VAR_default_matcher: "3P"
-          TF_VAR_blockchain_updates_url: "grpc://localhost:6881"
         run: |
-          tofu init -backend-config=../backend.hcl
-          tofu workspace select ${{ inputs.network }}
-
-      - name: Export kubeconfig from LKE
-        working-directory: terraform
-        env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
-          TF_VAR_root_password: "bootstrap-read-only"
-          TF_VAR_deploy_ssh_public_key: "ssh-ed25519 AAAAC3 bootstrap"
-          TF_VAR_default_matcher: "3P"
-          TF_VAR_blockchain_updates_url: "grpc://localhost:6881"
-        run: |
-          tofu output -raw lke_kubeconfig | base64 -d > /tmp/kubeconfig
+          # Find the LKE cluster by label (no OpenTofu/R2 needed)
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+          echo "Cluster ID: $CLUSTER_ID"
+          # Fetch kubeconfig (returned as base64)
+          curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
+            jq -r '.kubeconfig' | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
@@ -129,7 +91,7 @@ jobs:
             --namespace=flux-system \
             --from-literal=age.agekey="$AGE_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
-          echo "sops-age secret provisioned in flux-system"
+          echo "sops-age secret provisioned"
 
       - name: Verify Flux is healthy
         run: flux check
