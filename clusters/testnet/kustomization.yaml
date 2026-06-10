@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Explicitly scope what the root flux-system Kustomization applies.
+# Without this, Flux walks the entire tree and finds SOPS-encrypted files
+# in apps/ before the dcc-apps Kustomization (which has SOPS enabled) can
+# handle them. The apps/ and monitoring/ directories are managed by their
+# own Kustomizations (dcc-apps, dcc-monitoring) which have decryption configured.
+resources:
+  - flux-system/
+  - dcc-apps.yaml
