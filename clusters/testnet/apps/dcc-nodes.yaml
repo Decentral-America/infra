@@ -245,6 +245,12 @@ data:
         ]
       }
 
+      wallet {
+        # Empty password unlocks the seed-derived wallet non-interactively.
+        # Without this the node tries to prompt on a console and exits 61.
+        password = ""
+      }
+
       miner {
         enable = no
       }
