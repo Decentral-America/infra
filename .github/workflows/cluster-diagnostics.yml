@@ -69,8 +69,10 @@ jobs:
           kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'tr "\0" " " < /proc/1/cmdline; echo; for f in /tmp/dcc-combined*.conf; do echo "--$f--"; head -40 "$f"; done' 2>/dev/null
           echo "===== gen-0: /proc/net/tcp (hex local:rem) — 1ACF=6863 1AD4=6868 9A37E442=66.228.55.154 ====="
           kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'cat /proc/net/tcp; echo IPV6; cat /proc/net/tcp6' 2>/dev/null | awk '{print $2, $3, $4}' | grep -iE "1ACF|1AD0|1AD1|1AD4|9A37E442|0A" | head -30
-          echo "===== gen-0: FULL last 70 log lines (unfiltered) ====="
-          kubectl logs -n dcc dcc-gen-0-0 --tail=70 2>/dev/null
+          echo "===== gen-0: NETWORK dial/handshake lines (DEBUG) ====="
+          kubectl logs -n dcc dcc-gen-0-0 --tail=2000 2>/dev/null \
+            | grep -iE "Connecting|Connected to|handshake|Channel closed|connection issue|66.228.55.154|172.104.159.229|outgoing channel|Established|[Bb]lacklist|suspend|Accepted|peer|declared|application" \
+            | grep -ivE "utx|observer|REST API|gRPC" | tail -40
           echo "===== val-0 status ====="
           kubectl get pod dcc-val-0-0 -n dcc 2>/dev/null
           kubectl logs -n dcc dcc-val-0-0 --tail=8 2>/dev/null | grep -iE "wallet|password|peer|Bound|error|started" | tail -8
