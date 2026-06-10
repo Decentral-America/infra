@@ -82,7 +82,6 @@ data:
       }
 
       wallet {
-        seed = ${?DCC_WALLET_SEED}
         password = ""
       }
 
@@ -161,7 +160,6 @@ data:
       }
 
       wallet {
-        seed = ${?DCC_WALLET_SEED}
         password = ""
       }
 
@@ -284,14 +282,21 @@ spec:
           image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
           imagePullPolicy: IfNotPresent
           env:
+            - name: DCC_NETWORK
+              value: testnet
+            - name: DCC_HEAP_SIZE
+              value: "768m"
+            - name: DCC_LOG_LEVEL
+              value: INFO
+            - name: WVDATA
+              value: /data
+            - name: WVLOG
+              value: /data/log
             - name: JAVA_OPTS
               value: >-
-                -Xmx768m
-                -Xms256m
                 -XX:+UseContainerSupport
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
-                -Dconfig.file=/etc/dcc/dcc.conf
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
@@ -376,14 +381,21 @@ spec:
           image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
           imagePullPolicy: IfNotPresent
           env:
+            - name: DCC_NETWORK
+              value: testnet
+            - name: DCC_HEAP_SIZE
+              value: "640m"
+            - name: DCC_LOG_LEVEL
+              value: INFO
+            - name: WVDATA
+              value: /data
+            - name: WVLOG
+              value: /data/log
             - name: JAVA_OPTS
               value: >-
-                -Xmx640m
-                -Xms256m
                 -XX:+UseContainerSupport
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
-                -Dconfig.file=/etc/dcc/dcc.conf
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
@@ -468,14 +480,21 @@ spec:
           image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
           imagePullPolicy: IfNotPresent
           env:
+            - name: DCC_NETWORK
+              value: testnet
+            - name: DCC_HEAP_SIZE
+              value: "512m"
+            - name: DCC_LOG_LEVEL
+              value: INFO
+            - name: WVDATA
+              value: /data
+            - name: WVLOG
+              value: /data/log
             - name: JAVA_OPTS
               value: >-
-                -Xmx512m
-                -Xms192m
                 -XX:+UseContainerSupport
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
-                -Dconfig.file=/etc/dcc/dcc.conf
           ports:
             - containerPort: 6865
               hostPort: 6865
