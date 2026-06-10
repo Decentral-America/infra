@@ -277,6 +277,8 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 999
       containers:
         - name: node
           image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
@@ -376,6 +378,8 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 999
       containers:
         - name: node
           image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
@@ -475,6 +479,8 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 999
       containers:
         - name: node
           image: ghcr.io/decentral-america/node-scala:node-scala-testnet-ac7cccff3438321f255de34cc2c496e74a9df2e1
