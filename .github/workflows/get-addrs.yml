@@ -5,26 +5,25 @@ jobs:
   addrs:
     runs-on: ubuntu-latest
     steps:
-      - name: Download kubeconfig
-        env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+      - name: Derive DCC wallet addresses from seeds
         run: |
-          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            -X GET "https://api.linode.com/v4/lke/clusters/615553/kubeconfig" | jq -r '.kubeconfig')
-          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
-          chmod 600 /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - uses: azure/setup-kubectl@v4
-      - name: Derive addresses from seeds
-        run: |
-          pip install pywaves --quiet 2>/dev/null || pip3 install pywaves --quiet 2>/dev/null
-          python3 << 'PY'
-          import pywaves as pw
-          # Chain ID '!' = testnet
-          pw.setChain('custom', '!')
-          # Seeds are the mnemonic phrases (pywaves accepts raw strings as seeds)
-          a0 = pw.Address(seed="pizza walk tourist speed dress wagon link property answer sell drum random loop high paper")
-          a1 = pw.Address(seed="love earth taxi into alone reopen common blade curtain rookie result depart left ensure state")
-          print(f"GEN-0 address: {a0.address}")
-          print(f"GEN-1 address: {a1.address}")
-          PY
+          npm install -g @waves/waves-crypto 2>/dev/null || true
+          node << 'JS'
+          const crypto = require('@waves/waves-crypto');
+          // Chain ID '!' = 33
+          const CHAIN_ID = '!'.charCodeAt(0);
+
+          function getAddress(seed) {
+            const keyPair = crypto.keyPair(seed);
+            const addr = crypto.address({ publicKey: keyPair.publicKey }, CHAIN_ID);
+            return addr;
+          }
+
+          const gen0 = getAddress('pizza walk tourist speed dress wagon link property answer sell drum random loop high paper');
+          const gen1 = getAddress('love earth taxi into alone reopen common blade curtain rookie result depart left ensure state');
+          const miner = getAddress('PCK4Fstm8w9CcR1YmQdAPjUCBLUwyETzRci2Ypo93xXGgqVb2HJUh9Gq4R16');
+
+          console.log('GEN-0 address:', gen0);
+          console.log('GEN-1 address:', gen1);
+          console.log('MINER verify (should be 31RPEKcz...):', miner);
+          JS
