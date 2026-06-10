@@ -123,3 +123,41 @@ variable "backup_obj_endpoint" {
   type        = string
   default     = ""
 }
+
+# ── LKE peer-node cluster ─────────────────────────────────────────────────────
+
+variable "lke_enabled" {
+  description = "Whether to provision the LKE peer-node cluster. Set true in testnet/mainnet.tfvars."
+  type        = bool
+  default     = false
+}
+
+variable "lke_region" {
+  description = "Linode region for the LKE cluster (may differ from backend region)."
+  type        = string
+  default     = "eu-central" # Frankfurt
+}
+
+variable "lke_k8s_version" {
+  description = "Kubernetes version for LKE. Must be a version supported by Linode at apply time."
+  type        = string
+  default     = "1.32"
+}
+
+variable "lke_node_type" {
+  description = "Linode plan for LKE worker nodes. Shared CPU for testnet, dedicated for mainnet generators."
+  type        = string
+  default     = "g6-standard-2" # 2 vCPU / 4 GB shared — testnet default
+}
+
+variable "lke_node_count" {
+  description = "Number of worker nodes in the LKE pool."
+  type        = number
+  default     = 1
+}
+
+variable "lke_ha" {
+  description = "Enable LKE HA control plane (3-replica etcd). IRREVERSIBLE — must be set at cluster creation. Required for mainnet."
+  type        = bool
+  default     = false
+}
