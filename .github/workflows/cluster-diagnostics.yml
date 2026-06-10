@@ -48,6 +48,15 @@ jobs:
               | grep -ivE "utx|observer|gRPC|REST API" | tail -25
             echo ""
           done
+          echo "===== dcc-val-0-0 CRASH (describe + last logs) ====="
+          kubectl describe pod dcc-val-0-0 -n dcc 2>/dev/null | grep -A6 "Last State\|Reason\|Exit Code\|Message" | head -20
+          kubectl logs -n dcc dcc-val-0-0 --previous --tail=25 2>/dev/null || kubectl logs -n dcc dcc-val-0-0 --tail=25 2>/dev/null
+          echo "===== in-pod P2P listeners (gen-0/gen-1) ====="
+          for PP in "dcc-gen-0-0:6863" "dcc-gen-1-0:6864"; do
+            POD="${PP%%:*}"; PORT="${PP##*:}"
+            echo "--- $POD expecting 0.0.0.0:$PORT ---"
+            kubectl exec -n dcc "$POD" -- sh -c "cat /proc/net/tcp 2>/dev/null | awk '{print \$2}'" 2>/dev/null | head -20
+          done
 
       - name: Pod + PVC + node status
         run: |
