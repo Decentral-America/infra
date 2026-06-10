@@ -1,0 +1,33 @@
+# Flux Kustomization for the DCC monitoring stack (moved from inside monitoring/ — B2 fix).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dcc-monitoring
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/testnet/monitoring
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  dependsOn:
+    - name: dcc-apps
+  # postBuild substitutes ${GRAFANA_REMOTE_WRITE_URL} / ${PAGERDUTY_KEY} from the
+  # monitoring-credentials Secret. Create that Secret (SOPS-encrypted) once you have
+  # Grafana Cloud + PagerDuty credentials:
+  #   kubectl create secret generic monitoring-credentials -n monitoring \
+  #     --from-literal=grafana-user=<id> \
+  #     --from-literal=grafana-api-key=<key> \
+  #     --from-literal=grafana-remote-write-url=<url> \
+  #     --from-literal=pagerduty-key=<key>
+  # Then SOPS-encrypt it and add to clusters/testnet/monitoring/.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: monitoring-credentials
+        optional: true   # cluster still deploys even if creds aren't set yet
