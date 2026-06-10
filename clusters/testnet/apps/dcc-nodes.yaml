@@ -289,7 +289,7 @@ spec:
             - name: DCC_LOG_LEVEL
               value: INFO
             - name: WVDATA
-              value: /data
+              value: /var/lib/dcc
             - name: WVLOG
               value: /tmp
             - name: JAVA_OPTS
@@ -308,7 +308,7 @@ spec:
               protocol: TCP
           volumeMounts:
             - name: chain-data
-              mountPath: /data
+              mountPath: /var/lib/dcc
             - name: config
               mountPath: /etc/dcc
           resources:
@@ -388,7 +388,7 @@ spec:
             - name: DCC_LOG_LEVEL
               value: INFO
             - name: WVDATA
-              value: /data
+              value: /var/lib/dcc
             - name: WVLOG
               value: /tmp
             - name: JAVA_OPTS
@@ -407,7 +407,7 @@ spec:
               protocol: TCP
           volumeMounts:
             - name: chain-data
-              mountPath: /data
+              mountPath: /var/lib/dcc
             - name: config
               mountPath: /etc/dcc
           resources:
@@ -487,7 +487,7 @@ spec:
             - name: DCC_LOG_LEVEL
               value: INFO
             - name: WVDATA
-              value: /data
+              value: /var/lib/dcc
             - name: WVLOG
               value: /tmp
             - name: JAVA_OPTS
@@ -501,7 +501,7 @@ spec:
               protocol: TCP
           volumeMounts:
             - name: chain-data
-              mountPath: /data
+              mountPath: /var/lib/dcc
             - name: config
               mountPath: /etc/dcc
           resources:
