@@ -17,13 +17,7 @@ jobs:
       - uses: azure/setup-kubectl@v4
       - name: Get wallet addresses
         run: |
-          echo "=== POD STATUS ==="
-          kubectl get pods -n dcc
-          echo "=== GEN-0 WALLET ADDRESS ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- curl -s http://127.0.0.1:6869/addresses 2>/dev/null || echo "not ready"
-          echo "=== GEN-1 WALLET ADDRESS ==="
-          kubectl exec -n dcc dcc-gen-1-0 -- curl -s http://127.0.0.1:6870/addresses 2>/dev/null || echo "not ready"
-          echo "=== VAL-0 STATUS ==="
-          kubectl exec -n dcc dcc-val-0-0 -- curl -s http://127.0.0.1:6871/node/status 2>/dev/null || echo "not ready"
-          echo "=== NEWARK PEERS (via gen-0) ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- curl -s 'http://127.0.0.1:6869/peers/connected' 2>/dev/null | head -200 || echo "no response"
+          echo "=== GEN-0 ADDRESS (via wget or sh curl) ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'wget -qO- http://127.0.0.1:6869/addresses 2>/dev/null || curl -s http://127.0.0.1:6869/addresses 2>/dev/null' || echo "not available"
+          echo "=== GEN-1 ADDRESS ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- sh -c 'wget -qO- http://127.0.0.1:6870/addresses 2>/dev/null || curl -s http://127.0.0.1:6870/addresses 2>/dev/null' || echo "not available"
