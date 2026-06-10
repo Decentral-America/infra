@@ -60,7 +60,7 @@ jobs:
           echo "Cluster ID: $CLUSTER_ID"
 
           RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            -H "Content-Type: application/json" -X POST \
+            -H "Content-Type: application/json" -X GET \
             "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
             jq -r '.kubeconfig')
 
