@@ -74,6 +74,20 @@ jobs:
       - name: Verify cluster connectivity
         run: kubectl cluster-info
 
+      - name: Pre-provision sops-age secret
+        env:
+          AGE_KEY: ${{ secrets.AGE_KEY_testnet }}
+        run: |
+          # Must exist BEFORE flux bootstrap so Flux can decrypt SOPS secrets
+          # on its first reconciliation pass. Flux creates the namespace too,
+          # so we pre-create it here.
+          kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic sops-age \
+            --namespace=flux-system \
+            --from-literal=age.agekey="$AGE_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "sops-age provisioned before bootstrap"
+
       - name: Flux bootstrap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -86,16 +100,6 @@ jobs:
             --token-auth \
             --network-policy=false \
             --components-extra=image-reflector-controller,image-automation-controller
-
-      - name: Provision sops-age decryption key
-        env:
-          AGE_KEY: ${{ secrets.AGE_KEY_testnet }}
-        run: |
-          kubectl create secret generic sops-age \
-            --namespace=flux-system \
-            --from-literal=age.agekey="$AGE_KEY" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          echo "sops-age secret provisioned"
 
       - name: Verify Flux is healthy
         run: flux check
