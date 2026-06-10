@@ -46,7 +46,7 @@ data:
 
       wallet {
         password = ""
-        seed = ""
+        seed = ${?DCC_WALLET_SEED}
       }
 
       miner {
@@ -92,7 +92,7 @@ data:
 
       wallet {
         password = ""
-        seed = ""
+        seed = ${?DCC_WALLET_SEED}
       }
 
       miner {
@@ -192,6 +192,11 @@ spec:
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
                 -Dconfig.file=/etc/dcc/dcc.conf
+            - name: DCC_WALLET_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: dcc-gen0-wallet
+                  key: seed
           ports:
             - containerPort: 6863
               hostPort: 6863
@@ -201,9 +206,6 @@ spec:
               mountPath: /data
             - name: config
               mountPath: /etc/dcc
-            - name: wallet-seed
-              mountPath: /run/secrets
-              readOnly: true
           resources:
             requests:
               cpu: "400m"
@@ -230,10 +232,6 @@ spec:
         - name: config
           configMap:
             name: dcc-gen-0-config
-        - name: wallet-seed
-          secret:
-            secretName: dcc-gen0-wallet
-            defaultMode: 0400
   volumeClaimTemplates:
     - metadata:
         name: chain-data
@@ -286,6 +284,11 @@ spec:
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
                 -Dconfig.file=/etc/dcc/dcc.conf
+            - name: DCC_WALLET_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: dcc-gen1-wallet
+                  key: seed
           ports:
             - containerPort: 6864
               hostPort: 6864
@@ -295,9 +298,6 @@ spec:
               mountPath: /data
             - name: config
               mountPath: /etc/dcc
-            - name: wallet-seed
-              mountPath: /run/secrets
-              readOnly: true
           resources:
             requests:
               cpu: "300m"
@@ -324,10 +324,6 @@ spec:
         - name: config
           configMap:
             name: dcc-gen-1-config
-        - name: wallet-seed
-          secret:
-            secretName: dcc-gen1-wallet
-            defaultMode: 0400
   volumeClaimTemplates:
     - metadata:
         name: chain-data
