@@ -94,6 +94,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6869
+        api-key-hash = "Gtg2Xhd3uKL32TgYi3EmjKHiEMT71GrbwUNuh45in71N"
       }
     }
 
@@ -172,6 +173,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6870
+        api-key-hash = "18bXV77Tv7361JKLZJy2GswC5tE76537M4Tz3HwikQdui"
       }
     }
 
@@ -245,6 +247,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6871
+        api-key-hash = "EFEAE6MgC9YYN3CTDGcb8mVTBgy5qdZ8XuCFo4tfSphF"
       }
     }
 

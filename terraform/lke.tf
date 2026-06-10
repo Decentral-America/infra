@@ -76,14 +76,13 @@ resource "linode_firewall" "lke_nodes" {
   }
 
   # ── SSH ────────────────────────────────────────────────────────────────────
-  # TODO: restrict to team IPs before mainnet
+  # Restricted to known team IPs. Add additional CIDRs to var.lke_ssh_allowed_ips.
   inbound {
     label    = "allow-ssh"
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "22"
-    ipv4     = ["0.0.0.0/0"]
-    ipv6     = ["::/0"]
+    ipv4     = var.lke_ssh_allowed_ips
   }
 
   # ── Kubernetes control plane → worker communication ────────────────────────
