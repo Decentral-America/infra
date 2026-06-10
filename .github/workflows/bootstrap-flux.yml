@@ -2,12 +2,14 @@
 # Bootstrap Flux GitOps on the LKE peer-node cluster
 #
 # Run this ONCE after `provision.yml apply` creates the LKE cluster.
-# Kubeconfig is fetched directly from the Linode API (no R2/OpenTofu needed).
+# Uses an SSH deploy key (not GITHUB_TOKEN) so Flux can pull from GitHub
+# after the workflow completes — GITHUB_TOKEN is scoped to Actions and
+# is rejected for external git operations.
 #
 # Required secrets (repo-level):
 #   LINODE_TOKEN    — Linode API token
 #   AGE_KEY_testnet — age private key for sops-age in-cluster secret
-#   GITHUB_TOKEN    — auto-provided; needs contents:write for flux bootstrap
+#   GITHUB_TOKEN    — auto-provided; used only for gh CLI (deploy-key add)
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Bootstrap Flux
@@ -58,15 +60,10 @@ jobs:
             "https://api.linode.com/v4/lke/clusters" | \
             jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
           echo "Cluster ID: $CLUSTER_ID"
-
           RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
             -H "Content-Type: application/json" -X GET \
             "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
             jq -r '.kubeconfig')
-
-          echo "First 80 chars: $(echo "$RAW" | head -c 80)"
-
-          # API returns base64 — decode with padding tolerance
           echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
@@ -74,30 +71,47 @@ jobs:
       - name: Verify cluster connectivity
         run: kubectl cluster-info
 
-      - name: Pre-provision sops-age secret
+      - name: Generate SSH deploy key for Flux
+        run: |
+          ssh-keygen -t ed25519 -C "flux-${{ inputs.network }}" \
+            -f /tmp/flux-deploy-key -N ""
+          echo "FLUX_PUBKEY=$(cat /tmp/flux-deploy-key.pub)" >> $GITHUB_ENV
+
+      - name: Register deploy key on GitHub repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Remove any existing Flux deploy key first (idempotent re-runs)
+          EXISTING=$(gh api repos/Decentral-America/infra/keys \
+            --jq '.[] | select(.title=="flux-${{ inputs.network }}") | .id' 2>/dev/null)
+          if [ -n "$EXISTING" ]; then
+            gh api --method DELETE repos/Decentral-America/infra/keys/$EXISTING
+            echo "Removed existing deploy key"
+          fi
+          gh api --method POST repos/Decentral-America/infra/keys \
+            -f title="flux-${{ inputs.network }}" \
+            -f key="$(cat /tmp/flux-deploy-key.pub)" \
+            -F read_only=false
+          echo "Deploy key registered"
+
+      - name: Pre-provision flux-system namespace and sops-age secret
         env:
           AGE_KEY: ${{ secrets.AGE_KEY_testnet }}
         run: |
-          # Must exist BEFORE flux bootstrap so Flux can decrypt SOPS secrets
-          # on its first reconciliation pass. Flux creates the namespace too,
-          # so we pre-create it here.
           kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic sops-age \
             --namespace=flux-system \
             --from-literal=age.agekey="$AGE_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
-          echo "sops-age provisioned before bootstrap"
+          echo "sops-age provisioned"
 
-      - name: Flux bootstrap
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Flux bootstrap with SSH deploy key
         run: |
-          flux bootstrap github \
-            --owner=Decentral-America \
-            --repository=infra \
+          flux bootstrap git \
+            --url=ssh://git@github.com/Decentral-America/infra.git \
             --branch=main \
             --path=clusters/${{ inputs.network }} \
-            --token-auth \
+            --private-key-file=/tmp/flux-deploy-key \
             --network-policy=false \
             --components-extra=image-reflector-controller,image-automation-controller
 
