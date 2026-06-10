@@ -174,18 +174,3 @@ spec:
             summary: "DCC JVM heap > 90% on {{ $labels.pod }}"
 
 ---
-# ── Flux Kustomization for monitoring ────────────────────────────────────────
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: dcc-monitoring
-  namespace: flux-system
-spec:
-  interval: 10m
-  path: ./clusters/testnet/monitoring
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  dependsOn:
-    - name: dcc-apps
