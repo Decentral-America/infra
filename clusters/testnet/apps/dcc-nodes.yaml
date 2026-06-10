@@ -291,7 +291,7 @@ spec:
             - name: WVDATA
               value: /data
             - name: WVLOG
-              value: /tmp/log
+              value: /tmp
             - name: JAVA_OPTS
               value: >-
                 -XX:+UseContainerSupport
@@ -390,7 +390,7 @@ spec:
             - name: WVDATA
               value: /data
             - name: WVLOG
-              value: /tmp/log
+              value: /tmp
             - name: JAVA_OPTS
               value: >-
                 -XX:+UseContainerSupport
@@ -489,7 +489,7 @@ spec:
             - name: WVDATA
               value: /data
             - name: WVLOG
-              value: /tmp/log
+              value: /tmp
             - name: JAVA_OPTS
               value: >-
                 -XX:+UseContainerSupport
