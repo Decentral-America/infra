@@ -14,11 +14,18 @@ jobs:
           echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: Install Flux CLI
+        run: curl -s https://fluxcd.io/install.sh | bash
       - uses: azure/setup-kubectl@v4
-      - name: Get all logs
+      - name: Force reconcile + check
         run: |
+          echo "=== FORCE RECONCILE ==="
+          flux reconcile source git flux-system || true
+          flux reconcile kustomization dcc-apps --timeout=3m || true
+          echo "=== SECRET VALUE (first 20 chars of seed) ==="
+          kubectl get secret dcc-gen0-wallet -n dcc -o jsonpath='{.data.seed}' | base64 -d | cut -c1-30
+          echo ""
+          echo "=== POD STATUS ==="
           kubectl get pods -n dcc
-          echo "=== GEN-0 PREVIOUS LOGS (full) ==="
-          kubectl logs -n dcc dcc-gen-0-0 --previous 2>/dev/null || echo "no previous"
-          echo "=== GEN-0 CURRENT LOGS (full) ==="
-          kubectl logs -n dcc dcc-gen-0-0 2>/dev/null || echo "no current"
+          echo "=== GEN-0 LOGS ==="
+          kubectl logs -n dcc dcc-gen-0-0 --previous 2>/dev/null | tail -10 || kubectl logs -n dcc dcc-gen-0-0 2>/dev/null | tail -10 || echo "no logs"
