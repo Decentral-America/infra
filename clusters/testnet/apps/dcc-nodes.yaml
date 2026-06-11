@@ -311,7 +311,7 @@ spec:
         fsGroup: 999
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d@sha256:ebaa193752a86ca1d06fbf8d890b7cfe4a59504f2e6d000788944579625df546
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-2f4439ec87481eac5b8b80b1a559108aed796016@sha256:9d050e0d5a499c4cb723b349f9118f57b2d6d3d78f9d7a4d0c682fa42dd3cfa5
           imagePullPolicy: IfNotPresent
           env:
             - name: DCC_NETWORK
@@ -412,7 +412,7 @@ spec:
         fsGroup: 999
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d@sha256:ebaa193752a86ca1d06fbf8d890b7cfe4a59504f2e6d000788944579625df546
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-2f4439ec87481eac5b8b80b1a559108aed796016@sha256:9d050e0d5a499c4cb723b349f9118f57b2d6d3d78f9d7a4d0c682fa42dd3cfa5
           imagePullPolicy: IfNotPresent
           env:
             - name: DCC_NETWORK
@@ -513,7 +513,7 @@ spec:
         fsGroup: 999
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d@sha256:ebaa193752a86ca1d06fbf8d890b7cfe4a59504f2e6d000788944579625df546
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-2f4439ec87481eac5b8b80b1a559108aed796016@sha256:9d050e0d5a499c4cb723b349f9118f57b2d6d3d78f9d7a4d0c682fa42dd3cfa5
           imagePullPolicy: IfNotPresent
           env:
             - name: DCC_NETWORK
