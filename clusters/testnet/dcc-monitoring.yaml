@@ -17,17 +17,17 @@ spec:
       name: sops-age
   dependsOn:
     - name: dcc-apps
-  # postBuild substitutes ${GRAFANA_REMOTE_WRITE_URL} / ${PAGERDUTY_KEY} from the
-  # monitoring-credentials Secret. Create that Secret (SOPS-encrypted) once you have
-  # Grafana Cloud + PagerDuty credentials:
-  #   kubectl create secret generic monitoring-credentials -n monitoring \
-  #     --from-literal=grafana-user=<id> \
-  #     --from-literal=grafana-api-key=<key> \
-  #     --from-literal=grafana-remote-write-url=<url> \
-  #     --from-literal=pagerduty-key=<key>
-  # Then SOPS-encrypt it and add to clusters/testnet/monitoring/.
+  # postBuild substitutes ${SMTP_HOST} / ${SMTP_USER} / ${SMTP_PASSWORD} from the
+  # alertmanager-smtp Secret. Create it once with your SMTP provider credentials:
+  #
+  #   kubectl create secret generic alertmanager-smtp -n monitoring \
+  #     --from-literal=SMTP_HOST=smtp.gmail.com \
+  #     --from-literal=SMTP_USER=alerts@decentralchain.io \
+  #     --from-literal=SMTP_PASSWORD=<app-password>
+  #
+  # Then SOPS-encrypt and commit it. Until then, alerting is silent but monitoring works.
   postBuild:
     substituteFrom:
       - kind: Secret
-        name: monitoring-credentials
-        optional: true   # cluster still deploys even if creds aren't set yet
+        name: alertmanager-smtp
+        optional: true   # monitoring deploys; email is just silent until Secret exists
