@@ -163,9 +163,9 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
 | Node | Host | P2P bind | declared-address | known-peers |
 |------|------|----------|------------------|-------------|
 | Newark (compose) | 66.228.55.154 | `dcc.network.port = 6868` | `66.228.55.154:6868` | the 3 Frankfurt nodes |
-| dcc-gen-0 (LKE)  | 172.104.159.229 | 6863 | `172.104.159.229:6863` | Newark:6868 + gen-1 + val-0 |
-| dcc-gen-1 (LKE)  | 172.104.159.229 | 6864 | `172.104.159.229:6864` | Newark:6868 + gen-0 + val-0 |
-| dcc-val-0 (LKE)  | 172.104.159.229 | 6865 | `172.104.159.229:6865` | Newark:6868 + gen-0 + gen-1 |
+| dcc-gen-0 (LKE)  | 172.105.64.89 | 6863 | `172.105.64.89:6863` | Newark:6868 + gen-1 + val-0 |
+| dcc-gen-1 (LKE)  | 172.105.64.89 | 6864 | `172.105.64.89:6864` | Newark:6868 + gen-0 + val-0 |
+| dcc-val-0 (LKE)  | 172.105.64.89 | 6865 | `172.105.64.89:6865` | Newark:6868 + gen-0 + gen-1 |
 
 **Layered checklist (work top-down — each layer must pass before the next matters):**
 
@@ -176,11 +176,11 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
    outside → must succeed.
 2. **Firewall egress.** Newark's Cloud Firewall `outbound_policy = DROP` must allow
    the Frankfurt P2P ports. `terraform/main.tf` `allow-p2p-out` is `6863-6868`. Test
-   from Newark: `python3 -c "import socket;socket.create_connection(('172.104.159.229',6863),5)"`
+   from Newark: `python3 -c "import socket;socket.create_connection(('172.105.64.89',6863),5)"`
    → OPEN, not TimeoutError. A **timeout** (vs connection-refused) means a firewall is
    dropping packets; **refused** means the port simply isn't listening.
 3. **Frankfurt inbound.** LKE Cloud Firewall (`linode_firewall.lke_nodes`) must allow
-   inbound 6863-6865. Test from anywhere: `nc -zv 172.104.159.229 6863` → succeed.
+   inbound 6863-6865. Test from anywhere: `nc -zv 172.105.64.89 6863` → succeed.
 4. **Pod config sanity** (`kubectl exec -n dcc dcc-gen-0-0 -- sed -n '/network {/,/}/p' /etc/dcc/dcc.conf`):
    `bind-address = "0.0.0.0"`, correct `port`, `declared-address`, and `known-peers`.
 5. **Outbound dial actually happening.** Set `DCC_LOG_LEVEL=DEBUG` on a node, roll it,

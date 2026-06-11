@@ -40,7 +40,7 @@ infra/
 │   ├── variables.tf                 All input variables with descriptions
 │   ├── outputs.tf                   Outputs: server IP, IPv6, chain ID
 │   └── scripts/
-│       └── bootstrap.sh             First-boot StackScript: Docker, PostgreSQL 17,
+│       └── bootstrap.sh             First-boot StackScript: Docker, PostgreSQL 18,
 │                                    deploy user, /opt/dcc/secrets/<network>.env
 └── compose/
     ├── scanner.yml                  docker-compose for the scanner service (port 3000)
@@ -140,10 +140,10 @@ or `blockchain-postgres-sync` repo.
 | **infra repo** (`mainnet` env) | `DEPLOY_SSH_KEY` | 1 | ❌ missing |
 | **infra repo** (`mainnet` env) | `DEPLOY_HOST_FINGERPRINT` | 1 | ❌ missing |
 | **infra repo** (`stagenet` env) | same 4 DEPLOY_* secrets | 4 | ❌ missing |
-| **infra repo** (`testnet` env) | same 4 DEPLOY_* secrets | 4 | ❌ missing |
-| **infra repo** (repo-level) | `LINODE_TOKEN` | 1 | ❌ missing |
-| **infra repo** (repo-level) | `LINODE_OBJ_ACCESS_KEY` | 1 | ❌ missing |
-| **infra repo** (repo-level) | `LINODE_OBJ_SECRET_KEY` | 1 | ❌ missing |
+| **infra repo** (`testnet` env) | same 4 DEPLOY_* secrets | 4 | ✅ set (server live: 66.228.55.154) |
+| **infra repo** (repo-level) | `LINODE_TOKEN` | 1 | ✅ set |
+| **infra repo** (repo-level) | `R2_ACCESS_KEY_ID` | 1 | ✅ set (R2 state backend) |
+| **infra repo** (repo-level) | `R2_SECRET_ACCESS_KEY` | 1 | ✅ set (R2 state backend) |
 | **Server** `/opt/dcc/secrets/*.env` | written by bootstrap (see §[Server .env](#server-env-file-reference)) | — | written at provision time |
 | **DecentralChain repo** | — | **0** | nothing needed |
 
@@ -610,34 +610,30 @@ Firewalls, and Object Storage.
 
 ---
 
-#### `LINODE_OBJ_ACCESS_KEY`
+#### `R2_ACCESS_KEY_ID`
 
 **Where:** infra repo → Settings → Secrets → Actions.
 **Used by:** `provision.yml` → `tofu init -backend-config="access_key=..."`.
-**Status:** ❌ missing.
+**Status:** ✅ set.
 
-The S3-compatible access key for Linode Object Storage. OpenTofu uses this to
-read and write the Terraform state file stored in the `dcc-tofu-state` bucket.
-The state bucket must exist before `provision.yml` can run.
+S3-compatible access key for the Cloudflare R2 `dcc-tofu-state` bucket.
+OpenTofu uses this to read and write the Terraform state file.
 
-**How to create:**
-1. Log in to cloud.linode.com → Object Storage → Access Keys.
-2. Click **Create an Access Key**.
-3. Label it `opentofu-state`. Scope it to the `dcc-tofu-state` bucket if the
-   Linode UI offers bucket-scoped keys (not always available — in that case,
-   use account-scoped keys with the narrowest available scope).
-4. The access key is shown once alongside the secret key. Copy both immediately.
-5. Store access key as `LINODE_OBJ_ACCESS_KEY`.
+**How to create (if rotating):**
+1. Log in to Cloudflare Dashboard → R2 → Manage R2 API Tokens.
+2. Click **Create API Token** — permissions: Object Read & Write, scoped to `dcc-tofu-state`.
+3. The access key is shown once alongside the secret key. Copy both immediately.
+4. Store access key as `R2_ACCESS_KEY_ID`.
 
 ---
 
-#### `LINODE_OBJ_SECRET_KEY`
+#### `R2_SECRET_ACCESS_KEY`
 
 **Where:** infra repo → Settings → Secrets → Actions.
 **Used by:** `provision.yml` → `tofu init -backend-config="secret_key=..."`.
-**Status:** ❌ missing.
+**Status:** ✅ set.
 
-The secret key paired with `LINODE_OBJ_ACCESS_KEY`. Treat like a password — rotate
+The secret key paired with `R2_ACCESS_KEY_ID`. Treat like a password — rotate
 on a schedule and whenever an operator with access leaves the team.
 
 ---
@@ -732,19 +728,19 @@ In this repo: Settings → Secrets and variables → Actions → Repository secr
 
 ```
 LINODE_TOKEN          — Linode API token (read/write: Linodes, StackScripts, Firewalls, Object Storage)
-LINODE_OBJ_ACCESS_KEY — Object Storage access key (for tofu state backend)
-LINODE_OBJ_SECRET_KEY — Object Storage secret key (for tofu state backend)
+R2_ACCESS_KEY_ID — Object Storage access key (for tofu state backend)
+R2_SECRET_ACCESS_KEY — Object Storage secret key (for tofu state backend)
 ```
 
-### 4 — Create Linode Object Storage state bucket
+### 4 — Create Cloudflare R2 state bucket (✅ done for testnet)
 
-Before OpenTofu can run, the state bucket must exist:
+Before OpenTofu can run, the state bucket must exist. The `dcc-tofu-state` bucket
+is already created for testnet. For a new environment:
 
-```bash
-linode-cli obj mb dcc-tofu-state --cluster us-east-1
-# Verify:
-linode-cli obj ls
-```
+1. Log in to Cloudflare Dashboard → R2 → Create bucket → `dcc-tofu-state`
+2. Create an R2 API Token (Object Read & Write, scoped to `dcc-tofu-state`)
+3. Set `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` as infra repo secrets
+4. Update `endpoint` in `terraform/main.tf` S3 backend with your CF account ID
 
 ### 5 — Create Cloudflare Pages projects (one-time)
 
@@ -988,9 +984,9 @@ Used exclusively by `provision.yml` (OpenTofu). Not needed for day-to-day deploy
 
 | Secret | Status | Purpose |
 |--------|--------|---------|
-| `LINODE_TOKEN` | ❌ missing | Linode API — read/write Linodes, StackScripts, Firewalls, Object Storage |
-| `LINODE_OBJ_ACCESS_KEY` | ❌ missing | OpenTofu S3 state backend (`dcc-tofu-state` bucket) |
-| `LINODE_OBJ_SECRET_KEY` | ❌ missing | Same |
+| `LINODE_TOKEN` | ✅ set | Linode API — read/write Linodes, StackScripts, Firewalls, Object Storage |
+| `R2_ACCESS_KEY_ID` | ✅ set | OpenTofu S3 state backend (`dcc-tofu-state` bucket) |
+| `R2_SECRET_ACCESS_KEY` | ✅ set | Same |
 
 ---
 
