@@ -46,8 +46,9 @@ spec:
         # Scrape all ServiceMonitors and PodMonitors across all namespaces
         serviceMonitorSelectorNilUsesHelmValues: false
         podMonitorSelectorNilUsesHelmValues: false
-        # Retention: 24h local (Grafana Cloud is the long-term store)
-        retention: 24h
+        # 7-day local retention — sufficient for testnet ops.
+        # Add a remoteWrite block here later if you want long-term storage (e.g. Grafana Cloud).
+        retention: 7d
         retentionSize: "8GB"
         resources:
           requests:
@@ -56,17 +57,6 @@ spec:
           limits:
             cpu: 200m
             memory: 512Mi
-        # Remote write to Grafana Cloud
-        # Credentials come from monitoring-credentials secret (add after Grafana Cloud signup)
-        remoteWrite:
-          - url: "${GRAFANA_REMOTE_WRITE_URL}"
-            basicAuth:
-              username:
-                name: monitoring-credentials
-                key: grafana-user
-              password:
-                name: monitoring-credentials
-                key: grafana-api-key
 
     alertmanager:
       alertmanagerSpec:
@@ -80,6 +70,15 @@ spec:
       config:
         global:
           resolve_timeout: 5m
+          # SMTP credentials injected from alertmanager-smtp Secret.
+          # Create it once (SOPS-encrypted):
+          #   kubectl create secret generic alertmanager-smtp -n monitoring \
+          #     --from-literal=smtp_password=<app-password>
+          smtp_smarthost: "${SMTP_HOST}:587"
+          smtp_from: "alerts@decentralchain.io"
+          smtp_auth_username: "${SMTP_USER}"
+          smtp_auth_password: "${SMTP_PASSWORD}"
+          smtp_require_tls: true
         route:
           group_by: ["alertname", "namespace"]
           group_wait: 30s
@@ -92,14 +91,15 @@ spec:
               receiver: "null"
             - matchers:
                 - severity = "critical"
-              receiver: pagerduty
+              receiver: email
         receivers:
           - name: "null"
-          - name: pagerduty
-            # PagerDuty key injected from monitoring-credentials secret
-            pagerduty_configs:
-              - routing_key: "${PAGERDUTY_KEY}"
-                description: '{{ template "pagerduty.default.description" . }}'
+          - name: email
+            email_configs:
+              - to: "info@decentralchain.io"
+                send_resolved: true
+                headers:
+                  subject: '[DCC Testnet] {{ .Status | toUpper }}: {{ .CommonAnnotations.summary }}'
 
     # node-exporter on every LKE worker node
     nodeExporter:
