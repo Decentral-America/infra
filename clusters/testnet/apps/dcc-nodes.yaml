@@ -329,7 +329,7 @@ spec:
                 -XX:+UseContainerSupport
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
-                -Dlogback.stdout.level=DEBUG
+                -Dlogback.configurationFile=/var/lib/dcc/logback-debug.xml
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
