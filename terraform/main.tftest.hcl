@@ -7,7 +7,7 @@ variables {
   root_password          = "test-password-do-not-use"
   deploy_ssh_public_key  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDoNotUse test@ci"
   postgres_password      = "test-postgres-password"
-  default_matcher        = "3PC9BfRwJWWiw9AREE2B3eWzCks3CYtg4yo"
+  DEFAULT_MATCHER        = "3PC9BfRwJWWiw9AREE2B3eWzCks3CYtg4yo"
   blockchain_updates_url = "grpcs://mainnet-node.decentralchain.io:6881"
 }
 
