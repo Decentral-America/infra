@@ -10,10 +10,10 @@ spec:
 
 ---
 # ── HelmRelease: kube-prometheus-stack ───────────────────────────────────────
-# Deploys Prometheus Operator + Alertmanager + node-exporter.
-# Grafana is disabled — metrics are shipped to Grafana Cloud (free tier, 10k series).
-# Remote write URL and credentials are injected from the monitoring-credentials secret
-# (SOPS-encrypted, added when Grafana Cloud account is connected).
+# Deploys Prometheus Operator + Alertmanager + Grafana + node-exporter.
+# Grafana runs inside the cluster — no external account needed.
+# Access: kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+# Or expose via Caddy on grafana.testnet.decentralchain.io (see HANDOFF.md).
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -37,9 +37,28 @@ spec:
     remediation:
       retries: 3
   values:
-    # Grafana disabled — using Grafana Cloud remote write instead
     grafana:
-      enabled: false
+      enabled: true
+      adminPassword: "${GRAFANA_ADMIN_PASSWORD}"
+      defaultDashboardsTimezone: browser
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      grafana.ini:
+        server:
+          root_url: "%(protocol)s://%(domain)s/"
+        smtp:
+          enabled: true
+          host: "mail.decentralchain.io:465"
+          user: "info@decentralchain.io"
+          password: "${SMTP_PASSWORD}"
+          from_address: "info@decentralchain.io"
+          from_name: "DCC Testnet Monitoring"
+          startTLS_policy: "OpportunisticStartTLS"
 
     prometheus:
       prometheusSpec:
@@ -70,15 +89,13 @@ spec:
       config:
         global:
           resolve_timeout: 5m
-          # SMTP credentials injected from alertmanager-smtp Secret.
-          # Create it once (SOPS-encrypted):
-          #   kubectl create secret generic alertmanager-smtp -n monitoring \
-          #     --from-literal=smtp_password=<app-password>
-          smtp_smarthost: "${SMTP_HOST}:587"
-          smtp_from: "alerts@decentralchain.io"
-          smtp_auth_username: "${SMTP_USER}"
+          # mail.decentralchain.io on port 465 = implicit SSL (not STARTTLS).
+          # smtp_require_tls: false tells Alertmanager to use implicit TLS on connect.
+          smtp_smarthost: "mail.decentralchain.io:465"
+          smtp_from: "info@decentralchain.io"
+          smtp_auth_username: "info@decentralchain.io"
           smtp_auth_password: "${SMTP_PASSWORD}"
-          smtp_require_tls: true
+          smtp_require_tls: false
         route:
           group_by: ["alertname", "namespace"]
           group_wait: 30s
