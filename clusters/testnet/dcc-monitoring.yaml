@@ -17,17 +17,16 @@ spec:
       name: sops-age
   dependsOn:
     - name: dcc-apps
-  # postBuild substitutes ${SMTP_HOST} / ${SMTP_USER} / ${SMTP_PASSWORD} from the
-  # alertmanager-smtp Secret. Create it once with your SMTP provider credentials:
+  # postBuild substitutes ${SMTP_PASSWORD} and ${GRAFANA_ADMIN_PASSWORD} from the
+  # monitoring-secrets Secret. Create it once with your credentials, then SOPS-encrypt:
   #
-  #   kubectl create secret generic alertmanager-smtp -n monitoring \
-  #     --from-literal=SMTP_HOST=smtp.gmail.com \
-  #     --from-literal=SMTP_USER=alerts@decentralchain.io \
-  #     --from-literal=SMTP_PASSWORD=<app-password>
+  #   kubectl create secret generic monitoring-secrets -n monitoring \
+  #     --from-literal=SMTP_PASSWORD=<info@decentralchain.io password> \
+  #     --from-literal=GRAFANA_ADMIN_PASSWORD=<choose a strong password>
   #
-  # Then SOPS-encrypt and commit it. Until then, alerting is silent but monitoring works.
+  # Until the Secret exists, monitoring deploys but email/Grafana login are disabled.
   postBuild:
     substituteFrom:
       - kind: Secret
-        name: alertmanager-smtp
-        optional: true   # monitoring deploys; email is just silent until Secret exists
+        name: monitoring-secrets
+        optional: true
