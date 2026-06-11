@@ -100,6 +100,10 @@ spec:
 
     alertmanager:
       alertmanagerSpec:
+        # Use a manually-managed Secret for the alertmanager config so the SMTP
+        # password (from monitoring-secrets) bypasses Helm valuesFrom merge-order issues.
+        # Secret alertmanager-config in the monitoring namespace contains alertmanager.yaml.
+        configSecret: alertmanager-config
         resources:
           requests:
             cpu: 50m
