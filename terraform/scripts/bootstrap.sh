@@ -246,9 +246,9 @@ echo "[bootstrap] External Docker volumes created for ${NETWORK}"
 # so the file exists at boot. The deploy-container.yml workflow overwrites this
 # with the full genesis/chain config from infra/node-config/<network>/dcc.conf
 # before starting the container on every deploy.
-# This placeholder alone is not sufficient to run the node — it intentionally
+# This placeholder alone is not sufficient to run the node -- it intentionally
 # fails fast with a clear error if deployed without the CI push step.
-printf '# Placeholder — deploy-container.yml will overwrite this before docker compose up.\n' \
+printf '# Placeholder -- deploy-container.yml will overwrite this before docker compose up.\n' \
   > "/opt/dcc/config/node-${NETWORK}/dcc.conf"
 chmod 644 "/opt/dcc/config/node-${NETWORK}/dcc.conf"
 echo "[bootstrap] Node config placeholder written: /opt/dcc/config/node-${NETWORK}/dcc.conf"
