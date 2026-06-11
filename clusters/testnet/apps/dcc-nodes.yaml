@@ -98,6 +98,11 @@ data:
         port = 6869
         api-key-hash = "B5CmUs92SHN2n4Spbrszvusv6JCqyDr7XuafjVNUottA"
       }
+      synchronization {
+        synchronization-timeout = 5m
+        max-rollback = 20
+        score-ttl = 90s
+      }
     }
 
 ---
@@ -178,6 +183,11 @@ data:
         bind-address = "127.0.0.1"
         port = 6870
         api-key-hash = "B5CmUs92SHN2n4Spbrszvusv6JCqyDr7XuafjVNUottA"
+      }
+      synchronization {
+        synchronization-timeout = 5m
+        max-rollback = 20
+        score-ttl = 90s
       }
     }
 
@@ -260,6 +270,11 @@ data:
         bind-address = "127.0.0.1"
         port = 6871
         api-key-hash = "B5CmUs92SHN2n4Spbrszvusv6JCqyDr7XuafjVNUottA"
+      }
+      synchronization {
+        synchronization-timeout = 5m
+        max-rollback = 20
+        score-ttl = 90s
       }
     }
 
