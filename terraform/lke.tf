@@ -143,6 +143,16 @@ resource "linode_firewall" "lke_nodes" {
     ipv4     = ["192.168.128.0/17"]
   }
 
+
+  inbound {
+    label    = "allow-grafana-nodeport"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "32300"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
   tags = local.tags
 
   # Attach to all nodes in the LKE pool
