@@ -162,7 +162,7 @@ spec:
 
 ---
 # ── NodePort: expose Grafana on Frankfurt LKE node's public IP ────────────────
-# Caddy on Newark proxies grafana.testnet.decentralchain.io → 172.104.159.229:32300
+# Caddy on Newark proxies grafana.testnet.decentralchain.io → 172.105.64.89:32300
 apiVersion: v1
 kind: Service
 metadata:

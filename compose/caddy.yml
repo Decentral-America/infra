@@ -16,16 +16,16 @@
 # First-time start (run once after bootstrap):
 #   NETWORK=mainnet docker compose -f /opt/dcc/compose/caddy.yml up -d
 #
-# Caddy 2.11.3 released 2025-06 — includes 4 security patches:
-#   - fastcgi path traversal fix
-#   - vars placeholder GHSA-m2w3-8f23-hxxf
-#   - admin socket auth bypass (×2 patches)
+# Caddy 2.11.4 released 2026-06-03 — security fixes over 2.11.3:
+#   - GHSA-qrp7-cvwr-j2c6 (High): Windows file_server path auth bypass
+#   - GHSA-f59h-q822-g45g (High): FastCGI forward_auth header injection
+#   - GHSA-vcc4-2c75-vc9v (Moderate): stripHTML template function bypass
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
   caddy:
     # Pinned to a specific release. Renovate keeps this current.
-    image: caddy:2.11.3-alpine
+    image: caddy:2.11.4-alpine
     container_name: "caddy-${NETWORK:-mainnet}"
     # host network mode: Caddy binds directly to the host's port 80 and 443.
     # This lets it forward to scanner (127.0.0.1:3000) and data-service
