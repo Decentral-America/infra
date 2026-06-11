@@ -319,7 +319,7 @@ spec:
             - name: DCC_HEAP_SIZE
               value: "768m"
             - name: DCC_LOG_LEVEL
-              value: INFO
+              value: DEBUG
             - name: WVDATA
               value: /var/lib/dcc
             - name: WVLOG
@@ -329,6 +329,7 @@ spec:
                 -XX:+UseContainerSupport
                 -XX:+UseG1GC
                 -XX:MaxGCPauseMillis=200
+                -Dlogback.stdout.level=DEBUG
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
