@@ -75,7 +75,7 @@ data:
         node-name = "dcc-gen-0-testnet"
         bind-address = "0.0.0.0"
         port = 6863
-        declared-address = "127.0.0.1:6863"
+        declared-address = "139.162.152.128:6863"
         known-peers = [
           "66.228.55.154:6868"
           "127.0.0.1:6864"
@@ -161,7 +161,7 @@ data:
         node-name = "dcc-gen-1-testnet"
         bind-address = "0.0.0.0"
         port = 6864
-        declared-address = "127.0.0.1:6864"
+        declared-address = "139.162.152.128:6864"
         known-peers = [
           "66.228.55.154:6868"
           "127.0.0.1:6863"
@@ -247,7 +247,7 @@ data:
         node-name = "dcc-val-0-testnet"
         bind-address = "0.0.0.0"
         port = 6865
-        declared-address = "127.0.0.1:6865"
+        declared-address = "139.162.152.128:6865"
         known-peers = [
           "66.228.55.154:6868"
           "127.0.0.1:6863"
