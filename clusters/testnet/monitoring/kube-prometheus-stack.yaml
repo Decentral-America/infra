@@ -123,25 +123,26 @@ spec:
     - name: dcc.blockchain
       interval: 60s
       rules:
+        # Uses dcc-metrics-exporter (REST API → Prometheus bridge)
         - alert: DCCBlockHeightStalled
           expr: |
-            increase(decentralchain_blockchain_height[5m]) == 0
+            increase(dcc_block_height[5m]) == 0
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "DCC block height not advancing on {{ $labels.pod }}"
+            summary: "DCC block height not advancing on node {{ $labels.node }}"
             description: "No new blocks in 5 minutes. Generator may be isolated or crashed."
 
-        - alert: DCCPeerCountLow
+        # Age-based alert: last block was updated >5min ago
+        - alert: DCCChainStalled
           expr: |
-            decentralchain_peers_connected < 2
-          for: 3m
+            dcc_blockchain_height_age_seconds > 300
+          for: 2m
           labels:
             severity: critical
           annotations:
-            summary: "DCC peer count below quorum on {{ $labels.pod }}"
-            description: "Connected peers: {{ $value }}. Generator will pause mining (quorum=2)."
+            summary: "DCC chain stalled on {{ $labels.node }} — last block {{ $value | humanizeDuration }} ago"
 
         - alert: DCCPodRestarting
           expr: |
@@ -163,14 +164,17 @@ spec:
             summary: "DCC chain-data PVC at {{ $value | humanizePercentage }} capacity"
             description: "Expand PVC before disk fills. StorageClass allows online expansion."
 
-        - alert: DCCJVMHeapPressure
+        # JVM heap via cAdvisor container memory (works without JMX exporter)
+        # container_memory_working_set_bytes ÷ container_spec_memory_limit_bytes
+        - alert: DCCContainerMemoryPressure
           expr: |
-            jvm_memory_used_bytes{area="heap", namespace="dcc"} /
-            jvm_memory_max_bytes{area="heap", namespace="dcc"} > 0.90
+            (container_memory_working_set_bytes{namespace="dcc", container="node"}
+             / container_spec_memory_limit_bytes{namespace="dcc", container="node"}) > 0.85
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "DCC JVM heap > 90% on {{ $labels.pod }}"
+            summary: "DCC node container memory >85% on {{ $labels.pod }}"
+            description: "Working set at {{ $value | humanizePercentage }} of limit. Risk of OOMKill."
 
 ---
