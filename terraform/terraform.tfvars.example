@@ -23,7 +23,7 @@ deploy_ssh_public_key = "ssh-ed25519 AAAA... your-deploy-key-here"
 postgres_password = "CHANGE_ME_strong_db_password"
 
 # DCC matcher blockchain address (per-network — check DCC docs for the correct address)
-default_matcher = "3PEjHv3JGjcWNpYEEkif2w8NXV4kbybKoZ7"
+DEFAULT_MATCHER = "3PEjHv3JGjcWNpYEEkif2w8NXV4kbybKoZ7"
 
 # Minimum trade volume threshold for rate pair acceptance in data-service
 rate_pair_acceptance_volume_threshold = "0"

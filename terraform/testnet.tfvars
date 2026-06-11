@@ -2,7 +2,7 @@
 # DCC Testnet — non-sensitive OpenTofu defaults
 #
 # Committed to the repo. Contains NO secrets.
-# Sensitive values (root_password, deploy_ssh_public_key, default_matcher)
+# Sensitive values (root_password, deploy_ssh_public_key, DEFAULT_MATCHER)
 # are stored as TF_VAR_* secrets in the infra-testnet-provision GitHub
 # environment and injected by provision.yml.
 # All application secrets (wallet seed, passwords, API keys) are delivered

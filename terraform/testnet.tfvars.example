@@ -29,7 +29,7 @@ node_wallet_seed     = ""             # 15-word mnemonic or base58-encoded seed
 node_wallet_password = ""             # openssl rand -base64 32
 
 # ── Matcher (DEX) ───────────────────────────────────────────────────────────
-default_matcher          = ""         # DCC address of the matcher account
+DEFAULT_MATCHER          = ""         # DCC address of the matcher account
 matcher_account_password = ""         # openssl rand -base64 32
 matcher_api_key_hash     = ""         # base58(sha256(api-key)) — see docs
 

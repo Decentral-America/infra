@@ -55,7 +55,7 @@ variable "postgres_database" {
 
 # ── Matcher ───────────────────────────────────────────────────────────────────
 
-variable "default_matcher" {
+variable "DEFAULT_MATCHER" {
   description = "DCC blockchain address of the DEX matcher (used by data-service to validate order settlement)."
   type        = string
 }
