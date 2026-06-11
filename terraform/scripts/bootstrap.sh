@@ -198,8 +198,12 @@ awk '$5 >= 3071' /etc/ssh/moduli > /tmp/moduli.safe \
   && mv /tmp/moduli.safe /etc/ssh/moduli \
   && echo "[bootstrap] DH moduli filtered: only >= 3072-bit groups retained"
 
-sshd -t && systemctl restart sshd \
-  || { echo "[bootstrap] FATAL: sshd config test failed -- check /etc/ssh/sshd_config.d/99-dcc-hardening.conf"; exit 1; }
+if sshd -t; then
+  systemctl restart sshd
+else
+  echo "[bootstrap] FATAL: sshd config test failed -- check /etc/ssh/sshd_config.d/99-dcc-hardening.conf"
+  exit 1
+fi
 echo "[bootstrap] SSH hardened: CIS Debian 12 + Mozilla Modern profile applied via drop-in"
 
 # -- fail2ban (SSH brute-force protection) ------------------------------------
