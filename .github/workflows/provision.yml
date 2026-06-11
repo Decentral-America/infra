@@ -134,7 +134,7 @@ jobs:
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
           TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
           TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
-          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.DEFAULT_MATCHER }}
+          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
 
       - name: OpenTofu Apply
         if: inputs.action == 'apply'
@@ -144,7 +144,7 @@ jobs:
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
           TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
           TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
-          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.DEFAULT_MATCHER }}
+          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
 
       - name: Capture server IP
         id: capture
@@ -161,7 +161,7 @@ jobs:
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
           TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
           TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
-          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.DEFAULT_MATCHER }}
+          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
 
   # ── Push secrets via SSH (SOPS) ─────────────────────────────────────────────
   # Runs only after a successful apply. Calls push-secrets.yml which runs
