@@ -330,11 +330,11 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "600m"
-              memory: "1100Mi"
+              cpu: "420m"
+              memory: "880Mi"
             limits:
-              cpu: "600m"
-              memory: "1100Mi"
+              cpu: "420m"
+              memory: "880Mi"
           livenessProbe:
             httpGet:
               path: /node/status
@@ -431,11 +431,11 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "400m"
-              memory: "900Mi"
+              cpu: "300m"
+              memory: "750Mi"
             limits:
-              cpu: "400m"
-              memory: "900Mi"
+              cpu: "300m"
+              memory: "750Mi"
           livenessProbe:
             httpGet:
               path: /node/status
@@ -535,11 +535,11 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "200m"
-              memory: "650Mi"
+              cpu: "150m"
+              memory: "620Mi"
             limits:
-              cpu: "200m"
-              memory: "650Mi"
+              cpu: "150m"
+              memory: "620Mi"
           livenessProbe:
             httpGet:
               path: /node/status
