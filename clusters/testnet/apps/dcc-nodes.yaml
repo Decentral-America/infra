@@ -296,7 +296,7 @@ spec:
         fsGroup: 999
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d@sha256:9695b9565cb5966b0ffb5b64102cf42183dc5bcb2b75955f340748c4b86c91ee
           imagePullPolicy: IfNotPresent
           env:
             - name: DCC_NETWORK
@@ -330,8 +330,8 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "400m"
-              memory: "900Mi"
+              cpu: "600m"
+              memory: "1100Mi"
             limits:
               cpu: "600m"
               memory: "1100Mi"
@@ -397,7 +397,7 @@ spec:
         fsGroup: 999
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d@sha256:9695b9565cb5966b0ffb5b64102cf42183dc5bcb2b75955f340748c4b86c91ee
           imagePullPolicy: IfNotPresent
           env:
             - name: DCC_NETWORK
@@ -431,8 +431,8 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "300m"
-              memory: "750Mi"
+              cpu: "400m"
+              memory: "900Mi"
             limits:
               cpu: "400m"
               memory: "900Mi"
@@ -498,7 +498,7 @@ spec:
         fsGroup: 999
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-e7879b4d24de51d63fad013ffcbb0561f3c9948d@sha256:9695b9565cb5966b0ffb5b64102cf42183dc5bcb2b75955f340748c4b86c91ee
           imagePullPolicy: IfNotPresent
           env:
             - name: DCC_NETWORK
@@ -535,8 +535,8 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "150m"
-              memory: "550Mi"
+              cpu: "200m"
+              memory: "650Mi"
             limits:
               cpu: "200m"
               memory: "650Mi"
