@@ -58,6 +58,9 @@ spec:
     grafana:
       enabled: true
       adminPassword: ""  # overridden by valuesFrom above
+      # Disable client-side secret leak check — passwords injected via valuesFrom,
+      # not from plain values, but the chart can't distinguish the source.
+      assertNoLeakedSecrets: false
       defaultDashboardsTimezone: browser
       resources:
         requests:
