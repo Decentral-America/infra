@@ -36,10 +36,28 @@ spec:
   upgrade:
     remediation:
       retries: 3
+  # valuesFrom injects credentials directly from the monitoring-secrets Secret.
+  # This avoids Flux substituteFrom namespace limitations and is the Helm-native approach.
+  valuesFrom:
+    - kind: Secret
+      name: monitoring-secrets
+      valuesKey: GRAFANA_ADMIN_PASSWORD
+      targetPath: grafana.adminPassword
+      optional: true
+    - kind: Secret
+      name: monitoring-secrets
+      valuesKey: SMTP_PASSWORD
+      targetPath: grafana.grafana\.ini.smtp.password
+      optional: true
+    - kind: Secret
+      name: monitoring-secrets
+      valuesKey: SMTP_PASSWORD
+      targetPath: alertmanager.config.global.smtp_auth_password
+      optional: true
   values:
     grafana:
       enabled: true
-      adminPassword: "${GRAFANA_ADMIN_PASSWORD}"
+      adminPassword: ""  # overridden by valuesFrom above
       defaultDashboardsTimezone: browser
       resources:
         requests:
@@ -55,7 +73,7 @@ spec:
           enabled: true
           host: "mail.decentralchain.io:465"
           user: "info@decentralchain.io"
-          password: "${SMTP_PASSWORD}"
+          password: ""  # overridden by valuesFrom above
           from_address: "info@decentralchain.io"
           from_name: "DCC Testnet Monitoring"
           startTLS_policy: "OpportunisticStartTLS"
@@ -94,7 +112,7 @@ spec:
           smtp_smarthost: "mail.decentralchain.io:465"
           smtp_from: "info@decentralchain.io"
           smtp_auth_username: "info@decentralchain.io"
-          smtp_auth_password: "${SMTP_PASSWORD}"
+          smtp_auth_password: ""  # overridden by valuesFrom above
           smtp_require_tls: false
         route:
           group_by: ["alertname", "namespace"]
