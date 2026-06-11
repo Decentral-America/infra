@@ -550,17 +550,17 @@ spec:
               mountPath: /etc/dcc
           resources:
             requests:
-              cpu: "150m"
+              cpu: "250m"
               memory: "620Mi"
             limits:
-              cpu: "150m"
+              cpu: "250m"
               memory: "620Mi"
           livenessProbe:
             httpGet:
               path: /node/status
               port: 6871
               host: 127.0.0.1
-            initialDelaySeconds: 60
+            initialDelaySeconds: 120
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
@@ -568,7 +568,7 @@ spec:
               path: /node/status
               port: 6871
               host: 127.0.0.1
-            initialDelaySeconds: 30
+            initialDelaySeconds: 90
             periodSeconds: 15
       volumes:
         - name: config

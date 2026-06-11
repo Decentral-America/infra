@@ -60,8 +60,8 @@ apt-get install -y -qq \
   gnupg \
   lsb-release
 
-# -- PostgreSQL 17 via PGDG ----------------------------------------------------
-# Use the official PGDG repo for PostgreSQL 17 (EOL Nov 2029).
+# -- PostgreSQL 18 via PGDG ----------------------------------------------------
+# Use the official PGDG repo for PostgreSQL 18 (EOL Nov 2030).
 # Debian 12 ships PG15 (EOL Nov 2027) by default -- not enterprise-grade longevity.
 curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
   | gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg
