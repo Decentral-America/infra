@@ -1,0 +1,16 @@
+name: Recycle LKE Node Pool (one-shot)
+on:
+  workflow_dispatch:
+jobs:
+  recycle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recycle LKE pool 902887 on cluster 615553
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          curl -s -X POST \
+            "https://api.linode.com/v4/lke/clusters/615553/pools/902887/recycle" \
+            -H "Authorization: Bearer $LINODE_TOKEN" \
+            -H "Content-Type: application/json"
+          echo "Recycle triggered"
