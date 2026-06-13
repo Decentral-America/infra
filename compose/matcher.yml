@@ -23,6 +23,12 @@ services:
     container_name: "matcher-${NETWORK:-mainnet}"
     restart: unless-stopped
 
+    # local.conf is the deployment-specific configuration override. Passing it as
+    # the first argument to the matcher main() causes it to be loaded with highest
+    # priority via ConfigFactory.parseFile(local.conf).withFallback(application.conf).
+    # This is the standard Typesafe Config override pattern — no hardcoded env vars.
+    command: /var/lib/decentralchain-dex/config/local.conf
+
     # Secrets are written by bootstrap.sh; never baked into the image.
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
