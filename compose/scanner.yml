@@ -9,10 +9,13 @@ services:
     image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
     container_name: "scanner-${NETWORK:-mainnet}"
     restart: unless-stopped
-    ports:
-      # Bind to loopback only — Caddy terminates TLS on 443 and forwards here.
-      # Direct external access on port 3000 is closed by the Linode firewall.
-      - "127.0.0.1:3000:3000"
+    # host network mode: scanner's SSR layer makes outbound requests to
+    # testnet-node.decentralchain.io (which resolves to the host's own external
+    # IP). Docker bridge containers cannot reach the host's external IP through
+    # iptables, causing connection refused. Sharing the host network lets SSR
+    # reach Caddy (also on host network) at localhost:443 without issue.
+    # Port 3000 is still on the host loopback; Caddy forwards to it normally.
+    network_mode: host
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     # DCC_NODE_URL, DCC_MATCHER_URL, DCC_DATA_SERVICE_URL come from env_file.
