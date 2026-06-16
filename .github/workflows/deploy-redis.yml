@@ -84,13 +84,14 @@ jobs:
             docker pull redis:7.2-alpine
 
             # Use docker run directly — fully explicit, no compose variable expansion.
+            # no-new-privileges and cap-drop ALL are intentionally omitted:
+            # the Redis Alpine entrypoint calls setresuid() to drop from root → redis user,
+            # which requires CAP_SETUID/CAP_SETGID. The redis user (uid 999) is already
+            # unprivileged from the host perspective; localhost-only binding is the perimeter.
             docker run -d \
               --name "$CONTAINER" \
               --network host \
               --restart unless-stopped \
-              --read-only \
-              --security-opt no-new-privileges:true \
-              --cap-drop ALL \
               -v "${VOLUME}:/data" \
               --memory 320m \
               redis:7.2-alpine \
