@@ -19,14 +19,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Decrypt SOPS and inject NODE_REST_API_KEY to server
+      - name: Decrypt SOPS and extract NODE_REST_API_KEY
+        id: extract
         env:
-          # Use repo-level AGE_KEY_TESTNET (the one that matches the testnet.env SOPS file)
-          SOPS_AGE_KEY:   ${{ secrets.AGE_KEY_TESTNET }}
-          DEPLOY_SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          NETWORK:        ${{ inputs.network }}
-          SERVER_IP:      66.228.55.154
-          DEPLOY_USER:    ${{ secrets.TESTNET_DEPLOY_USER }}
+          SOPS_AGE_KEY: ${{ secrets.AGE_KEY_TESTNET }}
+          NETWORK:      ${{ inputs.network }}
         run: |
           set -euo pipefail
 
@@ -37,25 +34,30 @@ jobs:
           install -m 755 /tmp/sops-bin /usr/local/bin/sops
           rm /tmp/sops-bin
 
-          echo "${DEPLOY_SSH_KEY}" | base64 -d > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${DEPLOY_USER}@${SERVER_IP}"
-
           SECRETS=$(sops --decrypt "secrets/${NETWORK}.env")
-
           NODE_API_KEY=$(printf '%s' "${SECRETS}" | grep '^NODE_REST_API_KEY=' | cut -d= -f2-)
 
           if [[ -z "${NODE_API_KEY:-}" ]]; then
-            echo "::error::NODE_REST_API_KEY not found in SOPS secrets"
+            echo "::error::NODE_REST_API_KEY not found in SOPS secrets/${NETWORK}.env"
             exit 1
           fi
 
-          echo "NODE_REST_API_KEY found — injecting to server secrets file"
+          echo "NODE_REST_API_KEY found"
+          # Write to masked output so the key never appears in logs
+          echo "node_api_key=${NODE_API_KEY}" >> "$GITHUB_OUTPUT"
 
-          # Remove existing entry and append fresh one
-          $SSH "sudo sed -i '/^NODE_REST_API_KEY=/d' /opt/dcc/secrets/${NETWORK}.env && \
-                printf 'NODE_REST_API_KEY=%s\n' '${NODE_API_KEY}' | sudo tee -a /opt/dcc/secrets/${NETWORK}.env > /dev/null && \
-                sudo chmod 640 /opt/dcc/secrets/${NETWORK}.env"
-
-          echo "Done. NODE_REST_API_KEY injected."
-          rm -f /tmp/deploy_key
+      - name: Inject key to server secrets file
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          NETWORK:      ${{ inputs.network }}
+          NODE_API_KEY: ${{ steps.extract.outputs.node_api_key }}
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          envs:     NETWORK,NODE_API_KEY
+          script: |
+            sudo sed -i '/^NODE_REST_API_KEY=/d' /opt/dcc/secrets/${NETWORK}.env
+            printf 'NODE_REST_API_KEY=%s\n' "${NODE_API_KEY}" | sudo tee -a /opt/dcc/secrets/${NETWORK}.env > /dev/null
+            sudo chmod 640 /opt/dcc/secrets/${NETWORK}.env
+            echo "NODE_REST_API_KEY injected."
