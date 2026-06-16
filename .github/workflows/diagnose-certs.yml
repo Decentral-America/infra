@@ -23,11 +23,5 @@ jobs:
           key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           envs:     NETWORK
           script: |
-            echo "=== Caddy container status ==="
-            docker ps --filter name=caddy --format "{{.Names}} {{.Status}}"
-            echo "=== Recent Caddy logs (tls/acme only) ==="
-            docker logs caddy-${NETWORK} 2>&1 | grep -E '"logger":"tls|acme|obtain|certif|error.*tls|tls.*error' | tail -30 || true
-            echo "=== Is node running on port 6869? ==="
-            ss -tlnp | grep 6869 || echo "nothing on 6869"
-            echo "=== Is matcher running on port 6886? ==="
-            ss -tlnp | grep 6886 || echo "nothing on 6886"
+            echo "=== Current Caddyfile ==="
+            cat /opt/dcc/caddy/Caddyfile
