@@ -221,10 +221,11 @@ jobs:
             # (sed \n created literal backslash-n strings, corrupting the config).
             sudo sed -i '/header_down.*\\n/d' "$CF"
 
-            # Fix CSP: normalize first (idempotent), then add ipinfo.io once.
-            sudo sed -i 's| https://ipinfo\.io||g' "$CF"
-            sudo sed -i 's| https://api\.thegreenwebfoundation\.org||g' "$CF"
-            sudo sed -i "s|wss://\*\.decentralchain\.io|wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|" "$CF"
+            # Fix CSP: only modify lines that contain connect-src to avoid accidentally
+            # stripping the upstream URL from the reverse_proxy directive.
+            sudo sed -i '/connect-src/ s| https://ipinfo\.io||g' "$CF"
+            sudo sed -i '/connect-src/ s| https://api\.thegreenwebfoundation\.org||g' "$CF"
+            sudo sed -i "/connect-src/ s|wss://\*\.decentralchain\.io|wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|" "$CF"
 
             sudo chmod 644 "$CF"
             sudo chown deploy:deploy "$CF"
