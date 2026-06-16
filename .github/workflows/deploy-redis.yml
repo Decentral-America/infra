@@ -1,0 +1,84 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# One-time Redis infrastructure deploy.
+#
+# Redis is not versioned by app CI — it is infrastructure that runs once and
+# stays running. This workflow is triggered manually to start or update Redis.
+#
+# Run this BEFORE the first websocket-api deploy.
+#
+# Required secrets (in infra environments testnet/stagenet/mainnet):
+#   TESTNET_DEPLOY_HOST, TESTNET_DEPLOY_USER, TESTNET_DEPLOY_SSH_KEY
+#   (same pattern for stagenet/mainnet)
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Deploy Redis
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Target network'
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet, stagenet, mainnet]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-redis-${{ inputs.network }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Redis → ${{ inputs.network }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout infra repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Upload redis.yml to server
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+        with:
+          host:             ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          username:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
+          key:              ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
+          source:           compose/redis.yml
+          target:           /opt/dcc/compose/
+          strip_components: 1
+
+      - name: Start or update Redis
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          NETWORK: ${{ inputs.network }}
+        with:
+          host:     ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          username: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
+          key:      ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
+          envs:     NETWORK
+          script: |
+            set -euo pipefail
+            cd /opt/dcc/compose
+
+            # Source REDIS_PASSWORD from the secrets file (written by push-secrets).
+            REDIS_PASS=$(grep '^REDIS_PASSWORD=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2- || true)
+            if [[ -z "$REDIS_PASS" ]]; then
+              echo "::error::REDIS_PASSWORD not found in /opt/dcc/secrets/${NETWORK}.env"
+              echo "::error::Run push-secrets first after adding REDIS_PASSWORD to your SOPS secrets file."
+              exit 1
+            fi
+
+            export REDIS_PASSWORD="$REDIS_PASS"
+            export NETWORK
+
+            docker compose \
+              --project-name "redis-${NETWORK}" \
+              --file redis.yml \
+              up --detach --wait --wait-timeout 30 redis
+
+            echo "Redis is healthy on ${NETWORK}."

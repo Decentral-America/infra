@@ -104,6 +104,12 @@ variable "data_service_domain" {
   default     = ""
 }
 
+variable "websocket_domain" {
+  description = "Public domain for the WebSocket API (wss://), proxied by Caddy with automatic TLS. Leave empty to skip."
+  type        = string
+  default     = ""
+}
+
 variable "acme_email" {
   description = "Email for Let's Encrypt ACME cert expiry notifications. Optional."
   type        = string

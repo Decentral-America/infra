@@ -12,7 +12,7 @@ If you discover a security vulnerability in this repository, **do not open a pub
 Please report it privately via one of the following channels:
 
 - **GitHub Private Security Advisory**: Use the [Security Advisory](../../security/advisories/new) feature in this repository.
-- **Email**: Contact the security team at `security@decentralchain.io`.
+- **Email**: Contact the security team at `info@decentralchain.io`.
 
 ### What to include
 

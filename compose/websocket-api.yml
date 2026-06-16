@@ -1,0 +1,69 @@
+# docker-compose for DCC WebSocket API
+# Location on server: /opt/dcc/compose/websocket-api.yml
+#
+# Real-time WebSocket pub/sub gateway. Clients subscribe to
+# topic://state/{address}/{key} and receive live blockchain state updates.
+#
+# Data flow:
+#   DCC node → BPS → Redis PUBLISH → websocket-api → WebSocket clients
+#
+# Deploy:
+#   NETWORK=testnet docker compose -f /opt/dcc/compose/websocket-api.yml up -d
+#
+# Depends on redis being healthy (start redis.yml first).
+# Caddy reverse-proxies HTTPS + WSS from WEBSOCKET_DOMAIN → localhost:8080.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  websocket-api:
+    image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
+    container_name: "websocket-api-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    # host network: reaches Redis on 127.0.0.1:6379 without Docker bridge.
+    # Caddy forwards WSS → ws://127.0.0.1:8080 on the same host.
+    network_mode: host
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+    environment:
+      PORT: "8081"
+      SHARD_COUNT: "20"
+      MAX_CONNECTIONS: "10000"
+      # Must be less than terminationGracePeriodSeconds (30s default in K8s;
+      # for Docker Compose, this gives BPS time to drain in-flight publishes).
+      GRACEFUL_SHUTDOWN_DURATION_SECONDS: "25"
+      # Redis connection — password comes from env_file (REDIS_PASSWORD →
+      # envy reads REPO__PASSWORD, so the secret file must export REPO__PASSWORD).
+      REPO__HOST: "127.0.0.1"
+      REPO__PORT: "6379"
+      REPO__USERNAME: ""
+      REPO__KEY_TTL: "60"
+      REPO__MAX_POOL_SIZE: "10"
+      REPO__REFRESH_THREADS: "1"
+      # REPO__PASSWORD is loaded from env_file
+    healthcheck:
+      test: ["/app/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
