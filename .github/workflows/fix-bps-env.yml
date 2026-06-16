@@ -40,7 +40,7 @@ jobs:
             echo "Postgres connection: host=${PGHOST} port=${PGPORT} user=${PGUSER} database=${PGDATABASE}"
 
             # Remove stale entries and inject fresh Postgres vars for BPS
-            sudo sed -i '/^POSTGRES__HOST=/d;/^POSTGRES__PORT=/d;/^POSTGRES__USERNAME=/d;/^POSTGRES__DATABASE=/d;/^PGHOST=/d;/^PGPORT=/d;/^PGUSER=/d;/^PGPASSWORD=/d;/^PGDATABASE=/d;/^BLOCKCHAIN_UPDATES_URL=/d;/^CHAIN_ID=/d;/^STARTING_HEIGHT=/d' "$SECRETS"
+            sudo sed -i '/^POSTGRES__HOST=/d;/^POSTGRES__PORT=/d;/^POSTGRES__USER=/d;/^POSTGRES__USERNAME=/d;/^POSTGRES__PASSWORD=/d;/^POSTGRES__DATABASE=/d;/^PGHOST=/d;/^PGPORT=/d;/^PGUSER=/d;/^PGPASSWORD=/d;/^PGDATABASE=/d;/^BLOCKCHAIN_UPDATES_URL=/d;/^CHAIN_ID=/d;/^STARTING_HEIGHT=/d' "$SECRETS"
 
             {
               printf 'PGHOST=%s\n'             "${PGHOST}"
@@ -50,7 +50,7 @@ jobs:
               printf 'PGDATABASE=%s\n'         "${PGDATABASE}"
               printf 'POSTGRES__HOST=%s\n'     "${PGHOST}"
               printf 'POSTGRES__PORT=%s\n'     "${PGPORT}"
-              printf 'POSTGRES__USERNAME=%s\n' "${PGUSER}"
+              printf 'POSTGRES__USER=%s\n'     "${PGUSER}"
               printf 'POSTGRES__PASSWORD=%s\n' "${PGPASSWORD}"
               printf 'POSTGRES__DATABASE=%s\n' "${PGDATABASE}"
               printf 'BLOCKCHAIN_UPDATES_URL=grpc://localhost:6881\n'
