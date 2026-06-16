@@ -38,12 +38,14 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      # redis-cli reads REDISCLI_AUTH automatically — no -a flag needed.
-      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
-      interval: 10s
+      # CMD-SHELL runs inside the container where REDISCLI_AUTH is set,
+      # so redis-cli authenticates automatically. grep PONG ensures a hard fail
+      # if Redis returns NOAUTH instead of pong.
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping | grep -q PONG"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 5s
 
     security_opt:
       - no-new-privileges:true
