@@ -23,6 +23,47 @@ jobs:
           key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           envs:     NETWORK
           script: |
+            set -euo pipefail
+            CADDYFILE=/opt/dcc/caddy/Caddyfile
+
+            # Remove existing node/matcher blocks so we can rewrite them cleanly
+            sudo sed -i '/^testnet-node\.decentralchain\.io {/,/^}/d' "$CADDYFILE"
+            sudo sed -i '/^testnet-matcher\.decentralchain\.io {/,/^}/d' "$CADDYFILE"
+            # Remove trailing blank lines left by sed
+            sudo sed -i '/^[[:space:]]*$/d' "$CADDYFILE"
+
+            # Append node and matcher Caddy blocks
+            {
+              printf '\ntestnet-node.decentralchain.io {\n'
+              printf '    reverse_proxy localhost:6869\n'
+              printf '    header {\n'
+              printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+              printf '        X-Content-Type-Options "nosniff"\n'
+              printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+              printf '        Access-Control-Allow-Origin "*"\n'
+              printf '        -Server\n'
+              printf '    }\n'
+              printf '    log\n'
+              printf '}\n\n'
+              printf 'testnet-matcher.decentralchain.io {\n'
+              printf '    reverse_proxy localhost:6886\n'
+              printf '    header {\n'
+              printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+              printf '        X-Content-Type-Options "nosniff"\n'
+              printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+              printf '        Access-Control-Allow-Origin "*"\n'
+              printf '        -Server\n'
+              printf '    }\n'
+              printf '    log\n'
+              printf '}\n'
+            } | sudo tee -a "$CADDYFILE" > /dev/null
+
+            sudo chmod 644 "$CADDYFILE"
+            sudo chown deploy:deploy "$CADDYFILE"
+
+            echo "=== Domains in Caddyfile ==="
+            grep "^[a-z]" "$CADDYFILE" | grep "\." | head -10
+
+            # Restart Caddy so it picks up all 5 domains for ACME
             docker restart "caddy-${NETWORK}"
-            sleep 3
-            echo "Caddy restarted — ACME will provision new certs automatically."
+            echo "Caddy restarted with all domains — ACME will provision certs."
