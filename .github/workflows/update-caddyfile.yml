@@ -96,6 +96,25 @@ jobs:
 
               if [[ -n "${SCANNER_DOMAIN:-}" ]]; then
                 printf '%s {\n' "${SCANNER_DOMAIN}"
+
+                # Proxy IP geolocation lookups to ipinfo.io.
+                # Client: /api/geo/{ip}/json  →  https://ipinfo.io/{ip}/json
+                printf '    handle /api/geo/* {\n'
+                printf '        uri strip_prefix /api/geo\n'
+                printf '        reverse_proxy https://ipinfo.io {\n'
+                printf '            header_up Host ipinfo.io\n'
+                printf '        }\n'
+                printf '    }\n'
+
+                # Proxy green hosting checks to the Green Web Foundation.
+                # Client: /api/greencheck/{ip}  →  https://api.thegreenwebfoundation.org/api/v3/greencheck/{ip}
+                printf '    handle /api/greencheck/* {\n'
+                printf '        uri replace /api/greencheck /api/v3/greencheck\n'
+                printf '        reverse_proxy https://api.thegreenwebfoundation.org {\n'
+                printf '            header_up Host api.thegreenwebfoundation.org\n'
+                printf '        }\n'
+                printf '    }\n'
+
                 printf '    reverse_proxy localhost:3000\n'
                 printf '    header {\n'
                 printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
