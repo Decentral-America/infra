@@ -38,7 +38,7 @@ services:
       - --maxmemory
       - "256mb"
       - --maxmemory-policy
-      - "allkeys-lru"
+      - "volatile-lru"
       - --loglevel
       - "notice"
     # REDISCLI_AUTH lets redis-cli authenticate without passing -a on the command line.

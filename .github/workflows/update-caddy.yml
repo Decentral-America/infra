@@ -217,7 +217,7 @@ jobs:
           target:   /opt/dcc/caddy/
           strip_components: 1
 
-      - name: Apply header stripping and restart Caddy
+      - name: Set permissions and restart Caddy
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
         env:
           NETWORK: ${{ inputs.network }}
@@ -229,20 +229,8 @@ jobs:
           script: |
             set -euo pipefail
             CF=/opt/dcc/caddy/Caddyfile
-
-            # Remove any malformed header_down lines injected by previous broken sed runs
-            # (sed \n created literal backslash-n strings, corrupting the config).
-            sudo sed -i '/header_down.*\\n/d' "$CF"
-
-            # Fix CSP: only modify lines that contain connect-src to avoid accidentally
-            # stripping the upstream URL from the reverse_proxy directive.
-            sudo sed -i '/connect-src/ s| https://ipinfo\.io||g' "$CF"
-            sudo sed -i '/connect-src/ s| https://api\.thegreenwebfoundation\.org||g' "$CF"
-            sudo sed -i "/connect-src/ s|wss://\*\.decentralchain\.io|wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|" "$CF"
-
             sudo chmod 644 "$CF"
             sudo chown deploy:deploy "$CF"
-
             echo "=== Caddyfile lines ==="
             wc -l "$CF"
             echo "=== Geo proxy block ==="
