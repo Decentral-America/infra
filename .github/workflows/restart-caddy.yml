@@ -32,10 +32,25 @@ jobs:
             # Remove trailing blank lines left by sed
             sudo sed -i '/^[[:space:]]*$/d' "$CADDYFILE"
 
-            # Append node and matcher Caddy blocks
+            # Append node and matcher Caddy blocks.
+            # The DCC node returns 500 for requests that include an Origin header
+            # (its own CORS allowlist rejects unknown origins). Strip Origin before
+            # proxying so the node sees a plain request; Caddy re-adds CORS headers
+            # on the way out. OPTIONS preflight is handled entirely by Caddy.
             {
               printf '\ntestnet-node.decentralchain.io {\n'
-              printf '    reverse_proxy localhost:6869\n'
+              printf '    @options method OPTIONS\n'
+              printf '    handle @options {\n'
+              printf '        header Access-Control-Allow-Origin "*"\n'
+              printf '        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"\n'
+              printf '        header Access-Control-Allow-Headers "Content-Type, Authorization, Accept"\n'
+              printf '        header Access-Control-Max-Age "3600"\n'
+              printf '        respond "" 204\n'
+              printf '    }\n'
+              printf '    reverse_proxy localhost:6869 {\n'
+              printf '        header_up -Origin\n'
+              printf '        header_up -Referer\n'
+              printf '    }\n'
               printf '    header {\n'
               printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
               printf '        X-Content-Type-Options "nosniff"\n'
@@ -46,7 +61,18 @@ jobs:
               printf '    log\n'
               printf '}\n\n'
               printf 'testnet-matcher.decentralchain.io {\n'
-              printf '    reverse_proxy localhost:6886\n'
+              printf '    @options method OPTIONS\n'
+              printf '    handle @options {\n'
+              printf '        header Access-Control-Allow-Origin "*"\n'
+              printf '        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"\n'
+              printf '        header Access-Control-Allow-Headers "Content-Type, Authorization, Accept"\n'
+              printf '        header Access-Control-Max-Age "3600"\n'
+              printf '        respond "" 204\n'
+              printf '    }\n'
+              printf '    reverse_proxy localhost:6886 {\n'
+              printf '        header_up -Origin\n'
+              printf '        header_up -Referer\n'
+              printf '    }\n'
               printf '    header {\n'
               printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
               printf '        X-Content-Type-Options "nosniff"\n'
