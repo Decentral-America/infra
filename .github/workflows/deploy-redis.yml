@@ -82,6 +82,13 @@ jobs:
             docker compose \
               --project-name "redis-${NETWORK}" \
               --file redis.yml \
-              up --detach --wait --wait-timeout 90 redis
+              up --detach --wait --wait-timeout 90 redis \
+            || {
+              echo "=== docker logs redis-${NETWORK} ==="
+              docker logs "redis-${NETWORK}" 2>&1 || true
+              echo "=== docker inspect redis-${NETWORK} ==="
+              docker inspect "redis-${NETWORK}" 2>&1 | grep -E "Status|Error|ExitCode|OOMKilled" || true
+              exit 1
+            }
 
             echo "Redis is healthy on ${NETWORK}."
