@@ -63,32 +63,57 @@ jobs:
           envs:     NETWORK
           script: |
             set -euo pipefail
-            cd /opt/dcc/compose
 
             # Source REDIS_PASSWORD from the secrets file (written by push-secrets).
             REDIS_PASS=$(grep '^REDIS_PASSWORD=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2- || true)
             if [[ -z "$REDIS_PASS" ]]; then
               echo "::error::REDIS_PASSWORD not found in /opt/dcc/secrets/${NETWORK}.env"
-              echo "::error::Run push-secrets first after adding REDIS_PASSWORD to your SOPS secrets file."
               exit 1
             fi
 
-            export REDIS_PASSWORD="$REDIS_PASS"
-            export NETWORK
+            CONTAINER="redis-${NETWORK}"
+            VOLUME="redis-data-${NETWORK}"
 
-            # Pull image first so --wait-timeout only covers startup, not download.
+            # Stop and remove any existing container so we start clean.
+            docker stop "$CONTAINER" 2>/dev/null || true
+            docker rm   "$CONTAINER" 2>/dev/null || true
+
+            # Ensure the data volume exists (idempotent).
+            docker volume create "$VOLUME" > /dev/null
+
             docker pull redis:7.2-alpine
 
-            docker compose \
-              --project-name "redis-${NETWORK}" \
-              --file redis.yml \
-              up --detach --wait --wait-timeout 90 redis \
-            || {
-              echo "=== docker logs redis-${NETWORK} ==="
-              docker logs "redis-${NETWORK}" 2>&1 || true
-              echo "=== docker inspect redis-${NETWORK} ==="
-              docker inspect "redis-${NETWORK}" 2>&1 | grep -E "Status|Error|ExitCode|OOMKilled" || true
-              exit 1
-            }
+            # Use docker run directly — fully explicit, no compose variable expansion.
+            docker run -d \
+              --name "$CONTAINER" \
+              --network host \
+              --restart unless-stopped \
+              --read-only \
+              --security-opt no-new-privileges:true \
+              --cap-drop ALL \
+              -v "${VOLUME}:/data" \
+              --memory 320m \
+              redis:7.2-alpine \
+              redis-server \
+                --bind 127.0.0.1 \
+                --port 6379 \
+                --requirepass "$REDIS_PASS" \
+                --appendonly yes \
+                --appendfilename "appendonly-${NETWORK}.aof" \
+                --maxmemory 256mb \
+                --maxmemory-policy allkeys-lru \
+                --loglevel notice
 
-            echo "Redis is healthy on ${NETWORK}."
+            echo "Waiting for Redis to become healthy..."
+            for i in $(seq 1 20); do
+              if docker exec "$CONTAINER" redis-cli -h 127.0.0.1 -a "$REDIS_PASS" ping 2>/dev/null | grep -q PONG; then
+                echo "Redis is healthy on ${NETWORK}."
+                exit 0
+              fi
+              echo "Attempt $i/20 — waiting 3s..."
+              sleep 3
+            done
+
+            echo "=== Redis failed to become healthy. Logs: ==="
+            docker logs "$CONTAINER" 2>&1 | tail -30
+            exit 1
