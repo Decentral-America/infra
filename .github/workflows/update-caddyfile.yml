@@ -44,13 +44,23 @@ jobs:
       - name: Read domain variables from testnet.tfvars
         id: domains
         run: |
-          parse() { grep "^${1}\s*=" terraform/testnet.tfvars | sed 's/.*=\s*"\(.*\)"/\1/'; }
-          echo "scanner=$(parse scanner_domain)"           >> "$GITHUB_OUTPUT"
-          echo "data_service=$(parse data_service_domain)" >> "$GITHUB_OUTPUT"
-          echo "websocket=$(parse websocket_domain)"       >> "$GITHUB_OUTPUT"
-          echo "node=$(parse node_domain)"                 >> "$GITHUB_OUTPUT"
-          echo "matcher=$(parse matcher_domain)"           >> "$GITHUB_OUTPUT"
-          echo "acme=$(parse acme_email)"                  >> "$GITHUB_OUTPUT"
+          # Use awk instead of sed for more portable extraction
+          parse() { grep "^${1}" terraform/testnet.tfvars | awk -F'"' '{print $2}'; }
+          echo "=== Debug: raw tfvars lines ==="
+          grep -E "domain|acme" terraform/testnet.tfvars || true
+          echo "=== Parsed values ==="
+          SCANNER=$(parse scanner_domain);      echo "scanner: $SCANNER"
+          DATA_SVC=$(parse data_service_domain); echo "data_service: $DATA_SVC"
+          WEBSOCKET=$(parse websocket_domain);  echo "websocket: $WEBSOCKET"
+          NODE=$(parse node_domain);            echo "node: $NODE"
+          MATCHER=$(parse matcher_domain);      echo "matcher: $MATCHER"
+          ACME=$(parse acme_email);             echo "acme: $ACME"
+          echo "scanner=$SCANNER"       >> "$GITHUB_OUTPUT"
+          echo "data_service=$DATA_SVC" >> "$GITHUB_OUTPUT"
+          echo "websocket=$WEBSOCKET"   >> "$GITHUB_OUTPUT"
+          echo "node=$NODE"             >> "$GITHUB_OUTPUT"
+          echo "matcher=$MATCHER"       >> "$GITHUB_OUTPUT"
+          echo "acme=$ACME"             >> "$GITHUB_OUTPUT"
 
       - name: Generate and push Caddyfile, then reload Caddy
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
