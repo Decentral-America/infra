@@ -136,6 +136,8 @@ resource "linode_instance" "backend" {
     SCANNER_DOMAIN                        = var.scanner_domain
     DATA_SERVICE_DOMAIN                   = var.data_service_domain
     WEBSOCKET_DOMAIN                      = var.websocket_domain
+    NODE_DOMAIN                           = var.node_domain
+    MATCHER_DOMAIN                        = var.matcher_domain
     ACME_EMAIL                            = var.acme_email
     BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
     BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint

@@ -45,10 +45,12 @@ jobs:
         id: domains
         run: |
           parse() { grep "^${1}\s*=" terraform/testnet.tfvars | sed 's/.*=\s*"\(.*\)"/\1/'; }
-          echo "scanner=$(parse scanner_domain)"          >> "$GITHUB_OUTPUT"
+          echo "scanner=$(parse scanner_domain)"           >> "$GITHUB_OUTPUT"
           echo "data_service=$(parse data_service_domain)" >> "$GITHUB_OUTPUT"
-          echo "websocket=$(parse websocket_domain)"      >> "$GITHUB_OUTPUT"
-          echo "acme=$(parse acme_email)"                 >> "$GITHUB_OUTPUT"
+          echo "websocket=$(parse websocket_domain)"       >> "$GITHUB_OUTPUT"
+          echo "node=$(parse node_domain)"                 >> "$GITHUB_OUTPUT"
+          echo "matcher=$(parse matcher_domain)"           >> "$GITHUB_OUTPUT"
+          echo "acme=$(parse acme_email)"                  >> "$GITHUB_OUTPUT"
 
       - name: Generate and push Caddyfile, then reload Caddy
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -57,6 +59,8 @@ jobs:
           SCANNER_DOMAIN:     ${{ steps.domains.outputs.scanner }}
           DATA_SERVICE_DOMAIN: ${{ steps.domains.outputs.data_service }}
           WEBSOCKET_DOMAIN:   ${{ steps.domains.outputs.websocket }}
+          NODE_DOMAIN:        ${{ steps.domains.outputs.node }}
+          MATCHER_DOMAIN:     ${{ steps.domains.outputs.matcher }}
           ACME_EMAIL:         ${{ steps.domains.outputs.acme }}
         with:
           host:     ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
@@ -120,6 +124,34 @@ jobs:
                 printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
                 printf '        X-Content-Type-Options "nosniff"\n'
                 printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+                printf '        -Server\n'
+                printf '    }\n'
+                printf '    log\n'
+                printf '}\n\n'
+              fi
+
+              if [[ -n "${NODE_DOMAIN:-}" ]]; then
+                printf '%s {\n' "${NODE_DOMAIN}"
+                printf '    reverse_proxy localhost:6869\n'
+                printf '    header {\n'
+                printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+                printf '        X-Content-Type-Options "nosniff"\n'
+                printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+                printf '        Access-Control-Allow-Origin "*"\n'
+                printf '        -Server\n'
+                printf '    }\n'
+                printf '    log\n'
+                printf '}\n\n'
+              fi
+
+              if [[ -n "${MATCHER_DOMAIN:-}" ]]; then
+                printf '%s {\n' "${MATCHER_DOMAIN}"
+                printf '    reverse_proxy localhost:6886\n'
+                printf '    header {\n'
+                printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+                printf '        X-Content-Type-Options "nosniff"\n'
+                printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+                printf '        Access-Control-Allow-Origin "*"\n'
                 printf '        -Server\n'
                 printf '    }\n'
                 printf '    log\n'
