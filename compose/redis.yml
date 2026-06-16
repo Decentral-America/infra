@@ -21,16 +21,26 @@ services:
     restart: unless-stopped
     # Bind to loopback only — never expose Redis to the public internet.
     network_mode: host
-    command: >
-      redis-server
-      --bind 127.0.0.1
-      --port 6379
-      --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"
-      --appendonly yes
-      --appendfilename "appendonly-${NETWORK:-mainnet}.aof"
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --loglevel notice
+    # Array form: each argument is passed directly to redis-server with no
+    # shell interpretation. Docker Compose still expands ${VAR} in array elements.
+    command:
+      - redis-server
+      - --bind
+      - "127.0.0.1"
+      - --port
+      - "6379"
+      - --requirepass
+      - "${REDIS_PASSWORD}"
+      - --appendonly
+      - "yes"
+      - --appendfilename
+      - "appendonly-${NETWORK:-mainnet}.aof"
+      - --maxmemory
+      - "256mb"
+      - --maxmemory-policy
+      - "allkeys-lru"
+      - --loglevel
+      - "notice"
     # REDISCLI_AUTH lets redis-cli authenticate without passing -a on the command line.
     # This keeps the password out of /proc/<pid>/cmdline on health-check runs.
     environment:
