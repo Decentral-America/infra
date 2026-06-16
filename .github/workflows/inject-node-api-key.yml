@@ -1,0 +1,61 @@
+name: Inject Node API Key
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet]
+permissions:
+  contents: read
+jobs:
+  inject:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Decrypt SOPS and inject NODE_REST_API_KEY to server
+        env:
+          # Use repo-level AGE_KEY_TESTNET (the one that matches the testnet.env SOPS file)
+          SOPS_AGE_KEY:   ${{ secrets.AGE_KEY_TESTNET }}
+          DEPLOY_SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          NETWORK:        ${{ inputs.network }}
+          SERVER_IP:      66.228.55.154
+          DEPLOY_USER:    ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+
+          SOPS_VERSION="v3.13.1"
+          SOPS_SHA256="620a9d7e3352ababeca6908cea24a6e8b14ce89a448ddbd3f94f1ef3398f470a"
+          curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" -o /tmp/sops-bin
+          echo "${SOPS_SHA256}  /tmp/sops-bin" | sha256sum --check --status
+          install -m 755 /tmp/sops-bin /usr/local/bin/sops
+          rm /tmp/sops-bin
+
+          echo "${DEPLOY_SSH_KEY}" | base64 -d > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${DEPLOY_USER}@${SERVER_IP}"
+
+          SECRETS=$(sops --decrypt "secrets/${NETWORK}.env")
+
+          NODE_API_KEY=$(printf '%s' "${SECRETS}" | grep '^NODE_REST_API_KEY=' | cut -d= -f2-)
+
+          if [[ -z "${NODE_API_KEY:-}" ]]; then
+            echo "::error::NODE_REST_API_KEY not found in SOPS secrets"
+            exit 1
+          fi
+
+          echo "NODE_REST_API_KEY found — injecting to server secrets file"
+
+          # Remove existing entry and append fresh one
+          $SSH "sudo sed -i '/^NODE_REST_API_KEY=/d' /opt/dcc/secrets/${NETWORK}.env && \
+                printf 'NODE_REST_API_KEY=%s\n' '${NODE_API_KEY}' | sudo tee -a /opt/dcc/secrets/${NETWORK}.env > /dev/null && \
+                sudo chmod 640 /opt/dcc/secrets/${NETWORK}.env"
+
+          echo "Done. NODE_REST_API_KEY injected."
+          rm -f /tmp/deploy_key
