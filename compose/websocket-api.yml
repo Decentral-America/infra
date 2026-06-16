@@ -41,7 +41,7 @@ services:
       REPO__REFRESH_THREADS: "1"
       # REPO__PASSWORD is loaded from env_file
     healthcheck:
-      test: ["/app/healthcheck"]
+      test: ["CMD", "/app/healthcheck"]
       interval: 15s
       timeout: 5s
       retries: 3
