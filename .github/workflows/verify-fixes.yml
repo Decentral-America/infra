@@ -1,0 +1,38 @@
+name: Verify All Fixes
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          script: |
+            REDIS_PASS=$(grep '^REDIS_PASSWORD=' /opt/dcc/secrets/testnet.env | cut -d= -f2- || true)
+
+            echo "=== 1. BPS status ==="
+            docker ps --filter name=blockchain-postgres-sync --format "{{.Names}} {{.Status}}"
+
+            echo "=== 2. BPS has REDIS_URL? ==="
+            docker exec blockchain-postgres-sync-testnet env 2>/dev/null | grep "^REDIS_URL=" | sed 's/=.*/=***/' || echo "NOT SET"
+
+            echo "=== 3. Redis eviction policy ==="
+            docker exec redis-testnet redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
+
+            echo "=== 4. BPS actually publishing? Check Redis pub count ==="
+            docker exec redis-testnet redis-cli -h 127.0.0.1 -a "$REDIS_PASS" info stats 2>/dev/null | grep "total_commands_processed\|total_net_output_bytes" | head -2
+
+            echo "=== 5. websocket-api status ==="
+            docker ps --filter name=websocket-api --format "{{.Names}} {{.Status}}"
+
+            echo "=== 6. ws-api exposes port 8081? ==="
+            docker inspect websocket-api-testnet --format '{{json .Config.ExposedPorts}}' 2>/dev/null
+
+            echo "=== 7. BPS Redis pub events ==="
+            docker exec redis-testnet redis-cli -h 127.0.0.1 -a "$REDIS_PASS" pubsub numsub 2>/dev/null | head -5 || true
