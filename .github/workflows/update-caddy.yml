@@ -135,10 +135,14 @@ jobs:
           ${NODE} {
               @options method OPTIONS
               handle @options {
-                  header Access-Control-Allow-Origin "*"
+                  # Reflect origin instead of wildcard — required when exchange sends
+                  # credentials (cookies/auth). Vary tells caches this header varies.
+                  header Access-Control-Allow-Origin {http.request.header.Origin}
+                  header Access-Control-Allow-Credentials "true"
                   header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-                  header Access-Control-Allow-Headers "Content-Type, Authorization, Accept, X-API-Key"
+                  header Access-Control-Allow-Headers "Content-Type, Authorization, Accept, X-API-Key, timestamp, signature"
                   header Access-Control-Max-Age "3600"
+                  header Vary "Origin"
                   respond "" 204
               }
               @protected path /peers/* /debug/* /consensus/*
@@ -150,7 +154,9 @@ jobs:
                   }
                   header {
                       Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                      Access-Control-Allow-Origin "*"
+                      Access-Control-Allow-Origin {http.request.header.Origin}
+                      Access-Control-Allow-Credentials "true"
+                      Vary "Origin"
                       -Server
                   }
               }
@@ -162,7 +168,9 @@ jobs:
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                   X-Content-Type-Options "nosniff"
                   Referrer-Policy "strict-origin-when-cross-origin"
-                  Access-Control-Allow-Origin "*"
+                  Access-Control-Allow-Origin {http.request.header.Origin}
+                  Access-Control-Allow-Credentials "true"
+                  Vary "Origin"
                   -Server
               }
               log
@@ -171,10 +179,13 @@ jobs:
           ${MATCHER} {
               @options method OPTIONS
               handle @options {
-                  header Access-Control-Allow-Origin "*"
+                  # timestamp and signature are custom headers sent by the exchange DEX client.
+                  header Access-Control-Allow-Origin {http.request.header.Origin}
+                  header Access-Control-Allow-Credentials "true"
                   header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-                  header Access-Control-Allow-Headers "Content-Type, Authorization, Accept"
+                  header Access-Control-Allow-Headers "Content-Type, Authorization, Accept, timestamp, signature, X-API-Key"
                   header Access-Control-Max-Age "3600"
+                  header Vary "Origin"
                   respond "" 204
               }
               reverse_proxy localhost:6886 {
@@ -185,7 +196,9 @@ jobs:
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                   X-Content-Type-Options "nosniff"
                   Referrer-Policy "strict-origin-when-cross-origin"
-                  Access-Control-Allow-Origin "*"
+                  Access-Control-Allow-Origin {http.request.header.Origin}
+                  Access-Control-Allow-Credentials "true"
+                  Vary "Origin"
                   -Server
               }
               log
