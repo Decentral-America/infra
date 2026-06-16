@@ -9,7 +9,7 @@
 #   NETWORK=testnet docker compose -f /opt/dcc/compose/redis.yml up -d
 #
 # Listening only on 127.0.0.1 — not accessible from the internet.
-# Credentials come from /opt/dcc/secrets/${NETWORK}.env (REDIS_PASSWORD).
+# REDIS_PASSWORD must be exported before running docker compose.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -25,29 +25,32 @@ services:
       redis-server
       --bind 127.0.0.1
       --port 6379
-      --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in /opt/dcc/secrets/${NETWORK}.env}"
+      --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"
       --appendonly yes
       --appendfilename "appendonly-${NETWORK:-mainnet}.aof"
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --loglevel notice
+    # REDISCLI_AUTH lets redis-cli authenticate without passing -a on the command line.
+    # This keeps the password out of /proc/<pid>/cmdline on health-check runs.
+    environment:
+      REDISCLI_AUTH: "${REDIS_PASSWORD}"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-a", "${REDIS_PASSWORD}", "ping"]
+      # redis-cli reads REDISCLI_AUTH automatically — no -a flag needed.
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 5s
+      retries: 5
+      start_period: 10s
 
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      # Redis needs to set file descriptor limits (setrlimit), which requires
-      # this capability when running as a non-root user inside the container.
-      - SYS_RESOURCE
+    # Redis does not require any elevated capabilities when running in Docker
+    # with network_mode: host. All fd-limit tuning is done via ulimits if needed.
     read_only: false  # Redis writes AOF and RDB to /data
 
     deploy:
