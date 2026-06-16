@@ -1,0 +1,31 @@
+name: Find Node API Key
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet]
+permissions:
+  contents: read
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          NETWORK: ${{ inputs.network }}
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          envs:     NETWORK
+          script: |
+            echo "=== Keys in secrets file ==="
+            grep -o '^[A-Z_]*KEY[A-Z_]*' /opt/dcc/secrets/${NETWORK}.env || true
+            echo "=== Node REST API key lines ==="
+            grep -i "api.key\|REST_API_KEY\|NODE_API" /opt/dcc/secrets/${NETWORK}.env | sed 's/=.*/=***/' || true
+            echo "=== Node conf api-key-hash ==="
+            find /opt/dcc/config -name "*.conf" 2>/dev/null | xargs grep -h "api-key-hash" 2>/dev/null | head -5 || true
