@@ -224,9 +224,15 @@ jobs:
             sudo sed -i '/reverse_proxy https:\/\/ipinfo.io/a\                      header_down -Alt-Svc\n                      header_down -Access-Control-Allow-Origin\n                      header_down -Via' "$CF"
             sudo sed -i '/reverse_proxy https:\/\/api.thegreenwebfoundation.org/a\                      header_down -Alt-Svc\n                      header_down -Via' "$CF"
 
-            # Update CSP to allow direct ipinfo.io and greenwebfoundation connections
-            # as a fallback (proxy is still primary, but this silences CSP violations).
-            sudo sed -i 's|connect-src .self. https://\*\.decentralchain\.io wss://\*\.decentralchain\.io|connect-src '"'"'self'"'"' https://*.decentralchain.io wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|' "$CF"
+            # Suppress Caddy's own Alt-Svc header (Caddy 2.x advertises h3 on all
+            # responses). Add a standalone header directive before the header block.
+            sudo sed -i '/^    header -Alt-Svc$/d' "$CF"
+            sudo sed -i '/^    header {$/i\    header -Alt-Svc' "$CF"
+
+            # Fix CSP: normalize first (idempotent), then add once.
+            sudo sed -i 's| https://ipinfo\.io||g' "$CF"
+            sudo sed -i 's| https://api\.thegreenwebfoundation\.org||g' "$CF"
+            sudo sed -i "s|wss://\*\.decentralchain\.io|wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|" "$CF"
 
             sudo chmod 644 "$CF"
             sudo chown deploy:deploy "$CF"
