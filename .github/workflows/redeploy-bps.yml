@@ -1,0 +1,48 @@
+name: Redeploy BPS
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet]
+permissions:
+  contents: read
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout infra
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - name: Upload compose file and restart BPS
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          NETWORK: ${{ inputs.network }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          envs:     NETWORK,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
+            IMAGE_TAG=$(docker inspect blockchain-postgres-sync-${NETWORK} --format '{{.Config.Image}}' 2>/dev/null || echo "")
+            if [[ -z "$IMAGE_TAG" ]]; then
+              echo "::error::BPS container not found"
+              exit 1
+            fi
+            echo "Current image: $IMAGE_TAG"
+            export IMAGE_TAG NETWORK
+            cd /opt/dcc/compose
+            docker compose \
+              --project-name "blockchain-postgres-sync-${NETWORK}" \
+              --file blockchain-postgres-sync.yml \
+              up --detach --wait --wait-timeout 120 blockchain-postgres-sync
+            echo "=== BPS REDIS env (masked) ==="
+            docker exec "blockchain-postgres-sync-${NETWORK}" env | grep -E "^REDIS" | sed 's/=.*/=***/' || echo "No REDIS vars"
+            echo "BPS redeployed with updated secrets."
