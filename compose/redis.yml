@@ -1,0 +1,68 @@
+# docker-compose for DCC Redis
+# Location on server: /opt/dcc/compose/redis.yml
+#
+# Redis acts as the message bus between blockchain-postgres-sync (publisher)
+# and websocket-api (subscriber). BPS publishes state changes via PUBLISH;
+# websocket-api subscribes with PSUBSCRIBE topic://* and fans updates to clients.
+#
+# Deploy:
+#   NETWORK=testnet docker compose -f /opt/dcc/compose/redis.yml up -d
+#
+# Listening only on 127.0.0.1 — not accessible from the internet.
+# Credentials come from /opt/dcc/secrets/${NETWORK}.env (REDIS_PASSWORD).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  redis:
+    # Redis version is infra — not driven by app CI. Pin to minor for stability;
+    # patch upgrades are handled by Renovate in this repo.
+    image: redis:7.2-alpine
+    container_name: "redis-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    # Bind to loopback only — never expose Redis to the public internet.
+    network_mode: host
+    command: >
+      redis-server
+      --bind 127.0.0.1
+      --port 6379
+      --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in /opt/dcc/secrets/${NETWORK}.env}"
+      --appendonly yes
+      --appendfilename "appendonly-${NETWORK:-mainnet}.aof"
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --loglevel notice
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Redis needs to set file descriptor limits (setrlimit), which requires
+      # this capability when running as a non-root user inside the container.
+      - SYS_RESOURCE
+    read_only: false  # Redis writes AOF and RDB to /data
+
+    deploy:
+      resources:
+        limits:
+          memory: 320m   # 256mb maxmemory + 64m overhead for AOF rewrite buffer
+        reservations:
+          memory: 64m
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  redis-data:
+    name: "redis-data-${NETWORK:-mainnet}"

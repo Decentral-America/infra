@@ -18,6 +18,7 @@
 # <UDF name="BLOCKCHAIN_UPDATES_URL" label="DCC node Blockchain Updates gRPC URL (e.g. grpc://localhost:6881)" />
 # <UDF name="SCANNER_DOMAIN"      label="Scanner/block-explorer domain for Caddy TLS" default="" />
 # <UDF name="DATA_SERVICE_DOMAIN" label="Data-service API domain for Caddy TLS" default="" />
+# <UDF name="WEBSOCKET_DOMAIN"    label="WebSocket API domain for Caddy TLS (wss://)" default="" />
 # <UDF name="ACME_EMAIL"          label="ACME/Let's Encrypt email for TLS cert expiry alerts (optional)" default="" />
 # <UDF name="BACKUP_OBJ_BUCKET"   label="Object storage bucket name for pg_dump backups (leave empty to disable)" default="" />
 # <UDF name="BACKUP_OBJ_ENDPOINT" label="Object storage endpoint for rclone S3 provider" default="" />
@@ -508,7 +509,7 @@ echo "[bootstrap] PostgreSQL daily backup cron installed (credentials injected b
 # SCANNER_DOMAIN and DATA_SERVICE_DOMAIN are optional UDF variables.
 # If neither is set, Caddy is not configured (services are reachable via SSH
 # tunnel or internal network only).
-if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
+if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -n "${WEBSOCKET_DOMAIN:-}" ]]; then
 
   # -- Write Caddyfile --------------------------------------------------------
   # Using printf (not heredoc) to safely embed UDF variables that may contain
@@ -562,6 +563,21 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]]; then
       printf '        -Server\n'
       printf '    }\n'
       printf '    encode gzip zstd\n'
+      printf '    log\n'
+      printf '}\n\n'
+    fi
+
+    if [[ -n "${WEBSOCKET_DOMAIN:-}" ]]; then
+      printf '%s {\n' "${WEBSOCKET_DOMAIN}"
+      # reverse_proxy with websocket upgrade — Caddy handles the Upgrade header
+      # automatically when the upstream speaks WebSocket protocol.
+      printf '    reverse_proxy localhost:8081\n'
+      printf '    header {\n'
+      printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
+      printf '        X-Content-Type-Options "nosniff"\n'
+      printf '        Referrer-Policy "strict-origin-when-cross-origin"\n'
+      printf '        -Server\n'
+      printf '    }\n'
       printf '    log\n'
       printf '}\n'
     fi

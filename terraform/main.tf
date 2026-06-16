@@ -96,6 +96,8 @@ locals {
 # One Linode instance per network, hosting:
 #   - scanner (port 3000)
 #   - data-service (port 8080)
+#   - websocket-api (port 8081)
+#   - redis (127.0.0.1:6379, loopback only)
 #   - blockchain-postgres-sync (internal)
 #   - PostgreSQL (local, not exposed externally)
 resource "linode_instance" "backend" {
@@ -133,6 +135,7 @@ resource "linode_instance" "backend" {
     BLOCKCHAIN_UPDATES_URL                = var.blockchain_updates_url
     SCANNER_DOMAIN                        = var.scanner_domain
     DATA_SERVICE_DOMAIN                   = var.data_service_domain
+    WEBSOCKET_DOMAIN                      = var.websocket_domain
     ACME_EMAIL                            = var.acme_email
     BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
     BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
