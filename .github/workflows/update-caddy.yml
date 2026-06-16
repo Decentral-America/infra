@@ -217,19 +217,11 @@ jobs:
             set -euo pipefail
             CF=/opt/dcc/caddy/Caddyfile
 
-            # Inject header_down directives into the ipinfo.io reverse_proxy block.
-            # sed approach is reliable regardless of heredoc whitespace issues.
-            # Remove existing header_down lines first (idempotent), then insert.
-            sudo sed -i '/header_down -Alt-Svc/d; /header_down -Access-Control-Allow-Origin/d; /header_down -Via/d' "$CF"
-            sudo sed -i '/reverse_proxy https:\/\/ipinfo.io/a\                      header_down -Alt-Svc\n                      header_down -Access-Control-Allow-Origin\n                      header_down -Via' "$CF"
-            sudo sed -i '/reverse_proxy https:\/\/api.thegreenwebfoundation.org/a\                      header_down -Alt-Svc\n                      header_down -Via' "$CF"
+            # Remove any malformed header_down lines injected by previous broken sed runs
+            # (sed \n created literal backslash-n strings, corrupting the config).
+            sudo sed -i '/header_down.*\\n/d' "$CF"
 
-            # Suppress Caddy's own Alt-Svc header (Caddy 2.x advertises h3 on all
-            # responses). Add a standalone header directive before the header block.
-            sudo sed -i '/^    header -Alt-Svc$/d' "$CF"
-            sudo sed -i '/^    header {$/i\    header -Alt-Svc' "$CF"
-
-            # Fix CSP: normalize first (idempotent), then add once.
+            # Fix CSP: normalize first (idempotent), then add ipinfo.io once.
             sudo sed -i 's| https://ipinfo\.io||g' "$CF"
             sudo sed -i 's| https://api\.thegreenwebfoundation\.org||g' "$CF"
             sudo sed -i "s|wss://\*\.decentralchain\.io|wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|" "$CF"
@@ -237,9 +229,11 @@ jobs:
             sudo chmod 644 "$CF"
             sudo chown deploy:deploy "$CF"
 
+            echo "=== Caddyfile lines ==="
+            wc -l "$CF"
             echo "=== Geo proxy block ==="
-            grep -A8 "ipinfo.io" "$CF" | head -10
-            echo "=== CSP line ==="
+            grep -A5 "handle /api/geo" "$CF" | head -8
+            echo "=== CSP ==="
             grep "Content-Security" "$CF" | head -1
 
             docker restart "caddy-${NETWORK}"
