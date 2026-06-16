@@ -79,12 +79,18 @@ jobs:
                   uri strip_prefix /api/geo
                   reverse_proxy https://ipinfo.io {
                       header_up Host ipinfo.io
+                      # Strip upstream headers that should not be forwarded to the browser
+                      header_down -Alt-Svc
+                      header_down -Access-Control-Allow-Origin
+                      header_down -Via
                   }
               }
               handle /api/greencheck/* {
                   uri replace /api/greencheck /api/v3/greencheck
                   reverse_proxy https://api.thegreenwebfoundation.org {
                       header_up Host api.thegreenwebfoundation.org
+                      header_down -Alt-Svc
+                      header_down -Via
                   }
               }
               reverse_proxy localhost:3000
@@ -94,7 +100,7 @@ jobs:
                   X-Frame-Options "DENY"
                   Referrer-Policy "strict-origin-when-cross-origin"
                   X-XSS-Protection "0"
-                  Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.decentralchain.io wss://*.decentralchain.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+                  Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.decentralchain.io wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
                   Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
                   Cross-Origin-Opener-Policy "same-origin"
                   -Server
