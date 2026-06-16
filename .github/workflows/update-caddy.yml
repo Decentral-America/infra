@@ -195,7 +195,7 @@ jobs:
           username: ${{ secrets.TESTNET_DEPLOY_USER }}
           key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           source:   /tmp/Caddyfile
-          target:   /opt/dcc/caddy/Caddyfile
+          target:   /opt/dcc/caddy/
           strip_components: 2
 
       - name: Restart Caddy
