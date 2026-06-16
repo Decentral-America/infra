@@ -1,0 +1,22 @@
+name: Check BPS Logs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          script: |
+            echo "=== BPS container status ==="
+            docker ps -a --filter name=blockchain-postgres-sync
+            echo "=== BPS last 30 log lines ==="
+            docker logs blockchain-postgres-sync-testnet 2>&1 | tail -30 || true
+            echo "=== Test health endpoint directly ==="
+            docker exec blockchain-postgres-sync-testnet curl -fsS http://localhost:9090/readiness 2>&1 || true
