@@ -202,9 +202,9 @@ jobs:
           key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           source:   /tmp/Caddyfile
           target:   /opt/dcc/caddy/
-          strip_components: 2
+          strip_components: 1
 
-      - name: Restart Caddy
+      - name: Apply header stripping and restart Caddy
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
         env:
           NETWORK: ${{ inputs.network }}
@@ -214,9 +214,27 @@ jobs:
           key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           envs:     NETWORK
           script: |
-            sudo chmod 644 /opt/dcc/caddy/Caddyfile
-            sudo chown deploy:deploy /opt/dcc/caddy/Caddyfile
-            echo "=== Domains in Caddyfile ==="
-            grep "^[a-z]" /opt/dcc/caddy/Caddyfile | grep "\." | head -10
+            set -euo pipefail
+            CF=/opt/dcc/caddy/Caddyfile
+
+            # Inject header_down directives into the ipinfo.io reverse_proxy block.
+            # sed approach is reliable regardless of heredoc whitespace issues.
+            # Remove existing header_down lines first (idempotent), then insert.
+            sudo sed -i '/header_down -Alt-Svc/d; /header_down -Access-Control-Allow-Origin/d; /header_down -Via/d' "$CF"
+            sudo sed -i '/reverse_proxy https:\/\/ipinfo.io/a\                      header_down -Alt-Svc\n                      header_down -Access-Control-Allow-Origin\n                      header_down -Via' "$CF"
+            sudo sed -i '/reverse_proxy https:\/\/api.thegreenwebfoundation.org/a\                      header_down -Alt-Svc\n                      header_down -Via' "$CF"
+
+            # Update CSP to allow direct ipinfo.io and greenwebfoundation connections
+            # as a fallback (proxy is still primary, but this silences CSP violations).
+            sudo sed -i 's|connect-src .self. https://\*\.decentralchain\.io wss://\*\.decentralchain\.io|connect-src '"'"'self'"'"' https://*.decentralchain.io wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org|' "$CF"
+
+            sudo chmod 644 "$CF"
+            sudo chown deploy:deploy "$CF"
+
+            echo "=== Geo proxy block ==="
+            grep -A8 "ipinfo.io" "$CF" | head -10
+            echo "=== CSP line ==="
+            grep "Content-Security" "$CF" | head -1
+
             docker restart "caddy-${NETWORK}"
             echo "Caddy restarted."
