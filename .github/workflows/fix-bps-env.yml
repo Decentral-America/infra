@@ -61,6 +61,16 @@ jobs:
             sudo chmod 640 "$SECRETS"
             sudo chown root:deploy "$SECRETS"
 
+            # Get current image tag from the restarting container
+            CURRENT_IMAGE=$(docker inspect "blockchain-postgres-sync-${NETWORK}" --format '{{.Config.Image}}' 2>/dev/null || echo "")
+            if [[ -z "$CURRENT_IMAGE" ]]; then
+              echo "::error::Cannot determine current BPS image"
+              exit 1
+            fi
+            echo "Using image: $CURRENT_IMAGE"
+            export IMAGE_TAG="$CURRENT_IMAGE"
+            export NETWORK
+
             echo "Vars injected. Restarting BPS..."
             cd /opt/dcc/compose
             docker compose \
