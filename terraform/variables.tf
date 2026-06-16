@@ -110,6 +110,18 @@ variable "websocket_domain" {
   default     = ""
 }
 
+variable "node_domain" {
+  description = "Public domain for the DCC node REST API (port 6869), proxied by Caddy with automatic TLS. Leave empty to skip."
+  type        = string
+  default     = ""
+}
+
+variable "matcher_domain" {
+  description = "Public domain for the DCC matcher REST API (port 6886), proxied by Caddy with automatic TLS. Leave empty to skip."
+  type        = string
+  default     = ""
+}
+
 variable "acme_email" {
   description = "Email for Let's Encrypt ACME cert expiry notifications. Optional."
   type        = string
