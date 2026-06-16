@@ -1,0 +1,74 @@
+name: Add Node and Matcher to Caddyfile
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet]
+permissions:
+  contents: read
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout infra
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Append node + matcher blocks and reload Caddy
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          NETWORK: ${{ inputs.network }}
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          envs:     NETWORK
+          script: |
+            set -euo pipefail
+            CADDYFILE=/opt/dcc/caddy/Caddyfile
+
+            # Remove existing node/matcher blocks (idempotent)
+            sudo sed -i '/^testnet-node\.decentralchain\.io {/,/^}/d' "$CADDYFILE"
+            sudo sed -i '/^testnet-matcher\.decentralchain\.io {/,/^}/d' "$CADDYFILE"
+
+            # Append node block
+            sudo tee -a "$CADDYFILE" > /dev/null << 'BLOCK'
+
+testnet-node.decentralchain.io {
+    reverse_proxy localhost:6869
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Access-Control-Allow-Origin "*"
+        -Server
+    }
+    log
+}
+
+testnet-matcher.decentralchain.io {
+    reverse_proxy localhost:6886
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Access-Control-Allow-Origin "*"
+        -Server
+    }
+    log
+}
+BLOCK
+
+            sudo chmod 644 "$CADDYFILE"
+            sudo chown deploy:deploy "$CADDYFILE"
+
+            echo "=== Caddyfile domains ==="
+            grep "^[a-z]" "$CADDYFILE" | grep -v "reverse\|header\|encode\|log\|Strict\|X-\|Access\|Referrer\|-Server"
+
+            docker exec "caddy-${NETWORK}" caddy reload --config /etc/caddy/Caddyfile
+            echo "Caddy reloaded with node and matcher domains."
