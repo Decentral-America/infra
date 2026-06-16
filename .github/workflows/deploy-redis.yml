@@ -102,7 +102,7 @@ jobs:
                 --appendonly yes \
                 --appendfilename "appendonly-${NETWORK}.aof" \
                 --maxmemory 256mb \
-                --maxmemory-policy allkeys-lru \
+                --maxmemory-policy volatile-lru \
                 --loglevel notice
 
             echo "Waiting for Redis to become healthy..."
