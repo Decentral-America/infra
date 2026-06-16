@@ -1,0 +1,22 @@
+name: Check BPS Redis
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          script: |
+            echo "=== BPS container status ==="
+            docker ps --filter name=blockchain-postgres-sync --format "{{.Names}} {{.Status}}"
+            echo "=== REDIS_URL in secrets file (masked) ==="
+            grep "^REDIS_URL=" /opt/dcc/secrets/testnet.env | sed 's/=.*/=***/' || echo "MISSING: REDIS_URL not in secrets file"
+            echo "=== BPS env vars (masked) ==="
+            docker exec blockchain-postgres-sync-testnet env 2>/dev/null | grep -E "^REDIS" | sed 's/=.*/=***/' || echo "BPS not running or no REDIS vars"
