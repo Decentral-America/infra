@@ -571,7 +571,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
 
     if [[ -n "${WEBSOCKET_DOMAIN:-}" ]]; then
       printf '%s {\n' "${WEBSOCKET_DOMAIN}"
-      # reverse_proxy with websocket upgrade — Caddy handles the Upgrade header
+      # reverse_proxy with websocket upgrade -- Caddy handles the Upgrade header
       # automatically when the upstream speaks WebSocket protocol.
       printf '    reverse_proxy localhost:8081\n'
       printf '    header {\n'
@@ -586,7 +586,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
 
     if [[ -n "${NODE_DOMAIN:-}" ]]; then
       printf '%s {\n' "${NODE_DOMAIN}"
-      # Node REST API also serves WebSocket on the same port — Caddy upgrades automatically.
+      # Node REST API also serves WebSocket on the same port -- Caddy upgrades automatically.
       printf '    reverse_proxy localhost:6869\n'
       printf '    header {\n'
       printf '        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"\n'
