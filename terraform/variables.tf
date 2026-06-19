@@ -22,14 +22,14 @@ variable "root_password" {
   sensitive   = true
   # Default allows drift detection (tofu plan) to run without this secret.
   # The actual value is injected via the GitHub deployment environment at provision time.
-  default     = "drift-detection-placeholder-not-used"
+  default = "drift-detection-placeholder-not-used"
 }
 
 variable "deploy_ssh_public_key" {
   description = "Ed25519 public key for the deploy user. Injected into authorized_keys via StackScript UDF."
   type        = string
   # Default allows drift detection to plan without this secret.
-  default     = "ssh-ed25519 AAAA drift-detection-placeholder"
+  default = "ssh-ed25519 AAAA drift-detection-placeholder"
 }
 
 # ── PostgreSQL (co-located, same server) ─────────────────────────────────────
