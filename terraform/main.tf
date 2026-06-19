@@ -146,11 +146,11 @@ resource "linode_instance" "backend" {
   # Prevent accidental destruction of the backend server.
   # To intentionally tear down, temporarily set this to false, apply, then destroy.
   #
-  # stackscript_data is ignored post-provisioning: it is only consumed on first
-  # boot and changes to it (e.g. secret rotation) must not trigger a replacement.
+  # stackscript_data and root_pass are ignored post-provisioning: both are
+  # consumed only on first boot and must not trigger a replacement on rotation.
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [stackscript_data]
+    ignore_changes  = [stackscript_data, root_pass]
   }
 }
 
