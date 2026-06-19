@@ -1,0 +1,32 @@
+name: Set Redis Policy
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet]
+permissions:
+  contents: read
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          NETWORK: ${{ inputs.network }}
+        with:
+          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          username: ${{ secrets.TESTNET_DEPLOY_USER }}
+          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          envs:     NETWORK
+          script: |
+            REDIS_PASS=$(grep '^REDIS_PASSWORD=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2-)
+            echo "Before:"
+            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
+            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config set maxmemory-policy volatile-lru 2>/dev/null
+            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config rewrite 2>/dev/null || true
+            echo "After:"
+            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
