@@ -40,11 +40,6 @@ services:
       # Data directory — must point at the bind-mounted path so the DB and
       # account.dat survive image upgrades.
       DCC_DEX_ROOT: "/var/lib/decentralchain-dex"
-      # JDK 25 + Netty compatibility: Netty 4.1.115+ sets io.netty.noUnsafe=true
-      # by default on Java 25+. JAVA_TOOL_OPTIONS is read directly by the JVM
-      # (not the sbt launch script), ensuring the property reaches Netty.
-      # Remove when matcher upgrades to a Netty version that handles JDK 25 natively.
-      JAVA_TOOL_OPTIONS: "-Dio.netty.noUnsafe=false"
 
     # host network mode: matcher connects to node gRPC on localhost:6887 (DEX extension)
     # and localhost:6881 (BlockchainUpdates). Without host mode, 'localhost' inside the
