@@ -86,7 +86,7 @@ services:
       # /opt/docker/data: RocksDB tries to create this as a fallback path during
       # startup even when DCC_DEX_ROOT overrides the primary data directory.
       # Providing a writable tmpfs prevents the "Read-only file system" error.
-      - /opt/docker/data:size=32m,mode=0750
+      - /opt/docker/data:size=32m,mode=1777
     deploy:
       resources:
         limits:
