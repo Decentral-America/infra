@@ -158,6 +158,7 @@ jobs:
           tofu plan \
             -detailed-exitcode \
             -input=false \
+            -var-file="${{ matrix.network }}.tfvars" \
             -out=tfplan-${{ matrix.network }} \
             > plan-output.txt 2>&1
           PLAN_EXIT=$?
