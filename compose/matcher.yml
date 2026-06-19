@@ -44,7 +44,7 @@ services:
       # by default on Java 25+. JAVA_TOOL_OPTIONS is read directly by the JVM
       # (not the sbt launch script), ensuring the property reaches Netty.
       # Remove when matcher upgrades to a Netty version that handles JDK 25 natively.
-      JAVA_TOOL_OPTIONS: "-Dio.netty.noUnsafe=false -Dio.netty.tryUnsafe=true --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED"
+      JAVA_TOOL_OPTIONS: "-Dio.netty.noUnsafe=false"
 
     # host network mode: matcher connects to node gRPC on localhost:6887 (DEX extension)
     # and localhost:6881 (BlockchainUpdates). Without host mode, 'localhost' inside the
