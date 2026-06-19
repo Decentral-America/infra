@@ -6,7 +6,7 @@ on:
         required: true
         default: 'testnet'
         type: choice
-        options: [testnet]
+        options: [testnet, stagenet, mainnet]
 permissions:
   contents: read
 jobs:
@@ -16,8 +16,8 @@ jobs:
     steps:
       - name: Set up SSH credentials
         env:
-          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          DEPLOY_KEY:  ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
@@ -27,8 +27,8 @@ jobs:
 
       - name: Fix BPS Postgres environment
         env:
-          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
           NETWORK:     ${{ inputs.network }}
         run: |
           set -euo pipefail

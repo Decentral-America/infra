@@ -104,11 +104,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy vulnerability scan
-        # continue-on-error: JVM images (node-scala, matcher) contain eclipse-temurin
-        # with ubuntu noble libssl3t64 3.0.13-0ubuntu3.9 (CVE-2026-45447) and
-        # potentially java-level JAR CVEs. These are tracked in .trivyignore and
-        # separately. Hard gate will be restored once JVM image base is updated.
-        continue-on-error: true
+        # Hard gate — exits 1 on any unfixed HIGH/CRITICAL CVE not in .trivyignore.
+        # Known accepted CVEs (with documented justification) are in infra/.trivyignore.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref:      '${{ inputs.image }}'
