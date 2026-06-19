@@ -15,3 +15,19 @@ CVE-2026-3833
 CVE-2026-33846
 CVE-2026-42010
 CVE-2026-33845
+
+# OpenSSL heap use-after-free in PKCS7_verify() — CVE-2026-45447
+#
+# Affects libssl3t64 / libssl3 in Ubuntu Noble (24.04) base images used by
+# eclipse-temurin JVM images (matcher, node-scala).
+#
+# The JVM services do not perform PKCS7 verification — they use TLS for network
+# connections (gRPC, HTTPS) but never parse PKCS7 structures from untrusted input.
+# Attack surface: none for these workloads.
+#
+# Fixed upstream in OpenSSL 3.5.7-r0 (Alpine) and in Node.js alpine images.
+# Ubuntu Noble backport pending. Track at:
+# https://ubuntu.com/security/CVE-2026-45447
+#
+# Justification filed: 2026-06-19. Remove when eclipse-temurin ships fixed base.
+CVE-2026-45447
