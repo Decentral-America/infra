@@ -157,8 +157,7 @@ jobs:
       - name: Set up SSH credentials
         # Writes the deploy key to a mode-600 file and pre-populates known_hosts
         # so subsequent scp/ssh steps do not need StrictHostKeyChecking=no.
-        # appleboy/scp-action was abandoned (last release 2025-04-27); replaced with
-        # native scp to eliminate the unmaintained third-party action dependency.
+        # All remote operations use native scp/ssh — no third-party actions.
         env:
           DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           DEPLOY_KEY:  ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
@@ -194,105 +193,108 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/config/node-${{ inputs.network }}/"
 
       - name: Pull image, deploy, and auto-rollback on failure
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           # GHCR_TOKEN must be set as an org/repo secret with read:packages scope.
-          # Forwarded to the SSH session via envs: so the server can authenticate
-          # to GHCR before pulling (packages are private by default on GHCR).
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          INPUT_IMAGE: ${{ inputs.image }}
-          INPUT_NETWORK: ${{ inputs.network }}
-          INPUT_SERVICE: ${{ inputs.service }}
+          # Passed into the SSH heredoc so the server can authenticate to GHCR
+          # before pulling (packages are private by default on GHCR).
+          GHCR_TOKEN:        ${{ secrets.GHCR_TOKEN }}
+          DEPLOY_HOST:       ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          DEPLOY_USER:       ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
+          INPUT_IMAGE:       ${{ inputs.image }}
+          INPUT_NETWORK:     ${{ inputs.network }}
+          INPUT_SERVICE:     ${{ inputs.service }}
           INPUT_COMPOSE_DIR: ${{ inputs.compose_dir }}
           INPUT_WAIT_TIMEOUT: ${{ inputs.wait_timeout }}
-        with:
-          host:        ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
-          username:    ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
-          key:         ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
-          envs:        GHCR_TOKEN,INPUT_IMAGE,INPUT_NETWORK,INPUT_SERVICE,INPUT_COMPOSE_DIR,INPUT_WAIT_TIMEOUT
-          script: |
-            set -euo pipefail
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << REMOTE
+          set -euo pipefail
+          export IMAGE_TAG="${INPUT_IMAGE}"
+          export NETWORK="${INPUT_NETWORK}"
+          SERVICE="${INPUT_SERVICE}"
+          COMPOSE_DIR="${INPUT_COMPOSE_DIR}"
+          GHCR_TOKEN="${GHCR_TOKEN}"
+          INPUT_WAIT_TIMEOUT="${INPUT_WAIT_TIMEOUT}"
 
-            export IMAGE_TAG="$INPUT_IMAGE"
-            export NETWORK="$INPUT_NETWORK"
-            SERVICE="$INPUT_SERVICE"
-            COMPOSE_DIR="$INPUT_COMPOSE_DIR"
+          # ── Pre-flight: ensure writable config dir for node-scala ─────────
+          # bootstrap.sh creates /opt/dcc/config/node-<NETWORK>/ as deploy:deploy,
+          # but manual sudo operations can change ownership to root. Self-heal here
+          # so the node-config SCP step always has a writable target.
+          if [[ "\$SERVICE" == "node-scala" ]]; then
+            sudo install -d -m 755 -o deploy -g deploy "/opt/dcc/config/node-\${NETWORK}"
+          fi
 
-            # ── Pre-flight: ensure writable config dir for node-scala ─────────
-            # bootstrap.sh creates /opt/dcc/config/node-<NETWORK>/ as deploy:deploy,
-            # but manual sudo operations can change ownership to root. Self-heal here
-            # so the node-config SCP step always has a writable target.
-            if [[ "$SERVICE" == "node-scala" ]]; then
-              sudo install -d -m 755 -o deploy -g deploy "/opt/dcc/config/node-${NETWORK}"
+          echo "Authenticating with GHCR..."
+          echo "\$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
+
+          # ── Capture previous image for rollback ────────────────────────
+          # docker inspect returns the image digest/tag currently running.
+          # If the container doesn't exist yet (first deploy), PREV_IMAGE
+          # will be empty and the rollback block is a no-op.
+          PREV_IMAGE=\$(docker inspect --format '{{.Config.Image}}' "\${SERVICE}-\${NETWORK}" 2>/dev/null || echo "")
+          echo "Previous image: \${PREV_IMAGE:-<none — first deploy>}"
+
+          # ── Clean up project-label mismatch (one-time migration) ──────────
+          # Containers created before --project-name was introduced carry the
+          # directory-based label (e.g. "compose"). docker compose up with a
+          # different --project-name sees no matching container and tries to
+          # CREATE one — but the name is taken → conflict. Detect and remove
+          # the mismatched container so docker compose can recreate it cleanly.
+          EXISTING_PROJECT=\$(docker inspect \
+            --format '{{index .Config.Labels "com.docker.compose.project"}}' \
+            "\${SERVICE}-\${NETWORK}" 2>/dev/null || true)
+          EXPECTED_PROJECT="\${SERVICE}-\${NETWORK}"
+          if [[ -n "\$EXISTING_PROJECT" && "\$EXISTING_PROJECT" != "\$EXPECTED_PROJECT" ]]; then
+            echo "Removing \${SERVICE}-\${NETWORK} (project '\$EXISTING_PROJECT' ≠ '\$EXPECTED_PROJECT')..."
+            docker rm -f "\${SERVICE}-\${NETWORK}"
+          fi
+
+          echo "Pulling \$IMAGE_TAG"
+          docker pull "\$IMAGE_TAG"
+
+          echo "Deploying \$SERVICE on \$NETWORK..."
+          cd "\$COMPOSE_DIR"
+
+          # docker compose up --wait blocks until the container is running/healthy
+          # (respects healthcheck if defined, otherwise just waits for running state).
+          # --wait-timeout caps the wait. --project-name isolates this service's
+          # compose project so other services in the same directory (e.g. caddy) are
+          # not treated as orphans and removed. Never use --remove-orphans here.
+          if ! docker compose \
+            --project-name "\${SERVICE}-\${NETWORK}" \
+            --file "\${SERVICE}.yml" up \
+            --detach \
+            --wait \
+            --wait-timeout "\$INPUT_WAIT_TIMEOUT" \
+            "\$SERVICE"; then
+
+            echo "::error::Health check failed for \$SERVICE on \$NETWORK."
+
+            # ── Auto-rollback to the previous image ───────────────────────
+            if [[ -n "\$PREV_IMAGE" ]]; then
+              echo "Rolling back to previous image: \$PREV_IMAGE"
+              export IMAGE_TAG="\$PREV_IMAGE"
+              docker compose \
+                --project-name "\${SERVICE}-\${NETWORK}" \
+                --file "\${SERVICE}.yml" up \
+                --detach \
+                --wait \
+                --wait-timeout "\$INPUT_WAIT_TIMEOUT" \
+                "\$SERVICE" \
+                && echo "Rollback successful: \$PREV_IMAGE is running." \
+                || echo "::error::Rollback also failed — manual intervention required."
+            else
+              echo "No previous image to roll back to (first deploy). Manual intervention required."
             fi
 
-            echo "Authenticating with GHCR..."
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
+            exit 1
+          fi
 
-            # ── Capture previous image for rollback ────────────────────────
-            # docker inspect returns the image digest/tag currently running.
-            # If the container doesn't exist yet (first deploy), PREV_IMAGE
-            # will be empty and the rollback block is a no-op.
-            PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' "${SERVICE}-${NETWORK}" 2>/dev/null || echo "")
-            echo "Previous image: ${PREV_IMAGE:-<none — first deploy>}"
+          # Prune dangling images to reclaim disk space (keeps referenced images)
+          docker image prune -f
 
-            # ── Clean up project-label mismatch (one-time migration) ──────────
-            # Containers created before --project-name was introduced carry the
-            # directory-based label (e.g. "compose"). docker compose up with a
-            # different --project-name sees no matching container and tries to
-            # CREATE one — but the name is taken → conflict. Detect and remove
-            # the mismatched container so docker compose can recreate it cleanly.
-            EXISTING_PROJECT=$(docker inspect \
-              --format '{{index .Config.Labels "com.docker.compose.project"}}' \
-              "${SERVICE}-${NETWORK}" 2>/dev/null || true)
-            EXPECTED_PROJECT="${SERVICE}-${NETWORK}"
-            if [[ -n "$EXISTING_PROJECT" && "$EXISTING_PROJECT" != "$EXPECTED_PROJECT" ]]; then
-              echo "Removing ${SERVICE}-${NETWORK} (project '$EXISTING_PROJECT' ≠ '$EXPECTED_PROJECT')..."
-              docker rm -f "${SERVICE}-${NETWORK}"
-            fi
-
-            echo "Pulling $IMAGE_TAG"
-            docker pull "$IMAGE_TAG"
-
-            echo "Deploying $SERVICE on $NETWORK..."
-            cd "$COMPOSE_DIR"
-
-            # docker compose up --wait blocks until the container is running/healthy
-            # (respects healthcheck if defined, otherwise just waits for running state).
-            # --wait-timeout caps the wait. --project-name isolates this service's
-            # compose project so other services in the same directory (e.g. caddy) are
-            # not treated as orphans and removed. Never use --remove-orphans here.
-            if ! docker compose \
-              --project-name "${SERVICE}-${NETWORK}" \
-              --file "${SERVICE}.yml" up \
-              --detach \
-              --wait \
-              --wait-timeout "$INPUT_WAIT_TIMEOUT" \
-              "$SERVICE"; then
-
-              echo "::error::Health check failed for $SERVICE on $NETWORK."
-
-              # ── Auto-rollback to the previous image ───────────────────────
-              if [[ -n "$PREV_IMAGE" ]]; then
-                echo "Rolling back to previous image: $PREV_IMAGE"
-                export IMAGE_TAG="$PREV_IMAGE"
-                docker compose \
-                  --project-name "${SERVICE}-${NETWORK}" \
-                  --file "${SERVICE}.yml" up \
-                  --detach \
-                  --wait \
-                  --wait-timeout "$INPUT_WAIT_TIMEOUT" \
-                  "$SERVICE" \
-                  && echo "Rollback successful: $PREV_IMAGE is running." \
-                  || echo "::error::Rollback also failed — manual intervention required."
-              else
-                echo "No previous image to roll back to (first deploy). Manual intervention required."
-              fi
-
-              exit 1
-            fi
-
-            # Prune dangling images to reclaim disk space (keeps referenced images)
-            docker image prune -f
-
-            echo "Deploy complete: $IMAGE_TAG → $NETWORK"
+          echo "Deploy complete: \$IMAGE_TAG → \$NETWORK"
+          REMOTE

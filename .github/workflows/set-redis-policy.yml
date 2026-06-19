@@ -14,19 +14,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      - name: Set up SSH credentials
         env:
-          NETWORK: ${{ inputs.network }}
-        with:
-          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          username: ${{ secrets.TESTNET_DEPLOY_USER }}
-          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          envs:     NETWORK
-          script: |
-            REDIS_PASS=$(grep '^REDIS_PASSWORD=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2-)
-            echo "Before:"
-            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
-            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config set maxmemory-policy volatile-lru 2>/dev/null
-            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config rewrite 2>/dev/null || true
-            echo "After:"
-            docker exec redis-${NETWORK} redis-cli -h 127.0.0.1 -a "$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Set Redis maxmemory-policy
+        env:
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          NETWORK:     ${{ inputs.network }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << REMOTE
+          set -euo pipefail
+          NETWORK="${NETWORK}"
+          REDIS_PASS=\$(grep '^REDIS_PASSWORD=' /opt/dcc/secrets/\${NETWORK}.env | cut -d= -f2-)
+          echo "Before:"
+          docker exec redis-\${NETWORK} redis-cli -h 127.0.0.1 -a "\$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
+          docker exec redis-\${NETWORK} redis-cli -h 127.0.0.1 -a "\$REDIS_PASS" config set maxmemory-policy volatile-lru 2>/dev/null
+          docker exec redis-\${NETWORK} redis-cli -h 127.0.0.1 -a "\$REDIS_PASS" config rewrite 2>/dev/null || true
+          echo "After:"
+          docker exec redis-\${NETWORK} redis-cli -h 127.0.0.1 -a "\$REDIS_PASS" config get maxmemory-policy 2>/dev/null | tail -1
+          REMOTE
