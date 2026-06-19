@@ -31,3 +31,20 @@ CVE-2026-33845
 #
 # Justification filed: 2026-06-19. Remove when eclipse-temurin ships fixed base.
 CVE-2026-45447
+
+# JLine3 Telnet server vulnerabilities in org.jline:jline-remote-telnet
+#
+# GHSA-2r2c-cx56-8933 — Unauthenticated Unbounded Telnet NAWS Terminal attack
+# GHSA-47qp-hqvx-6r3f — Unauthenticated Telnet Terminal Exhaustion
+#
+# jline-3.24.1 is bundled transitively by sbt 1.12.x / Scala REPL. The
+# vulnerable module (jline-remote-telnet) provides an optional Telnet server.
+#
+# The matcher does NOT expose a Telnet server or import JLine's Telnet classes.
+# Attack surface: none — the Telnet functionality is dead code for this service.
+#
+# Fix requires jline ≥ 4.2.1 (a major breaking API change) which is incompatible
+# with sbt 1.12.x. Track upstream sbt upgrade path for jline 4.x adoption.
+# Justification filed: 2026-06-19.
+GHSA-2r2c-cx56-8933
+GHSA-47qp-hqvx-6r3f
