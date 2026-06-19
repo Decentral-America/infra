@@ -182,8 +182,8 @@ jobs:
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
-          TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
-          TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
+          # root_password and deploy_ssh_public_key have defaults in variables.tf for
+          # drift detection — do NOT pass them here; an empty string overrides the default.
           TF_VAR_DEFAULT_MATCHER:          ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
           TF_VAR_blockchain_updates_url:   ${{ secrets.TF_VAR_blockchain_updates_url }}
 
