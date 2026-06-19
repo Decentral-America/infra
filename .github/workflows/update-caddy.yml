@@ -207,36 +207,48 @@ jobs:
 
           echo "Caddyfile generated ($(wc -l < /tmp/Caddyfile) lines)"
 
+      - name: Set up SSH credentials
+        env:
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
       - name: Upload Caddyfile to server
-        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
-        with:
-          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          username: ${{ secrets.TESTNET_DEPLOY_USER }}
-          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          source:   /tmp/Caddyfile
-          target:   /opt/dcc/caddy/
-          strip_components: 1
+        env:
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy_key \
+            /tmp/Caddyfile \
+            "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/caddy/Caddyfile"
 
       - name: Set permissions and restart Caddy
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
         env:
-          NETWORK: ${{ inputs.network }}
-        with:
-          host:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          username: ${{ secrets.TESTNET_DEPLOY_USER }}
-          key:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          envs:     NETWORK
-          script: |
-            set -euo pipefail
-            CF=/opt/dcc/caddy/Caddyfile
-            sudo chmod 644 "$CF"
-            sudo chown deploy:deploy "$CF"
-            echo "=== Caddyfile lines ==="
-            wc -l "$CF"
-            echo "=== Geo proxy block ==="
-            grep -A5 "handle /api/geo" "$CF" | head -8
-            echo "=== CSP ==="
-            grep "Content-Security" "$CF" | head -1
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          NETWORK:     ${{ inputs.network }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << REMOTE
+          set -euo pipefail
+          NETWORK="${NETWORK}"
+          CF=/opt/dcc/caddy/Caddyfile
+          sudo chmod 644 "\$CF"
+          sudo chown deploy:deploy "\$CF"
+          echo "=== Caddyfile lines ==="
+          wc -l "\$CF"
+          echo "=== Geo proxy block ==="
+          grep -A5 "handle /api/geo" "\$CF" | head -8
+          echo "=== CSP ==="
+          grep "Content-Security" "\$CF" | head -1
 
-            docker restart "caddy-${NETWORK}"
-            echo "Caddy restarted."
+          docker restart "caddy-\${NETWORK}"
+          echo "Caddy restarted."
+          REMOTE
