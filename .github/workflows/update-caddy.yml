@@ -1,5 +1,5 @@
 name: Update Caddy
-# Reads domain config from testnet.tfvars, reads NODE_REST_API_KEY from SOPS,
+# Reads domain config from testnet.tfvars, reads MAIN_NODE_REST_API_KEY from SOPS,
 # generates the complete Caddyfile locally in the runner, SCPs it to the server,
 # then restarts Caddy. No variable passing through SSH env — generates locally,
 # pushes atomically.
@@ -51,7 +51,7 @@ jobs:
           echo "  admin:        $ADMIN"
           echo "  acme:         $ACME"
 
-          # ── Read NODE_REST_API_KEY from SOPS ─────────────────────────────────
+          # ── Read MAIN_NODE_REST_API_KEY from SOPS ─────────────────────────────────
           SOPS_VERSION="v3.13.1"
           SOPS_SHA256="620a9d7e3352ababeca6908cea24a6e8b14ce89a448ddbd3f94f1ef3398f470a"
           curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" -o /tmp/sops-bin
@@ -60,12 +60,12 @@ jobs:
           rm /tmp/sops-bin
 
           SECRETS=$(sops --decrypt "secrets/${NETWORK}.env" 2>/dev/null || echo "")
-          NODE_API_KEY=$(printf '%s' "${SECRETS}" | grep '^NODE_REST_API_KEY=' | cut -d= -f2- || true)
+          NODE_API_KEY=$(printf '%s' "${SECRETS}" | grep '^MAIN_NODE_REST_API_KEY=' | cut -d= -f2- || true)
           if [[ -z "${NODE_API_KEY:-}" ]]; then
-            echo "WARNING: NODE_REST_API_KEY not in SOPS — /peers/* will return 403"
+            echo "WARNING: MAIN_NODE_REST_API_KEY not in SOPS — /peers/* will return 403"
             NODE_API_KEY="missing"
           else
-            echo "NODE_REST_API_KEY found in SOPS"
+            echo "MAIN_NODE_REST_API_KEY found in SOPS"
           fi
 
           # ── Generate complete Caddyfile ───────────────────────────────────────
