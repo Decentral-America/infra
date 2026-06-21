@@ -39,6 +39,7 @@ jobs:
           WEBSOCKET=$(parse websocket_domain)
           NODE=$(parse node_domain)
           MATCHER=$(parse matcher_domain)
+          ADMIN=$(parse admin_domain)
           ACME=$(parse acme_email)
 
           echo "Domains read from testnet.tfvars:"
@@ -47,6 +48,7 @@ jobs:
           echo "  websocket:    $WEBSOCKET"
           echo "  node:         $NODE"
           echo "  matcher:      $MATCHER"
+          echo "  admin:        $ADMIN"
           echo "  acme:         $ACME"
 
           # ── Read NODE_REST_API_KEY from SOPS ─────────────────────────────────
@@ -201,6 +203,19 @@ jobs:
                   Vary "Origin"
                   -Server
               }
+              log
+          }
+
+          ${ADMIN} {
+              reverse_proxy localhost:3001
+              header {
+                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+                  X-Content-Type-Options "nosniff"
+                  X-Frame-Options "DENY"
+                  Referrer-Policy "strict-origin-when-cross-origin"
+                  -Server
+              }
+              encode gzip zstd
               log
           }
           EOF

@@ -31,6 +31,7 @@ data_service_domain = "testnet-data-service.decentralchain.io"
 websocket_domain    = "testnet-ws.decentralchain.io"
 node_domain         = "testnet-node.decentralchain.io"
 matcher_domain      = "testnet-matcher.decentralchain.io"
+admin_domain        = "admin.decentralchain.io"
 acme_email          = "ops@decentralamerica.com"
 
 # ── Off-site backup: disabled for testnet ─────────────────────────────────────
