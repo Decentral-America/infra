@@ -1,0 +1,42 @@
+# docker-compose for DCC Node Dashboard
+# Location on server: /opt/dcc/compose/node-dashboard.yml
+#
+# Traffic path: Cloudflare Tunnel → localhost:3001 → this container
+# No Caddy entry needed — the tunnel is the only ingress.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  node-dashboard:
+    image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
+    container_name: "node-dashboard-${NETWORK:-testnet}"
+    restart: unless-stopped
+    # host network mode: same reasoning as scanner — SSR loader makes outbound
+    # requests to the DCC node URL which may resolve to the host's own IP.
+    # PORT=3001 (set in env_file) avoids conflict with scanner on 3000.
+    network_mode: host
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-testnet}.env
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
