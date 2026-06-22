@@ -293,7 +293,7 @@ set +x 2>/dev/null || true
   printf '# Sensitive values are appended by provision.yml SSH push (SOPS).\n'
   printf '# DO NOT store this file in version control.\n'
   printf 'NETWORK=%s\n'                                "${NETWORK}"
-  printf 'CHAIN_ID=%s\n'                               "${CHAIN_ID}"
+  printf 'BPS_CHAIN_ID=%s\n'                           "${CHAIN_ID}"
   printf '# PostgreSQL connection (password appended by SSH push)\n'
   printf 'PGHOST=%s\n'                                 "${POSTGRES_HOST}"
   printf 'PGPORT=%s\n'                                 "${POSTGRES_PORT}"
@@ -309,7 +309,7 @@ set +x 2>/dev/null || true
   printf 'DCC_NODE_URL=%s\n'                           "${DCC_NODE_URL}"
   printf 'DCC_MATCHER_URL=%s\n'                        "${DCC_MATCHER_URL}"
   printf 'DCC_DATA_SERVICE_URL=%s\n'                   "${DCC_DATA_SERVICE_URL}"
-  printf 'BLOCKCHAIN_UPDATES_URL=%s\n'                 "${BLOCKCHAIN_UPDATES_URL}"
+  printf 'BPS_BLOCKCHAIN_UPDATES_URL=%s\n'             "${BLOCKCHAIN_UPDATES_URL}"
   printf 'DEFAULT_MATCHER=%s\n'                        "${DEFAULT_MATCHER}"
   printf 'RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=%s\n'  "${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD}"
   printf 'RATE_THRESHOLD_ASSET_ID=%s\n'                "${RATE_THRESHOLD_ASSET_ID}"

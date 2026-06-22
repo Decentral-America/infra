@@ -16,11 +16,12 @@ services:
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     environment:
-      # BLOCKCHAIN_UPDATES_URL and CHAIN_ID come from env_file (standard names).
-      # STARTING_HEIGHT: 1 = genesis block (DCC block heights start at 1, not 0).
+      # All BPS config uses BPS_ prefix via envy::prefixed("BPS_").
+      # BPS_BLOCKCHAIN_UPDATES_URL and BPS_CHAIN_ID come from env_file.
+      # BPS_STARTING_HEIGHT: 1 = genesis block (DCC block heights start at 1, not 0).
       # The BlockchainUpdates gRPC server rejects fromHeight=0 with "must be > 0".
       # Override manually for disaster-recovery partial-sync scenarios.
-      STARTING_HEIGHT: "1"
+      BPS_STARTING_HEIGHT: "1"
       # BPS reads Postgres config with POSTGRES__ prefix (double underscore) via
       # envy::prefixed("POSTGRES__"). These vars are written to the secrets file
       # by bootstrap.sh and push-secrets.yml alongside the standard PG* vars.
@@ -32,7 +33,7 @@ services:
     # We pin the compose healthcheck explicitly so `docker compose up --wait`
     # blocks until the DB connection is verified, not just until the process starts.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:${METRICS_PORT:-9090}/readiness"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:${BPS_METRICS_PORT:-9090}/readiness"]
       interval: 30s
       timeout: 10s
       retries: 5
