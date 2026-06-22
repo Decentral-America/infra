@@ -225,7 +225,7 @@ jobs:
           ${GRAFANA} {
               # Reverse proxy to Grafana NodePort on Frankfurt LKE worker.
               # No X-Frame-Options — allow iframe embedding in admin dashboard.
-              reverse_proxy 139.162.152.128:32300
+              reverse_proxy 172.105.64.89:32300
               header {
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                   X-Content-Type-Options "nosniff"

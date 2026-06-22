@@ -221,7 +221,7 @@ resource "linode_firewall" "backend" {
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "32300"
-    ipv4     = ["139.162.152.128/32"]
+    ipv4     = ["172.105.64.89/32"]
   }
 
   inbound {
