@@ -1,0 +1,85 @@
+# docker-compose for Prometheus — Newark backend node
+# Scrapes the DCC chain metrics exporter (which calls DCC REST API over HTTPS).
+# Location on server: /opt/dcc/compose/prometheus.yml
+#
+# Start: NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d
+services:
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    container_name: "prometheus-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - /opt/dcc/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.listen-address=127.0.0.1:9091'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  dcc-exporter:
+    image: python:3.12-alpine
+    container_name: "dcc-exporter-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    volumes:
+      - /opt/dcc/monitoring/exporter.py:/app/exporter.py:ro
+    command: ["python3", "/app/exporter.py"]
+    environment:
+      EXPORTER_PORT: "9101"
+      # Node URLs — public HTTPS endpoints, no outbound firewall changes needed
+      NODE_URLS: "main-node=https://testnet-node.decentralchain.io"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9101/metrics | head -1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+        reservations:
+          memory: 16m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  prometheus-data:
+    name: "prometheus-data-${NETWORK:-testnet}"

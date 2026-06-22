@@ -1,0 +1,49 @@
+# docker-compose for Grafana — Newark backend node
+# Embedded in the admin dashboard via iframe at grafana.testnet.decentralchain.io.
+# Location on server: /opt/dcc/compose/grafana.yml
+#
+# Start: NETWORK=testnet docker compose -f /opt/dcc/compose/grafana.yml up -d
+services:
+  grafana:
+    image: grafana/grafana:12.0.2
+    container_name: "grafana-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - /opt/dcc/monitoring/grafana.ini:/etc/grafana/grafana.ini:ro
+      - /opt/dcc/monitoring/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - /opt/dcc/monitoring/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_PATHS_DATA: /var/lib/grafana
+      GF_PATHS_LOGS: /var/log/grafana
+      GF_PATHS_PLUGINS: /var/lib/grafana/plugins
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  grafana-data:
+    name: "grafana-data-${NETWORK:-testnet}"

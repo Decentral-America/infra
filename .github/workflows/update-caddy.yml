@@ -225,7 +225,8 @@ jobs:
           ${GRAFANA} {
               # Reverse proxy to Grafana NodePort on Frankfurt LKE worker.
               # No X-Frame-Options — allow iframe embedding in admin dashboard.
-              reverse_proxy 172.105.64.89:32300
+              # Grafana runs locally on Newark (compose/grafana.yml) on port 3002.
+              reverse_proxy localhost:3002
               header {
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                   X-Content-Type-Options "nosniff"
