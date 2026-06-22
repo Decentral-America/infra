@@ -55,7 +55,7 @@ jobs:
         run: |
           # Create dummy env/config files so compose config can parse references
           sudo mkdir -p /opt/dcc/secrets /opt/dcc/caddy
-          sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/caddy/Caddyfile
+          sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/secrets/testnet.env /opt/dcc/secrets/stagenet.env /opt/dcc/caddy/Caddyfile
           for f in compose/*.yml; do
             echo "Validating $f..."
             docker compose -f "$f" config --quiet
