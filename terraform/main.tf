@@ -138,6 +138,7 @@ resource "linode_instance" "backend" {
     WEBSOCKET_DOMAIN                      = var.websocket_domain
     NODE_DOMAIN                           = var.node_domain
     MATCHER_DOMAIN                        = var.matcher_domain
+    ADMIN_DOMAIN                          = var.admin_domain
     ACME_EMAIL                            = var.acme_email
     BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
     BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
@@ -265,6 +266,7 @@ resource "linode_stackscript" "bootstrap" {
   # SENSITIVE secrets (passwords, seeds, API keys) are NOT in this list —
   # they are pushed post-boot via SSH (push-secrets.yml) using SOPS encryption.
   # <UDF name="DEPLOY_PUBLIC_KEY" label="Deploy SSH public key" />
+  # <UDF name="ADMIN_DOMAIN" label="Admin dashboard public domain (leave empty to skip)" default="" />
   # <UDF name="NETWORK" label="Network name" />
   # <UDF name="CHAIN_ID" label="DCC chain ID" />
   # <UDF name="DEFAULT_MATCHER" label="DCC matcher blockchain address" />

@@ -184,8 +184,13 @@ jobs:
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
           # root_password and deploy_ssh_public_key have defaults in variables.tf for
           # drift detection — do NOT pass them here; an empty string overrides the default.
-          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
-          TF_VAR_blockchain_updates_url:   ${{ secrets.TF_VAR_blockchain_updates_url }}
+          #
+          # TF_VAR_DEFAULT_MATCHER: set only via provision.yml; empty string is a valid
+          # sentinel for drift detection (stackscript_data has ignore_changes).
+          # Do NOT set TF_VAR_blockchain_updates_url here — testnet.tfvars already
+          # provides the correct value (grpc://localhost:6881). Passing an empty secret
+          # overrides the tfvars value and fails the URL validation block.
+          TF_VAR_DEFAULT_MATCHER: ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
 
       - name: Write drift summary
         if: >-

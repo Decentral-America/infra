@@ -127,6 +127,12 @@ variable "matcher_domain" {
   default     = ""
 }
 
+variable "admin_domain" {
+  description = "Public domain for the admin dashboard, proxied by Caddy with automatic TLS. Leave empty to skip."
+  type        = string
+  default     = ""
+}
+
 variable "acme_email" {
   description = "Email for Let's Encrypt ACME cert expiry notifications. Optional."
   type        = string
