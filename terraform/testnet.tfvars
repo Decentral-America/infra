@@ -32,6 +32,7 @@ websocket_domain    = "testnet-ws.decentralchain.io"
 node_domain         = "testnet-node.decentralchain.io"
 matcher_domain      = "testnet-matcher.decentralchain.io"
 admin_domain        = "testnet-admin.decentralchain.io"
+grafana_domain      = "grafana.testnet.decentralchain.io"
 acme_email          = "ops@decentralamerica.com"
 
 # ── Off-site backup: disabled for testnet ─────────────────────────────────────

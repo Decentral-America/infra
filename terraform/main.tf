@@ -139,6 +139,7 @@ resource "linode_instance" "backend" {
     NODE_DOMAIN                           = var.node_domain
     MATCHER_DOMAIN                        = var.matcher_domain
     ADMIN_DOMAIN                          = var.admin_domain
+    GRAFANA_DOMAIN                        = var.grafana_domain
     ACME_EMAIL                            = var.acme_email
     BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
     BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
@@ -210,6 +211,17 @@ resource "linode_firewall" "backend" {
     ports    = "6863-6868"
     ipv4     = ["0.0.0.0/0"]
     ipv6     = ["::/0"]
+  }
+
+  outbound {
+    # Grafana NodePort on Frankfurt LKE worker — Caddy on Newark reverse-proxies
+    # grafana.testnet.decentralchain.io to 139.162.152.128:32300.
+    # Scoped to the LKE worker IP only to minimise blast radius.
+    label    = "allow-grafana-lke-out"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "32300"
+    ipv4     = ["139.162.152.128/32"]
   }
 
   inbound {

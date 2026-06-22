@@ -62,16 +62,18 @@ spec:
       # not from plain values, but the chart can't distinguish the source.
       assertNoLeakedSecrets: false
       defaultDashboardsTimezone: browser
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
       grafana.ini:
         server:
-          root_url: "%(protocol)s://%(domain)s/"
+          root_url: "https://grafana.testnet.decentralchain.io"
+          domain: "grafana.testnet.decentralchain.io"
+        security:
+          # Required for iframe embedding in the admin dashboard.
+          allow_embedding: true
+        auth.anonymous:
+          # Read-only anonymous access — no login required to view dashboards.
+          enabled: true
+          org_name: Main Org.
+          org_role: Viewer
         smtp:
           enabled: true
           host: "mail.decentralchain.io:465"
@@ -80,6 +82,13 @@ spec:
           from_address: "info@decentralchain.io"
           from_name: "DCC Testnet Monitoring"
           startTLS_policy: "OpportunisticStartTLS"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
 
     prometheus:
       prometheusSpec:

@@ -133,6 +133,12 @@ variable "admin_domain" {
   default     = ""
 }
 
+variable "grafana_domain" {
+  description = "Public domain for Grafana, proxied by Caddy to the LKE NodePort. Leave empty to skip."
+  type        = string
+  default     = ""
+}
+
 variable "acme_email" {
   description = "Email for Let's Encrypt ACME cert expiry notifications. Optional."
   type        = string

@@ -40,6 +40,7 @@ jobs:
           NODE=$(parse node_domain)
           MATCHER=$(parse matcher_domain)
           ADMIN=$(parse admin_domain)
+          GRAFANA=$(parse grafana_domain)
           ACME=$(parse acme_email)
 
           echo "Domains read from testnet.tfvars:"
@@ -49,6 +50,7 @@ jobs:
           echo "  node:         $NODE"
           echo "  matcher:      $MATCHER"
           echo "  admin:        $ADMIN"
+          echo "  grafana:      $GRAFANA"
           echo "  acme:         $ACME"
 
           # ── Read MAIN_NODE_REST_API_KEY from SOPS ─────────────────────────────────
@@ -218,6 +220,23 @@ jobs:
               encode gzip zstd
               log
           }
+
+          $([ -n "${GRAFANA}" ] && cat << GRAFANA_BLOCK
+          ${GRAFANA} {
+              # Reverse proxy to Grafana NodePort on Frankfurt LKE worker.
+              # No X-Frame-Options — allow iframe embedding in admin dashboard.
+              reverse_proxy 139.162.152.128:32300
+              header {
+                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+                  X-Content-Type-Options "nosniff"
+                  Referrer-Policy "strict-origin-when-cross-origin"
+                  -Server
+              }
+              encode gzip zstd
+              log
+          }
+          GRAFANA_BLOCK
+          )
           EOF
 
           echo "Caddyfile generated ($(wc -l < /tmp/Caddyfile) lines)"
