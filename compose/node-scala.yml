@@ -120,5 +120,4 @@ volumes:
     name: "node-state-stagenet"
   node-state-testnet:
     external: true
-    # Legacy: was dcc-node-state-testnet — migrate to node-state-testnet on next maintenance window
-    name: "dcc-node-state-testnet"
+    name: "node-state-testnet"
