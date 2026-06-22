@@ -240,7 +240,7 @@ install -d -m 755 -o deploy -g deploy \
 # the compose project name. Compose-managed volumes are named {project}_{vol},
 # so changing --project-name orphans the data. Pre-creating them here with a
 # fixed name prevents data loss if the project name ever changes.
-docker volume create "dcc-node-state-${NETWORK}" 2>/dev/null || true
+docker volume create "node-state-${NETWORK}" 2>/dev/null || true
 echo "[bootstrap] External Docker volumes created for ${NETWORK}"
 
 # -- Node network config placeholder ------------------------------------------
@@ -387,6 +387,13 @@ sudo -u postgres psql -tc \
   "SELECT 1 FROM pg_database WHERE datname = 'dcc_${NETWORK}'" \
   | grep -q 1 || \
   sudo -u postgres createdb -O dcc "dcc_${NETWORK}"
+
+# Admin dashboard operational database (load test history, future admin metadata).
+# Kept separate from the blockchain indexing database to avoid mixing concerns.
+sudo -u postgres psql -tc \
+  "SELECT 1 FROM pg_database WHERE datname = 'admin_testnet'" \
+  | grep -q 1 || \
+  sudo -u postgres createdb -O dcc "admin_${NETWORK}"
 
 # -- PostgreSQL hardening (Audit P6 LOW-3) ------------------------------------
 # Enforce scram-sha-256 instead of md5 for password hashing.

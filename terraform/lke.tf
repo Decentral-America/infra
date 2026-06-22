@@ -49,7 +49,7 @@ resource "linode_firewall" "lke_nodes" {
 
   # ── Blockchain P2P ─────────────────────────────────────────────────────────
   inbound {
-    label    = "allow-p2p-gen0"
+    label    = "allow-p2p-gen-0"
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "6863"
@@ -58,7 +58,7 @@ resource "linode_firewall" "lke_nodes" {
   }
 
   inbound {
-    label    = "allow-p2p-gen1"
+    label    = "allow-p2p-gen-1"
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "6864"
@@ -67,7 +67,7 @@ resource "linode_firewall" "lke_nodes" {
   }
 
   inbound {
-    label    = "allow-p2p-val0"
+    label    = "allow-p2p-val-0"
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "6865"

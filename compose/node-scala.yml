@@ -5,7 +5,7 @@
 #   NETWORK   — mainnet | testnet | stagenet
 #
 # Volumes:
-#   node-scala-state-<NETWORK> — persistent blockchain state (named, survives upgrades)
+#   node-state-<NETWORK> — persistent blockchain state (named, survives upgrades)
 #
 # Ports (all except P2P are localhost-only):
 #   6869 — REST API     (internal; expose via reverse proxy only)
@@ -57,7 +57,7 @@ services:
 
     volumes:
       # Blockchain state — named volume survives image upgrades and docker rm
-      - "node-scala-state-${NETWORK:-mainnet}:/var/lib/dcc"
+      - "node-state-${NETWORK:-mainnet}:/var/lib/dcc"
       # Network config — entrypoint.sh requires /etc/dcc/dcc.conf to exist before
       # it creates the combined config (user config + injected wallet secrets).
       # Without this mount, DCC_WALLET_SEED and DCC_WALLET_PASSWORD are never applied.
@@ -105,14 +105,20 @@ services:
 # no compose project prefix. This ensures blockchain state is preserved even
 # if the deploy project name changes (docker compose managed volumes are
 # named {project}_{volume}, so changing --project-name orphans the data).
-# bootstrap.sh: docker volume create dcc-node-state-<network>
+# bootstrap.sh: docker volume create node-state-<network>
+# NOTE: existing testnet server has legacy volume named dcc-node-state-testnet.
+# Migrate during next maintenance window:
+#   docker volume create node-state-testnet
+#   docker run --rm -v dcc-node-state-testnet:/from -v node-state-testnet:/to alpine sh -c "cp -av /from/. /to/"
+# Until then the testnet external.name below stays as dcc-node-state-testnet.
 volumes:
-  node-scala-state-mainnet:
+  node-state-mainnet:
     external: true
-    name: "dcc-node-state-mainnet"
-  node-scala-state-stagenet:
+    name: "node-state-mainnet"
+  node-state-stagenet:
     external: true
-    name: "dcc-node-state-stagenet"
-  node-scala-state-testnet:
+    name: "node-state-stagenet"
+  node-state-testnet:
     external: true
+    # Legacy: was dcc-node-state-testnet — migrate to node-state-testnet on next maintenance window
     name: "dcc-node-state-testnet"

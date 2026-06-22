@@ -128,7 +128,7 @@ resource "linode_instance" "backend" {
     POSTGRES_HOST                         = var.postgres_host
     POSTGRES_PORT                         = var.postgres_port
     POSTGRES_USER                         = var.postgres_user
-    POSTGRES_DATABASE                     = var.postgres_database != "" ? var.postgres_database : "dcc_${local.network}"
+    POSTGRES_DATABASE                     = var.postgres_database != "" ? var.postgres_database : "bps_${local.network}"
     DEFAULT_MATCHER                       = var.DEFAULT_MATCHER
     RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD = var.rate_pair_acceptance_volume_threshold
     RATE_THRESHOLD_ASSET_ID               = var.rate_threshold_asset_id

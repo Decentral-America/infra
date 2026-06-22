@@ -24,12 +24,12 @@ metadata:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: dcc-gen-0-config
+  name: gen-0-config
   namespace: dcc
 data:
   dcc.conf: |
     dcc {
-      # directory is driven by -Ddcc.directory=$WVDATA (/var/lib/dcc, the PVC).
+      # directory is driven by -Ddcc.directory=$DCC_DATA (/var/lib/dcc, the PVC).
       # Do NOT hardcode it here or chain state lands on ephemeral container rootfs.
 
       blockchain {
@@ -115,12 +115,12 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: dcc-gen-1-config
+  name: gen-1-config
   namespace: dcc
 data:
   dcc.conf: |
     dcc {
-      # directory is driven by -Ddcc.directory=$WVDATA (/var/lib/dcc, the PVC).
+      # directory is driven by -Ddcc.directory=$DCC_DATA (/var/lib/dcc, the PVC).
       # Do NOT hardcode it here or chain state lands on ephemeral container rootfs.
 
       blockchain {
@@ -206,12 +206,12 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: dcc-val-0-config
+  name: val-0-config
   namespace: dcc
 data:
   dcc.conf: |
     dcc {
-      # directory is driven by -Ddcc.directory=$WVDATA (/var/lib/dcc, the PVC).
+      # directory is driven by -Ddcc.directory=$DCC_DATA (/var/lib/dcc, the PVC).
       # Do NOT hardcode it here or chain state lands on ephemeral container rootfs.
 
       blockchain {
@@ -335,9 +335,9 @@ spec:
               value: "768m"
             - name: DCC_LOG_LEVEL
               value: INFO
-            - name: WVDATA
+            - name: DCC_DATA
               value: /var/lib/dcc
-            - name: WVLOG
+            - name: DCC_LOG
               value: /tmp
             - name: JAVA_OPTS
               value: >-
@@ -347,7 +347,7 @@ spec:
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
-                  name: dcc-gen0-wallet
+                  name: gen-0-wallet
                   key: seed
           ports:
             - containerPort: 6863
@@ -383,7 +383,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: dcc-gen-0-config
+            name: gen-0-config
   volumeClaimTemplates:
     - metadata:
         name: chain-data
@@ -436,9 +436,9 @@ spec:
               value: "640m"
             - name: DCC_LOG_LEVEL
               value: INFO
-            - name: WVDATA
+            - name: DCC_DATA
               value: /var/lib/dcc
-            - name: WVLOG
+            - name: DCC_LOG
               value: /tmp
             - name: JAVA_OPTS
               value: >-
@@ -448,7 +448,7 @@ spec:
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
-                  name: dcc-gen1-wallet
+                  name: gen-1-wallet
                   key: seed
           ports:
             - containerPort: 6864
@@ -484,7 +484,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: dcc-gen-1-config
+            name: gen-1-config
   volumeClaimTemplates:
     - metadata:
         name: chain-data
@@ -537,9 +537,9 @@ spec:
               value: "512m"
             - name: DCC_LOG_LEVEL
               value: INFO
-            - name: WVDATA
+            - name: DCC_DATA
               value: /var/lib/dcc
-            - name: WVLOG
+            - name: DCC_LOG
               value: /tmp
             - name: JAVA_OPTS
               value: >-
@@ -552,7 +552,7 @@ spec:
             - name: DCC_WALLET_SEED
               valueFrom:
                 secretKeyRef:
-                  name: dcc-val0-wallet
+                  name: val-0-wallet
                   key: seed
           ports:
             - containerPort: 6865
@@ -588,7 +588,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: dcc-val-0-config
+            name: val-0-config
   volumeClaimTemplates:
     - metadata:
         name: chain-data
