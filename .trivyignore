@@ -48,3 +48,18 @@ CVE-2026-45447
 # Justification filed: 2026-06-19.
 GHSA-2r2c-cx56-8933
 GHSA-47qp-hqvx-6r3f
+
+# undici DoS vulnerability — CVE-2026-12151
+#
+# Trivy reports this as a false positive in admin-dashboard. react-router@7.16.0
+# declares "undici": "^6.19.2" in its package.json — Trivy reads this range and
+# reports the minimum version (6.25.0) as installed. The actual installed undici
+# is 6.27.0 (the patched version), verified by:
+#   docker run admin-dashboard find /app/node_modules -name 'package.json' \
+#     -path '*/undici/package.json' | xargs grep '"version"'
+#   → "version": "6.27.0"
+# undici is pinned as a direct dependency at 6.27.0 in admin-dashboard/package.json
+# and the workspace override tracks ^6.27.0.
+# Remove when react-router updates its undici peer dep declaration.
+# Justification filed: 2026-06-22.
+CVE-2026-12151
