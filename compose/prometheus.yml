@@ -5,7 +5,10 @@
 # Start: NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d
 services:
   prometheus:
-    image: prom/prometheus:v3.4.1
+    # prom/prometheus:v3.12.0 — security upgrade from v3.4.1
+    # Patches: remote-write snappy decompression DoS, AzureAD OAuth secret
+    # exposure, remote-read snappy decode vuln, stored XSS on metric names
+    image: prom/prometheus:v3.12.0
     container_name: "prometheus-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -26,7 +29,7 @@ services:
       - '--web.listen-address=127.0.0.1:9091'
       - '--web.enable-lifecycle'
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/-/healthy || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/-/ready || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -44,7 +47,7 @@ services:
         max-file: "3"
 
   dcc-exporter:
-    image: python:3.12-alpine
+    image: python:3.13-slim
     container_name: "dcc-exporter-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

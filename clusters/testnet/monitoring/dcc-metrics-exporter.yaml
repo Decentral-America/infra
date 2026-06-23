@@ -95,7 +95,7 @@ spec:
         fsGroup: 0
       containers:
         - name: exporter
-          image: python:3.12-alpine
+          image: python:3.13-slim
           command: ["python3", "/app/exporter.py"]
           env:
             - name: EXPORTER_PORT
