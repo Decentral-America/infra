@@ -1,0 +1,51 @@
+name: Wipe testnet chain data
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Network to wipe'
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet, stagenet]
+
+permissions:
+  contents: read
+
+jobs:
+  wipe:
+    name: Wipe chain data on ${{ inputs.network }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    steps:
+      - name: Setup SSH key
+        run: |
+          install -dm 700 ~/.ssh
+          echo "${{ secrets.TESTNET_DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.TESTNET_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Stop node, wipe chain data, remove volume
+        env:
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          NETWORK: ${{ inputs.network }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << 'REMOTE'
+          set -euo pipefail
+          echo "Stopping node-scala-testnet..."
+          docker stop node-scala-testnet 2>/dev/null || true
+          docker rm node-scala-testnet 2>/dev/null || true
+
+          echo "Wiping chain volume..."
+          # Try both volume name variants
+          docker volume rm node-state-testnet 2>/dev/null || true
+          docker volume rm dcc-node-state-testnet 2>/dev/null || true
+
+          echo "Recreating empty volume..."
+          docker volume create node-state-testnet 2>/dev/null || true
+
+          echo "Done — chain data wiped."
+          REMOTE
