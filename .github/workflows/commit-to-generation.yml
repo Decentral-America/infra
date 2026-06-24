@@ -11,7 +11,7 @@ on:
         options:
           - testnet
       generation_period_start:
-        description: 'Generation period start height (check GET /blockchain/finality nextGenerationPeriod.start)'
+        description: 'Generation period start height (see GET /blockchain/finality → nextGenerationPeriod.start)'
         required: true
         default: '101'
 
@@ -22,148 +22,189 @@ jobs:
   commit:
     name: Submit CommitToGenerationTransaction for all generators
     runs-on: ubuntu-latest
+
     steps:
+      # ── kubeconfig ───────────────────────────────────────────────────────────
       - name: Download kubeconfig (LKE)
-        if: ${{ inputs.network == 'testnet' }}
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters" | \
-            jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
-          echo "LKE cluster ID: $CID"
-          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig')
-          echo "$RAW" | python3 -c \
-            'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' \
+          CID=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" \
+            | jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+          echo "Cluster ID: $CID"
+          curl -sf -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" \
+            | jq -r '.kubeconfig' \
+            | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip()+"=="))' \
             > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          echo "KUBECONFIG=/tmp/kubeconfig" >> "$GITHUB_ENV"
 
       - uses: azure/setup-kubectl@v4
 
-      - name: Commit gen-0 (dcc-gen-0-0, port 6869)
+      # ── helper: sign + broadcast for an LKE pod ──────────────────────────────
+      # Usage: sign_and_broadcast POD REST_PORT
+      - name: Commit gen-0
         env:
-          GEN_API_KEY: ${{ secrets.NODE_REST_API_KEY }}
-          PERIOD: ${{ inputs.generation_period_start }}
-          PUBLIC_NODE: https://testnet-node.decentralchain.io
+          API_KEY: ${{ secrets.NODE_REST_API_KEY }}
+          PERIOD:  ${{ inputs.generation_period_start }}
         run: |
           set -euo pipefail
-          echo "=== gen-0: get wallet address ==="
-          ADDR=$(kubectl exec -n dcc dcc-gen-0-0 -- \
-            curl -sf http://127.0.0.1:6869/addresses \
+          POD=dcc-gen-0-0
+          PORT=6869
+
+          echo "=== $POD: wallet address ==="
+          ADDR=$(kubectl exec -n dcc "$POD" -- \
+            curl -sf "http://127.0.0.1:${PORT}/addresses" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
-          echo "gen-0 address: $ADDR"
+          echo "Address: $ADDR"
 
-          echo "=== gen-0: get public key ==="
-          PUBKEY=$(kubectl exec -n dcc dcc-gen-0-0 -- \
-            curl -sf "http://127.0.0.1:6869/addresses/publicKey/$ADDR" \
+          echo "=== $POD: public key ==="
+          PUBKEY=$(kubectl exec -n dcc "$POD" -- \
+            curl -sf "http://127.0.0.1:${PORT}/addresses/publicKey/${ADDR}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "gen-0 pubkey: $PUBKEY"
+          echo "PubKey: $PUBKEY"
 
-          echo "=== gen-0: sign CommitToGenerationTransaction ==="
-          SIGNED=$(kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
-            "curl -sf -X POST http://127.0.0.1:6869/transactions/sign \
-              -H 'X-API-Key: $GEN_API_KEY' \
+          echo "=== $POD: sign CommitToGenerationTransaction ==="
+          # Build JSON safely via python; pipe into pod via stdin so no quoting issues
+          PAYLOAD=$(python3 - <<PYEOF
+          import json
+          print(json.dumps({
+              "type": 19,
+              "version": 1,
+              "senderPublicKey": "$PUBKEY",
+              "generationPeriodStart": $PERIOD
+          }))
+          PYEOF
+          )
+          SIGNED=$(echo "$PAYLOAD" | kubectl exec -i -n dcc "$POD" -- sh -c \
+            "curl -sf -X POST http://127.0.0.1:${PORT}/transactions/sign \
+              -H 'X-API-Key: ${API_KEY}' \
               -H 'Content-Type: application/json' \
-              -d '{\"type\":19,\"version\":1,\"senderPublicKey\":\"$PUBKEY\",\"generationPeriodStart\":$PERIOD}'")
+              -d @-")
           echo "Signed: $SIGNED"
 
-          echo "=== gen-0: broadcast ==="
-          RESULT=$(curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
+          echo "=== $POD: broadcast ==="
+          TXID=$(echo "$SIGNED" | curl -sf -X POST \
+            https://testnet-node.decentralchain.io/transactions/broadcast \
             -H "Content-Type: application/json" \
-            -d "$SIGNED")
-          echo "Result: $RESULT"
-          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('TX ID:', d.get('id','?'))"
+            -d @- \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "✅ gen-0 CommitToGeneration TX: $TXID"
 
-      - name: Commit gen-1 (dcc-gen-1-0, port 6870)
+      - name: Commit gen-1
         env:
-          GEN_API_KEY: ${{ secrets.NODE_REST_API_KEY }}
-          PERIOD: ${{ inputs.generation_period_start }}
-          PUBLIC_NODE: https://testnet-node.decentralchain.io
+          API_KEY: ${{ secrets.NODE_REST_API_KEY }}
+          PERIOD:  ${{ inputs.generation_period_start }}
         run: |
           set -euo pipefail
-          echo "=== gen-1: get wallet address ==="
-          ADDR=$(kubectl exec -n dcc dcc-gen-1-0 -- \
-            curl -sf http://127.0.0.1:6870/addresses \
+          POD=dcc-gen-1-0
+          PORT=6870
+
+          echo "=== $POD: wallet address ==="
+          ADDR=$(kubectl exec -n dcc "$POD" -- \
+            curl -sf "http://127.0.0.1:${PORT}/addresses" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
-          echo "gen-1 address: $ADDR"
+          echo "Address: $ADDR"
 
-          echo "=== gen-1: get public key ==="
-          PUBKEY=$(kubectl exec -n dcc dcc-gen-1-0 -- \
-            curl -sf "http://127.0.0.1:6870/addresses/publicKey/$ADDR" \
+          echo "=== $POD: public key ==="
+          PUBKEY=$(kubectl exec -n dcc "$POD" -- \
+            curl -sf "http://127.0.0.1:${PORT}/addresses/publicKey/${ADDR}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "gen-1 pubkey: $PUBKEY"
+          echo "PubKey: $PUBKEY"
 
-          echo "=== gen-1: sign CommitToGenerationTransaction ==="
-          SIGNED=$(kubectl exec -n dcc dcc-gen-1-0 -- sh -c \
-            "curl -sf -X POST http://127.0.0.1:6870/transactions/sign \
-              -H 'X-API-Key: $GEN_API_KEY' \
+          echo "=== $POD: sign CommitToGenerationTransaction ==="
+          PAYLOAD=$(python3 - <<PYEOF
+          import json
+          print(json.dumps({
+              "type": 19,
+              "version": 1,
+              "senderPublicKey": "$PUBKEY",
+              "generationPeriodStart": $PERIOD
+          }))
+          PYEOF
+          )
+          SIGNED=$(echo "$PAYLOAD" | kubectl exec -i -n dcc "$POD" -- sh -c \
+            "curl -sf -X POST http://127.0.0.1:${PORT}/transactions/sign \
+              -H 'X-API-Key: ${API_KEY}' \
               -H 'Content-Type: application/json' \
-              -d '{\"type\":19,\"version\":1,\"senderPublicKey\":\"$PUBKEY\",\"generationPeriodStart\":$PERIOD}'")
+              -d @-")
           echo "Signed: $SIGNED"
 
-          echo "=== gen-1: broadcast ==="
-          RESULT=$(curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
+          echo "=== $POD: broadcast ==="
+          TXID=$(echo "$SIGNED" | curl -sf -X POST \
+            https://testnet-node.decentralchain.io/transactions/broadcast \
             -H "Content-Type: application/json" \
-            -d "$SIGNED")
-          echo "Result: $RESULT"
-          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('TX ID:', d.get('id','?'))"
+            -d @- \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "✅ gen-1 CommitToGeneration TX: $TXID"
 
-      - name: Commit main node (via SSH to server)
+      - name: Commit main node (SSH → localhost:6869)
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
-          PERIOD: ${{ inputs.generation_period_start }}
-          PUBLIC_NODE: https://testnet-node.decentralchain.io
+          DEPLOY_KEY:  ${{ secrets.DEPLOY_KEY }}
+          API_KEY:     ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          PERIOD:      ${{ inputs.generation_period_start }}
         run: |
           set -euo pipefail
           install -dm 700 ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          echo "=== main node: sign + broadcast via SSH ==="
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s << REMOTE
+          # Build tx JSON here; pass via heredoc so the remote script gets it cleanly
+          PAYLOAD=$(python3 -c "
+          import json, sys
+          # senderPublicKey will be filled by the remote node from its wallet
+          print(json.dumps({'type':19,'version':1,'generationPeriodStart':int('$PERIOD')}))")
+
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "API_KEY='$API_KEY' PAYLOAD='$PAYLOAD'" \
+            bash -s << 'REMOTE'
           set -euo pipefail
-          PERIOD=$PERIOD
-          API_KEY="$MAIN_API_KEY"
 
-          echo "Getting main node address..."
-          ADDR=\$(curl -sf -H "X-API-Key: \$API_KEY" http://localhost:6869/addresses | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
-          echo "Address: \$ADDR"
+          echo "=== main: wallet address ==="
+          ADDR=$(curl -sf -H "X-API-Key: $API_KEY" http://localhost:6869/addresses \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
+          echo "Address: $ADDR"
 
-          PUBKEY=\$(curl -sf "http://localhost:6869/addresses/publicKey/\$ADDR" | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "Pubkey: \$PUBKEY"
+          PUBKEY=$(curl -sf "http://localhost:6869/addresses/publicKey/$ADDR" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
+          echo "PubKey: $PUBKEY"
 
-          SIGNED=\$(curl -sf -X POST http://localhost:6869/transactions/sign \
-            -H "X-API-Key: \$API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"type\":19,\"version\":1,\"senderPublicKey\":\"\$PUBKEY\",\"generationPeriodStart\":\$PERIOD}")
-          echo "Signed tx: \$SIGNED"
+          # Inject senderPublicKey into the payload
+          FULL_PAYLOAD=$(echo "$PAYLOAD" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); d['senderPublicKey']='$PUBKEY'; print(json.dumps(d))")
 
-          RESULT=\$(curl -sf -X POST http://localhost:6869/transactions/broadcast \
-            -H "Content-Type: application/json" -d "\$SIGNED")
-          echo "Broadcast result: \$RESULT"
-          echo "\$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('TX ID:', d.get('id','?'))"
+          echo "=== main: sign ==="
+          SIGNED=$(echo "$FULL_PAYLOAD" \
+            | curl -sf -X POST http://localhost:6869/transactions/sign \
+                -H "X-API-Key: $API_KEY" \
+                -H "Content-Type: application/json" \
+                -d @-)
+          echo "Signed: $SIGNED"
+
+          echo "=== main: broadcast ==="
+          TXID=$(echo "$SIGNED" \
+            | curl -sf -X POST http://localhost:6869/transactions/broadcast \
+                -H "Content-Type: application/json" \
+                -d @- \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "✅ main CommitToGeneration TX: $TXID"
           REMOTE
 
-      - name: Verify commitments landed
-        env:
-          PUBLIC_NODE: https://testnet-node.decentralchain.io
-          PERIOD: ${{ inputs.generation_period_start }}
+      # ── verify ───────────────────────────────────────────────────────────────
+      - name: Verify commitments propagated
         run: |
-          echo "Waiting 10s for transactions to propagate..."
-          sleep 10
-          echo "=== Finality status ==="
-          curl -sf "$PUBLIC_NODE/blockchain/finality" | python3 -c "
-          import sys,json
+          sleep 8
+          curl -sf https://testnet-node.decentralchain.io/blockchain/finality \
+            | python3 -c "
+          import sys, json
           d = json.load(sys.stdin)
-          print(f'  height: {d[\"height\"]}')
-          print(f'  T0 finalizedHeight: {d[\"finalizedHeight\"]}')
-          print(f'  T2 hotStuffFinalizedHeight: {d[\"hotStuffFinalizedHeight\"]}')
-          print(f'  currentGenerators: {len(d[\"currentGenerators\"])} committed')
-          print(f'  nextGenerators: {len(d[\"nextGenerators\"])} committed for period {d[\"nextGenerationPeriod\"]}')
+          print(f'height:                  {d[\"height\"]}')
+          print(f'T0 finalizedHeight:      {d[\"finalizedHeight\"]}')
+          print(f'T2 hotStuffFinalized:    {d[\"hotStuffFinalizedHeight\"]}')
+          print(f'currentGenerators:       {len(d[\"currentGenerators\"])} committed')
+          print(f'nextGenerators (period {d[\"nextGenerationPeriod\"][\"start\"]}): {len(d[\"nextGenerators\"])} committed')
           "
