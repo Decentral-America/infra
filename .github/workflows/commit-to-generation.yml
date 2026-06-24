@@ -47,8 +47,17 @@ jobs:
 
       - uses: azure/setup-kubectl@v4
 
+      - name: Force Flux reconcile to pick up latest infra config
+        run: |
+          set -euo pipefail
+          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
+          export PATH=$PATH:/usr/local/bin
+          flux reconcile source git flux-system --timeout=2m || true
+          flux reconcile kustomization dcc-apps --timeout=3m || true
+          echo "ConfigMaps and resources updated."
+
       - name: Wipe gen node chain data (scale down → delete PVCs → scale up)
-        if: ${{ inputs.wipe_gen_nodes == 'true' }}
+        if: ${{ inputs.wipe_gen_nodes != 'false' }}
         run: |
           set -euo pipefail
           echo "=== Scaling down all gen/val StatefulSets ==="
@@ -69,8 +78,8 @@ jobs:
           kubectl wait pod -n dcc -l 'app in (dcc-gen-0,dcc-gen-1)' \
             --for=condition=Ready --timeout=300s
 
-      - name: Wait for gen nodes to sync with main (height check)
-        if: ${{ inputs.wipe_gen_nodes == 'true' }}
+      - name: Wait for gen nodes to start (height check after wipe)
+        if: ${{ inputs.wipe_gen_nodes != 'false' }}
         run: |
           echo "Waiting for gen-0 to reach height 5+ on the fresh genesis..."
           for i in $(seq 1 30); do
