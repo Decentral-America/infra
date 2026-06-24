@@ -104,12 +104,15 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6869
-        api-key-hash = "5gZJk3xTibMQ65CvKeBzoHR4pY5h7EYmAc87ZZcLW7ps"
       }
       synchronization {
         synchronization-timeout = 5m
         max-rollback = 20
         score-ttl = 90s
+      }
+      hotstuff {
+        enabled = true
+        round-timeout-ms = 400
       }
     }
 
@@ -198,12 +201,15 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6870
-        api-key-hash = "5gZJk3xTibMQ65CvKeBzoHR4pY5h7EYmAc87ZZcLW7ps"
       }
       synchronization {
         synchronization-timeout = 5m
         max-rollback = 20
         score-ttl = 90s
+      }
+      hotstuff {
+        enabled = true
+        round-timeout-ms = 400
       }
     }
 
@@ -293,7 +299,6 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6871
-        api-key-hash = "5gZJk3xTibMQ65CvKeBzoHR4pY5h7EYmAc87ZZcLW7ps"
       }
       synchronization {
         synchronization-timeout = 5m
@@ -337,7 +342,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:testnet-latest
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
           imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
@@ -440,7 +445,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:testnet-latest
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
           imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
@@ -543,7 +548,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:testnet-latest
+          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
           imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
