@@ -1,0 +1,45 @@
+name: Debug testnet node
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    name: Check node state on testnet server
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Setup SSH key
+        run: |
+          install -dm 700 ~/.ssh
+          echo "${{ secrets.TESTNET_DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.TESTNET_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Check node status on server
+        env:
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << 'REMOTE'
+          set -euo pipefail
+          echo "=== Docker containers ==="
+          docker ps -a --format "{{.Names}} {{.Status}} {{.Image}}" | grep -i "node\|dcc" || echo "none"
+
+          echo "=== Docker volumes ==="
+          docker volume ls | grep -i "state\|dcc" || echo "none"
+
+          echo "=== Node config (genesis section) ==="
+          grep -A20 "genesis {" /opt/dcc/config/node-testnet/dcc.conf 2>/dev/null || echo "config not found"
+
+          echo "=== Secrets env keys (no values) ==="
+          grep "^[A-Z_]*=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f1 || echo "secrets not found"
+
+          echo "=== Last node-scala-testnet container logs ==="
+          docker logs node-scala-testnet --tail=30 2>&1 || echo "container not running"
+
+          REMOTE
