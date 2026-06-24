@@ -51,7 +51,7 @@ data:
             double-features-periods-after-height = 0
             min-asset-info-update-interval = 5
             min-block-time = 5s
-            delay-delta = 4
+            delay-delta = 8
           }
           rewards {
             term = 100000
@@ -61,11 +61,11 @@ data:
             voting-interval = 10000
           }
           genesis {
-            average-block-delay = 60s
-            initial-base-target = 48
-            timestamp = 1780810901602
-            block-timestamp = 1780810901602
-            signature = "5tjyNTWvve3pVnBok5Z91A9qqvVpVN8tXxT26N7PH7W6DgPU6V8F8f7r6gM7VhmbZKqPjd8MYQALQh94CBGHBrjh"
+            average-block-delay = 30s
+            initial-base-target = 205
+            timestamp = 1782263489276
+            block-timestamp = 1782263489276
+            signature = "4tFpYgugvahrqQYBMoUu6NPE7jxsKzisa5is9b7pTGYrWG6yd7ysYfMCHyqad6jB3admacvEKua2D3bLwuqixJ9m"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
@@ -142,7 +142,7 @@ data:
             double-features-periods-after-height = 0
             min-asset-info-update-interval = 5
             min-block-time = 5s
-            delay-delta = 4
+            delay-delta = 8
           }
           rewards {
             term = 100000
@@ -152,11 +152,11 @@ data:
             voting-interval = 10000
           }
           genesis {
-            average-block-delay = 60s
-            initial-base-target = 48
-            timestamp = 1780810901602
-            block-timestamp = 1780810901602
-            signature = "5tjyNTWvve3pVnBok5Z91A9qqvVpVN8tXxT26N7PH7W6DgPU6V8F8f7r6gM7VhmbZKqPjd8MYQALQh94CBGHBrjh"
+            average-block-delay = 30s
+            initial-base-target = 205
+            timestamp = 1782263489276
+            block-timestamp = 1782263489276
+            signature = "4tFpYgugvahrqQYBMoUu6NPE7jxsKzisa5is9b7pTGYrWG6yd7ysYfMCHyqad6jB3admacvEKua2D3bLwuqixJ9m"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
@@ -233,7 +233,7 @@ data:
             double-features-periods-after-height = 0
             min-asset-info-update-interval = 5
             min-block-time = 5s
-            delay-delta = 4
+            delay-delta = 8
           }
           rewards {
             term = 100000
@@ -243,11 +243,11 @@ data:
             voting-interval = 10000
           }
           genesis {
-            average-block-delay = 60s
-            initial-base-target = 48
-            timestamp = 1780810901602
-            block-timestamp = 1780810901602
-            signature = "5tjyNTWvve3pVnBok5Z91A9qqvVpVN8tXxT26N7PH7W6DgPU6V8F8f7r6gM7VhmbZKqPjd8MYQALQh94CBGHBrjh"
+            average-block-delay = 30s
+            initial-base-target = 205
+            timestamp = 1782263489276
+            block-timestamp = 1782263489276
+            signature = "4tFpYgugvahrqQYBMoUu6NPE7jxsKzisa5is9b7pTGYrWG6yd7ysYfMCHyqad6jB3admacvEKua2D3bLwuqixJ9m"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
