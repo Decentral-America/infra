@@ -82,7 +82,6 @@ data:
         port = 6863
         declared-address = "172.105.64.89:6863"
         known-peers = [
-          "66.228.55.154:6868"
           "127.0.0.1:6864"
           "127.0.0.1:6865"
         ]
@@ -173,7 +172,6 @@ data:
         port = 6864
         declared-address = "172.105.64.89:6864"
         known-peers = [
-          "66.228.55.154:6868"
           "127.0.0.1:6863"
           "127.0.0.1:6865"
         ]
@@ -264,7 +262,6 @@ data:
         port = 6865
         declared-address = "172.105.64.89:6865"
         known-peers = [
-          "66.228.55.154:6868"
           "127.0.0.1:6863"
           "127.0.0.1:6864"
         ]
@@ -324,10 +321,12 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-d6e69d028f46b763b5c684f89f121d878a851af9
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/decentral-america/node-scala:testnet-latest
+          imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
               value: testnet
@@ -425,10 +424,12 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-d6e69d028f46b763b5c684f89f121d878a851af9
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/decentral-america/node-scala:testnet-latest
+          imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
               value: testnet
@@ -526,10 +527,12 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-d6e69d028f46b763b5c684f89f121d878a851af9
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/decentral-america/node-scala:testnet-latest
+          imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
               value: testnet
