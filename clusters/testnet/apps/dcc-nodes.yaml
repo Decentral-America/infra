@@ -62,15 +62,17 @@ data:
           }
           genesis {
             average-block-delay = 30s
-            initial-base-target = 229
-            timestamp = 1782272976285
-            block-timestamp = 1782272976285
-            signature = "3T1H136L563MA35ZNFgBts32RFGAeBxm1wZjVttMjZRwczLJGsTfNATozgUAmUrniDZmbRW5gLPmURNyygoZR8BG"
+            initial-base-target = 218
+            timestamp = 1782273507414
+            block-timestamp = 1782273507414
+            signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
             initial-balance = 10000000000000000
             transactions = [
-              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
-              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 3000000000000000 }
-              { recipient = "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD", amount = 5000000000000000 }
+              { recipient = "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6", amount = 4000000000000000 }
+              { recipient = "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD", amount = 2000000000000000 }
+              { recipient = "31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV", amount = 2000000000000000 }
+              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
+              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 1000000000000000 }
             ]
           }
         }
@@ -82,6 +84,7 @@ data:
         port = 6863
         declared-address = "172.105.64.89:6863"
         known-peers = [
+          "66.228.55.154:6868"
           "127.0.0.1:6864"
           "127.0.0.1:6865"
         ]
@@ -152,15 +155,17 @@ data:
           }
           genesis {
             average-block-delay = 30s
-            initial-base-target = 229
-            timestamp = 1782272976285
-            block-timestamp = 1782272976285
-            signature = "3T1H136L563MA35ZNFgBts32RFGAeBxm1wZjVttMjZRwczLJGsTfNATozgUAmUrniDZmbRW5gLPmURNyygoZR8BG"
+            initial-base-target = 218
+            timestamp = 1782273507414
+            block-timestamp = 1782273507414
+            signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
             initial-balance = 10000000000000000
             transactions = [
-              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
-              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 3000000000000000 }
-              { recipient = "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD", amount = 5000000000000000 }
+              { recipient = "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6", amount = 4000000000000000 }
+              { recipient = "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD", amount = 2000000000000000 }
+              { recipient = "31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV", amount = 2000000000000000 }
+              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
+              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 1000000000000000 }
             ]
           }
         }
@@ -172,6 +177,7 @@ data:
         port = 6864
         declared-address = "172.105.64.89:6864"
         known-peers = [
+          "66.228.55.154:6868"
           "127.0.0.1:6863"
           "127.0.0.1:6865"
         ]
@@ -242,15 +248,17 @@ data:
           }
           genesis {
             average-block-delay = 30s
-            initial-base-target = 229
-            timestamp = 1782272976285
-            block-timestamp = 1782272976285
-            signature = "3T1H136L563MA35ZNFgBts32RFGAeBxm1wZjVttMjZRwczLJGsTfNATozgUAmUrniDZmbRW5gLPmURNyygoZR8BG"
+            initial-base-target = 218
+            timestamp = 1782273507414
+            block-timestamp = 1782273507414
+            signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
             initial-balance = 10000000000000000
             transactions = [
-              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 2000000000000000 }
-              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 3000000000000000 }
-              { recipient = "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD", amount = 5000000000000000 }
+              { recipient = "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6", amount = 4000000000000000 }
+              { recipient = "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD", amount = 2000000000000000 }
+              { recipient = "31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV", amount = 2000000000000000 }
+              { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
+              { recipient = "31LQd8WcvtYXMjHzNKzRrgZy8P3NnLQvPnk", amount = 1000000000000000 }
             ]
           }
         }
@@ -262,6 +270,7 @@ data:
         port = 6865
         declared-address = "172.105.64.89:6865"
         known-peers = [
+          "66.228.55.154:6868"
           "127.0.0.1:6863"
           "127.0.0.1:6864"
         ]
