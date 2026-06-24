@@ -45,7 +45,9 @@ jobs:
           docker volume rm dcc-node-state-testnet 2>/dev/null || true
 
           echo "Recreating empty volume..."
-          docker volume create node-state-testnet 2>/dev/null || true
+          docker volume create node-state-testnet
+          echo "Volume created:"
+          docker volume ls | grep -E "state|dcc" || echo "(no matching volumes — unexpected)"
 
           echo "Done — chain data wiped."
           REMOTE
