@@ -108,7 +108,7 @@ data:
       }
       synchronization {
         synchronization-timeout = 5m
-        max-rollback = 20
+        max-rollback = 100
         score-ttl = 90s
       }
       hotstuff {
@@ -206,7 +206,7 @@ data:
       }
       synchronization {
         synchronization-timeout = 5m
-        max-rollback = 20
+        max-rollback = 100
         score-ttl = 90s
       }
       hotstuff {
@@ -305,7 +305,7 @@ data:
       }
       synchronization {
         synchronization-timeout = 5m
-        max-rollback = 20
+        max-rollback = 100
         score-ttl = 90s
       }
     }
