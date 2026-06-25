@@ -94,7 +94,7 @@ jobs:
           echo "Waiting 5 minutes for gen nodes to sync from main node..."
           sleep 300
 
-      - name: Check post-resync state
+      - name: Check post-resync state + upload JSON artifact
         run: |
           set +e
           echo "=== Post-resync heights ==="
@@ -116,3 +116,54 @@ jobs:
               | grep -iE "miner|allowed|commit|period|scheduled|error" \
               | grep -ivE "utx|REST API|kamon|gRPC" | tail -10
           done
+
+          # Build structured JSON artifact so results can be read with 2 REST calls
+          mkdir -p /tmp/resync-results
+          python3 - <<'PYEOF'
+          import subprocess, json, re, time
+
+          def pf_query(pod, local_port, remote_port, path):
+              pf = subprocess.Popen(
+                  ["kubectl","port-forward","-n","dcc",pod,f"{local_port}:{remote_port}"],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              time.sleep(3)
+              try:
+                  r = subprocess.run(["curl","-s","--max-time","4",f"http://127.0.0.1:{local_port}{path}"],
+                      capture_output=True, text=True, timeout=8)
+                  return json.loads(r.stdout) if r.stdout.strip() else None
+              except Exception:
+                  return None
+              finally:
+                  pf.terminate(); time.sleep(0.5)
+
+          def last_miner_log(pod):
+              r = subprocess.run(["kubectl","logs","-n","dcc",pod,"--tail=200"],
+                  capture_output=True, text=True)
+              lines = [l for l in r.stdout.splitlines()
+                       if re.search(r'miner|allowed|period|commit|error', l, re.I)
+                       and not re.search(r'utx|kamon|REST API|gRPC', l, re.I)]
+              return lines[-3:] if lines else []
+
+          results = {}
+          for pod, lport, rport in [("dcc-gen-0-0",16891,6869), ("dcc-gen-1-0",16892,6870)]:
+              h = pf_query(pod, lport, rport, "/blocks/height")
+              last = pf_query(pod, lport, rport, "/blocks/headers/last")
+              results[pod] = {
+                  "height": h.get("height") if h else None,
+                  "last_generator": last.get("generator") if last else None,
+                  "committed_generators": last.get("committedGenerators") if last else None,
+                  "next_generators": last.get("nextGenerators") if last else None,
+                  "last_miner_logs": last_miner_log(pod),
+              }
+
+          with open("/tmp/resync-results/results.json","w") as f:
+              json.dump(results, f, indent=2)
+          print(json.dumps(results, indent=2))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resync-results-${{ github.run_id }}
+          path: /tmp/resync-results/results.json
+          retention-days: 3

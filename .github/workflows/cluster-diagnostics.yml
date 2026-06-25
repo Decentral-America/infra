@@ -134,3 +134,64 @@ jobs:
           curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
           export PATH=$PATH:/usr/local/bin
           flux get kustomizations -A 2>/dev/null || kubectl get kustomizations -A
+
+      - name: Build + upload JSON results artifact
+        if: always()
+        run: |
+          set +e
+          mkdir -p /tmp/diag-results
+
+          # Collect heights + versions + miner state into structured JSON
+          python3 - <<'PYEOF'
+          import subprocess, json, re, os
+
+          def pf_query(pod, local_port, remote_port, path):
+              """Port-forward a pod and hit its REST API, return parsed JSON or None."""
+              pf = subprocess.Popen(
+                  ["kubectl","port-forward","-n","dcc",pod,f"{local_port}:{remote_port}"],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              import time; time.sleep(3)
+              try:
+                  r = subprocess.run(["curl","-s","--max-time","4",f"http://127.0.0.1:{local_port}{path}"],
+                      capture_output=True, text=True, timeout=8)
+                  return json.loads(r.stdout) if r.stdout.strip() else None
+              except Exception:
+                  return None
+              finally:
+                  pf.terminate()
+                  time.sleep(0.5)
+
+          def last_miner_error(pod):
+              r = subprocess.run(["kubectl","logs","-n","dcc",pod,"--tail=200"],
+                  capture_output=True, text=True)
+              lines = [l for l in r.stdout.splitlines()
+                       if re.search(r'miner|allowed|period|commit', l, re.I)
+                       and not re.search(r'utx|kamon|REST API|gRPC', l, re.I)]
+              return lines[-1] if lines else None
+
+          results = {}
+          for pod, lport, rport in [("dcc-gen-0-0",16881,6869),("dcc-gen-1-0",16882,6870),("dcc-val-0-0",16883,6871)]:
+              h = pf_query(pod, lport, rport, "/blocks/height")
+              last = pf_query(pod, lport, rport, "/blocks/headers/last")
+              results[pod] = {
+                  "height": h.get("height") if h else None,
+                  "last_generator": last.get("generator") if last else None,
+                  "committed_generators": last.get("committedGenerators") if last else None,
+                  "next_generators": last.get("nextGenerators") if last else None,
+                  "last_miner_log": last_miner_error(pod),
+              }
+
+          with open("/tmp/diag-results/results.json","w") as f:
+              json.dump(results, f, indent=2)
+          print(json.dumps(results, indent=2))
+          PYEOF
+
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-results-${{ github.run_id }}
+          path: /tmp/diag-results/results.json
+          retention-days: 3
