@@ -109,6 +109,20 @@ jobs:
             fi
           done
 
+      # ── debug: verify ConfigMap and REST API before committing ───────────────
+      - name: Debug — verify ConfigMap has no api-key-hash and test /addresses
+        run: |
+          echo "=== gen-0-config ConfigMap (rest-api section) ==="
+          kubectl get configmap gen-0-config -n dcc -o jsonpath='{.data.dcc\.conf}' \
+            | grep -A6 "rest-api" || echo "(not found)"
+
+          echo ""
+          echo "=== gen-0 /addresses response (no auth, verbose) ==="
+          kubectl port-forward -n dcc dcc-gen-0-0 36869:6869 >/dev/null 2>&1 &
+          PF=$!; sleep 5
+          curl -sv http://127.0.0.1:36869/addresses 2>&1 | tail -20
+          kill $PF 2>/dev/null; true
+
       # ── helper function: sign and broadcast for one node + one period ─────────
       # Runs as a reusable shell function embedded in each step.
 
