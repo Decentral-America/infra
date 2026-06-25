@@ -20,6 +20,7 @@ on:
           - status
           - restart
           - wipe-peers-and-restart
+          - connect-to-gen-nodes
           - logs
           - peers
 
@@ -33,9 +34,10 @@ jobs:
     steps:
       - name: Run operation via SSH
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          SSH_KEY:     ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:    ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:    ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa
           chmod 600 /tmp/id_rsa
@@ -82,9 +84,27 @@ jobs:
                   CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
                   echo "Wiping peers.dat in container $CID..."
-                  docker exec "$CID" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat not found — may not exist yet)"
+                  docker exec "$CID" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat not found)"
                   echo "Restarting container $CID..."
                   docker restart "$CID" && echo "OK"'
+                ;;
+              connect-to-gen-nodes)
+                # Force the main node to connect to gen-0 and gen-1 via REST API
+                # Uses MAIN_NODE_REST_API_KEY secret
+                $SSH "set -e
+                  API_KEY='$MAIN_API_KEY'
+                  echo '=== Connecting to gen-0 (172.105.64.89:6863) ==='
+                  curl -sf -X POST http://localhost:6869/peers/connect \\
+                    -H 'X-API-Key: '\$API_KEY \\
+                    -H 'Content-Type: application/json' \\
+                    -d '{\"host\":\"172.105.64.89\",\"port\":6863}' || echo '(connect call failed)'
+                  echo '=== Connecting to gen-1 (172.105.64.89:6864) ==='
+                  curl -sf -X POST http://localhost:6869/peers/connect \\
+                    -H 'X-API-Key: '\$API_KEY \\
+                    -H 'Content-Type: application/json' \\
+                    -d '{\"host\":\"172.105.64.89\",\"port\":6864}' || echo '(connect call failed)'
+                  echo '=== Current connected peers ==='
+                  curl -sf -H 'X-API-Key: '\$API_KEY http://localhost:6869/peers/connected | python3 -c 'import sys,json; d=json.load(sys.stdin); [print(p.get(\"address\")) for p in d.get(\"peers\",[])]' 2>/dev/null || echo '(peer list unavailable)'"
                 ;;
               logs)
                 $SSH 'journalctl -n 200 --no-pager 2>/dev/null || docker logs --tail 200 $(docker ps -q | head -1) 2>/dev/null || echo "(no logs)"'
