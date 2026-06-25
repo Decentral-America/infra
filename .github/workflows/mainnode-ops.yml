@@ -47,20 +47,19 @@ jobs:
           {
             case "${{ inputs.operation }}" in
               status)
-                $SSH 'echo "=== processes on ports 6868/6869 ==="
-                  ss -tlnp 2>/dev/null | grep -E "6868|6869" || netstat -tlnp 2>/dev/null | grep -E "6868|6869" || echo "(ss/netstat unavailable)"
-                  echo "=== lsof port 6869 ==="
-                  lsof -i :6869 2>/dev/null || fuser 6869/tcp 2>/dev/null || echo "(lsof unavailable)"
-                  echo "=== all running processes ==="
-                  ps aux | head -5
-                  ps aux | grep -v grep | grep -v "^$USER.*ps aux" | tail -20
-                  echo "=== systemd all running ==="
-                  systemctl list-units --state=running --type=service 2>/dev/null | head -20 || echo "(no systemd)"
-                  echo "=== docker containers ==="
-                  docker ps 2>/dev/null || echo "(no docker)"
+                $SSH 'echo "=== docker containers ==="
+                  docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "(no docker)"
                   echo "=== REST API ping ==="
                   curl -sf http://localhost:6869/node/version 2>/dev/null || echo "(6869 unavailable)"
-                  curl -sf http://localhost:6868/node/version 2>/dev/null || echo "(6868 unavailable)"'
+                  echo "=== DCC network config (known-peers, blacklisted-peers) ==="
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -n "$CID" ]; then
+                    docker exec "$CID" sh -c "grep -A 30 \"network {\" /etc/dcc/dcc.conf 2>/dev/null || find /etc/dcc -name \"*.conf\" -exec grep -l \"network\" {} +" 2>/dev/null
+                    echo "=== peers.dat size ==="
+                    docker exec "$CID" sh -c "ls -la /var/lib/dcc/peers.dat 2>/dev/null || echo (no peers.dat)"
+                    echo "=== recent DCC logs (peer/handshake/blacklist) ==="
+                    docker logs --tail=100 "$CID" 2>/dev/null | grep -iE "peer|handshake|blacklist|connect|172.105" | tail -20 || echo "(no matching logs)"
+                  fi'
                 ;;
               restart)
                 $SSH 'set -e
