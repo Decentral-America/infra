@@ -44,14 +44,20 @@ jobs:
           {
             case "${{ inputs.operation }}" in
               status)
-                $SSH 'echo "=== running processes (dcc/decentralchain/waves/java) ==="
-                  ps aux | grep -iE "dcc|decentralchain|waves|java" | grep -v grep
-                  echo "=== systemd services ==="
-                  systemctl list-units --state=running 2>/dev/null | grep -iE "dcc|decentralchain|waves" || echo "(none matching)"
+                $SSH 'echo "=== processes on ports 6868/6869 ==="
+                  ss -tlnp 2>/dev/null | grep -E "6868|6869" || netstat -tlnp 2>/dev/null | grep -E "6868|6869" || echo "(ss/netstat unavailable)"
+                  echo "=== lsof port 6869 ==="
+                  lsof -i :6869 2>/dev/null || fuser 6869/tcp 2>/dev/null || echo "(lsof unavailable)"
+                  echo "=== all running processes ==="
+                  ps aux | head -5
+                  ps aux | grep -v grep | grep -v "^$USER.*ps aux" | tail -20
+                  echo "=== systemd all running ==="
+                  systemctl list-units --state=running --type=service 2>/dev/null | head -20 || echo "(no systemd)"
                   echo "=== docker containers ==="
-                  docker ps 2>/dev/null || echo "(docker not available)"
-                  echo "=== last 50 log lines (journald, any dcc/java service) ==="
-                  journalctl -n 50 --no-pager 2>/dev/null | grep -iE "dcc|decentralchain|height|block|peer|miner" | tail -30 || echo "(no journald)"'
+                  docker ps 2>/dev/null || echo "(no docker)"
+                  echo "=== REST API ping ==="
+                  curl -sf http://localhost:6869/node/version 2>/dev/null || echo "(6869 unavailable)"
+                  curl -sf http://localhost:6868/node/version 2>/dev/null || echo "(6868 unavailable)"'
                 ;;
               restart)
                 $SSH 'set -e
