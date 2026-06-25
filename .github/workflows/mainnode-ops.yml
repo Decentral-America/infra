@@ -39,33 +39,52 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa
           chmod 600 /tmp/id_rsa
           SSH="ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${SSH_USER}@${SSH_HOST}"
+          mkdir -p /tmp/mainnode-results
 
-          case "${{ inputs.operation }}" in
-            status)
-              $SSH 'set -e
-                echo "=== DCC service status ==="
-                systemctl status dcc 2>/dev/null || docker ps --filter name=dcc 2>/dev/null || echo "(no systemd service or docker container named dcc)"
-                echo "=== last 50 log lines ==="
-                journalctl -u dcc -n 50 --no-pager 2>/dev/null || docker logs --tail 50 $(docker ps -q --filter name=dcc) 2>/dev/null || echo "(no logs found)"'
-              ;;
-            restart)
-              $SSH 'set -e
-                echo "=== restarting DCC ==="
-                systemctl restart dcc 2>/dev/null && echo "systemd restart OK" && exit 0
-                # fallback: docker
-                CID=$(docker ps -q --filter name=dcc 2>/dev/null | head -1)
-                if [ -n "$CID" ]; then
-                  docker restart "$CID" && echo "docker restart OK: $CID"
-                else
-                  echo "ERROR: could not find DCC process via systemd or docker"
-                  exit 1
-                fi'
-              ;;
-            logs)
-              $SSH 'journalctl -u dcc -n 200 --no-pager 2>/dev/null || docker logs --tail 200 $(docker ps -q --filter name=dcc) 2>/dev/null || echo "(no logs found)"'
-              ;;
-            peers)
-              $SSH 'curl -sf http://127.0.0.1:6869/peers/connected 2>/dev/null || echo "(REST unavailable — check api-key-hash requirement)"'
-              ;;
-          esac
+          {
+            case "${{ inputs.operation }}" in
+              status)
+                $SSH 'echo "=== running processes (dcc/decentralchain/waves/java) ==="
+                  ps aux | grep -iE "dcc|decentralchain|waves|java" | grep -v grep
+                  echo "=== systemd services ==="
+                  systemctl list-units --state=running 2>/dev/null | grep -iE "dcc|decentralchain|waves" || echo "(none matching)"
+                  echo "=== docker containers ==="
+                  docker ps 2>/dev/null || echo "(docker not available)"
+                  echo "=== last 50 log lines (journald, any dcc/java service) ==="
+                  journalctl -n 50 --no-pager 2>/dev/null | grep -iE "dcc|decentralchain|height|block|peer|miner" | tail -30 || echo "(no journald)"'
+                ;;
+              restart)
+                $SSH 'set -e
+                  # discover the service/container name dynamically
+                  SVC=$(systemctl list-units --state=running 2>/dev/null | grep -iE "dcc|decentralchain|waves" | awk "{print \$1}" | head -1)
+                  if [ -n "$SVC" ]; then
+                    echo "Restarting systemd service: $SVC"
+                    systemctl restart "$SVC" && echo "OK"
+                  else
+                    CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves" | awk "{print \$1}" | head -1)
+                    if [ -n "$CID" ]; then
+                      echo "Restarting docker container: $CID"
+                      docker restart "$CID" && echo "OK"
+                    else
+                      echo "ERROR: no DCC service found via systemd or docker"
+                      ps aux | grep -iE "java|dcc|decentralchain" | grep -v grep
+                      exit 1
+                    fi
+                  fi'
+                ;;
+              logs)
+                $SSH 'journalctl -n 200 --no-pager 2>/dev/null || docker logs --tail 200 $(docker ps -q | head -1) 2>/dev/null || echo "(no logs)"'
+                ;;
+              peers)
+                $SSH 'curl -sf http://127.0.0.1:6869/peers/connected 2>/dev/null || curl -sf http://127.0.0.1:6868/peers/connected 2>/dev/null || echo "(REST unavailable)"'
+                ;;
+            esac
+          } | tee /tmp/mainnode-results/output.txt
           rm -f /tmp/id_rsa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mainnode-ops-${{ inputs.operation }}-${{ github.run_id }}
+          path: /tmp/mainnode-results/output.txt
+          retention-days: 3
