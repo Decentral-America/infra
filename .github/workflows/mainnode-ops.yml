@@ -22,6 +22,8 @@ on:
           - wipe-peers-and-restart
           - wipe-chain-and-restart
           - disable-microblocks-and-restart
+          - disable-miner-and-restart
+          - enable-miner-and-restart
           - connect-to-gen-nodes
           - logs
           - peers
@@ -93,6 +95,32 @@ jobs:
                   docker start "$NAME" 2>/dev/null && sleep 2
                   docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED-LIVE" 2>/dev/null || echo "(live wipe failed)"
                   docker restart "$NAME" && echo "OK"'
+                ;;
+              disable-miner-and-restart)
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  echo "Disabling miner in $CID config..."
+                  docker exec "$CID" sh -c "sed -i \"s/enable = yes/enable = no/\" /etc/dcc/dcc.conf && echo PATCHED" 2>/dev/null || echo "(sed failed)"
+                  docker exec "$CID" grep "enable" /etc/dcc/dcc.conf 2>/dev/null | grep -i "miner" -A1 | head -5 || true
+                  docker restart "$CID" && echo "OK - miner disabled"'
+                ;;
+              enable-miner-and-restart)
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  echo "Enabling miner in $CID config..."
+                  # Specifically enable the miner section (not rest-api or other enable fields)
+                  docker exec "$CID" sh -c "grep -n \"miner {\" /etc/dcc/dcc.conf | head -3"
+                  docker exec "$CID" sh -c "python3 -c \"
+import re
+with open(\'/etc/dcc/dcc.conf\',\'r\') as f: c=f.read()
+# Only patch enable=no within the miner block
+c2=re.sub(r\'(miner \\{[^}]*?)enable = no\',r\'\\1enable = yes\',c,flags=re.DOTALL)
+with open(\'/etc/dcc/dcc.conf\',\'w\') as f: f.write(c2)
+print(\'PATCHED\')
+\" 2>/dev/null" || echo "(python patch failed)"
+                  docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
               disable-microblocks-and-restart)
                 # Sets micro-block-interval = 0 in the miner section of dcc.conf

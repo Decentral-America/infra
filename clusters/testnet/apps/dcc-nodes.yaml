@@ -195,7 +195,10 @@ data:
       }
 
       miner {
-        enable = yes
+        # Disabled for single-genesis bootstrap: only gen-0 mines period 1.
+        # Re-enable after chain reaches period 2 (height > 100) and gen-0 chain
+        # is canonical on all nodes.
+        enable = no
         quorum = 0
         micro-block-interval = 0
       }
