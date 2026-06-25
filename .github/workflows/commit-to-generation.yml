@@ -151,16 +151,20 @@ jobs:
 
           commit_period() {
             local PERIOD=$1 PAYLOAD SIGNED TXID
+            # no spaces in JSON — safe to pass directly as --post-data arg
             PAYLOAD=$(python3 -c "
           import json
-          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
+          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD},separators=(',',':')))
             ")
-            echo "$PAYLOAD"
-            SIGNED=$(kubectl exec -n dcc "$POD" -- sh -c \
-              "echo '$PAYLOAD' | wget -qO- --post-data=- \
-                --header='Content-Type: application/json' \
-                --header='X-API-Key: ${GEN_API_KEY}' \
-                'http://127.0.0.1:${PORT}/transactions/sign'" \
+            echo "Payload: $PAYLOAD"
+            # Pass JSON directly to wget without sh -c wrapper: kubectl passes args as array,
+            # no shell on the remote side, no quoting issues with double quotes in JSON.
+            SIGNED=$(kubectl exec -n dcc "$POD" -- \
+              wget -qO- \
+              "--post-data=${PAYLOAD}" \
+              "--header=Content-Type: application/json" \
+              "--header=X-API-Key: ${GEN_API_KEY}" \
+              "http://127.0.0.1:${PORT}/transactions/sign" \
               ) || { echo "  sign failed for period $PERIOD"; return 1; }
             echo "Signed: $SIGNED"
             TXID=$(echo "$SIGNED" \
@@ -206,13 +210,14 @@ jobs:
             local PERIOD=$1 PAYLOAD SIGNED TXID
             PAYLOAD=$(python3 -c "
           import json
-          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
+          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD},separators=(',',':')))
             ")
-            SIGNED=$(kubectl exec -n dcc "$POD" -- sh -c \
-              "echo '$PAYLOAD' | wget -qO- --post-data=- \
-                --header='Content-Type: application/json' \
-                --header='X-API-Key: ${GEN_API_KEY}' \
-                'http://127.0.0.1:${PORT}/transactions/sign'" \
+            SIGNED=$(kubectl exec -n dcc "$POD" -- \
+              wget -qO- \
+              "--post-data=${PAYLOAD}" \
+              "--header=Content-Type: application/json" \
+              "--header=X-API-Key: ${GEN_API_KEY}" \
+              "http://127.0.0.1:${PORT}/transactions/sign" \
               ) || { echo "  sign failed for period $PERIOD"; return 1; }
             TXID=$(echo "$SIGNED" \
               | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
