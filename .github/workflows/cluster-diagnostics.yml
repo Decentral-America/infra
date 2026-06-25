@@ -60,6 +60,20 @@ jobs:
           echo "=== settle 60s for peer discovery ==="
           sleep 60
 
+      - name: TCP connectivity test gen-0 → main node
+        run: |
+          set +e
+          echo "=== Testing TCP connectivity gen-0 → 66.228.55.154:6868 ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
+            'nc -zv -w5 66.228.55.154 6868 2>&1 && echo "TCP OK" || echo "TCP FAILED"' 2>/dev/null
+          echo "=== gen-0 outbound connections to 66.228.55.154 ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
+            'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk "{print \$3}" | grep -i "425CED42\|9A37E442" || echo "(no connections to 66.228.55.154)"' 2>/dev/null
+          echo "=== gen-0 recent P2P connection attempt logs ==="
+          kubectl logs -n dcc dcc-gen-0-0 --tail=500 2>/dev/null | \
+            grep -iE "connect|handshake|peer|66.228|score|blacklist|suspend" | \
+            grep -ivE "utx|kamon|REST API|gRPC" | tail -15
+
       - name: DEEP DUMP gen-0 (config + listeners + conns + logs)
         run: |
           set +e
