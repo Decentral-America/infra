@@ -55,6 +55,18 @@ jobs:
           flux reconcile kustomization dcc-apps --timeout=3m || echo "flux reconcile apps: non-fatal"
           echo "ConfigMaps updated — gen nodes will boot without api-key-hash."
 
+      - name: Roll gen/val StatefulSets to pick up updated ConfigMap and image
+        if: "!inputs.wipe_gen_nodes"
+        run: |
+          set -euo pipefail
+          echo "=== Rolling restart to pick up new ConfigMap (no api-key-hash) and new image ==="
+          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 statefulset/dcc-val-0 -n dcc
+          echo "=== Waiting for rollout to complete ==="
+          for s in dcc-gen-0 dcc-gen-1 dcc-val-0; do
+            kubectl rollout status statefulset/$s -n dcc --timeout=180s
+          done
+          echo "✅ All pods rolling-restarted with updated config"
+
       # ── wipe gen chain data ───────────────────────────────────────────────────
       - name: Wipe gen node chain data (scale down → delete PVCs → scale up)
         if: inputs.wipe_gen_nodes
