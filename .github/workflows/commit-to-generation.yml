@@ -105,14 +105,14 @@ jobs:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
         run: |
           set -euo pipefail
-          kubectl port-forward -n dcc dcc-gen-0-0 16869:6869 >/dev/null 2>&1 &
-          PF=$!; sleep 4
+          kubectl port-forward -n dcc dcc-gen-0-0 26869:6869 >/dev/null 2>&1 &
+          PF=$!; sleep 6
 
-          ADDR=$(curl -sf http://127.0.0.1:16869/addresses \
+          ADDR=$(curl -sf http://127.0.0.1:26869/addresses \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           echo "gen-0 address: $ADDR"
 
-          PUBKEY=$(curl -sf "http://127.0.0.1:16869/addresses/publicKey/$ADDR" \
+          PUBKEY=$(curl -sf "http://127.0.0.1:26869/addresses/publicKey/$ADDR" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
           echo "gen-0 pubkey: $PUBKEY"
 
@@ -134,7 +134,7 @@ jobs:
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
             local SIGNED
-            SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://127.0.0.1:16869/transactions/sign \
+            SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://127.0.0.1:26869/transactions/sign \
               -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  sign failed for period $PERIOD"; return 1; }
             local RESULT
             RESULT=$(echo "$SIGNED" | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
@@ -157,14 +157,14 @@ jobs:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
         run: |
           set -euo pipefail
-          kubectl port-forward -n dcc dcc-gen-1-0 16870:6870 >/dev/null 2>&1 &
+          kubectl port-forward -n dcc dcc-gen-1-0 26870:6870 >/dev/null 2>&1 &
           PF=$!; sleep 4
 
-          ADDR=$(curl -sf http://127.0.0.1:16870/addresses \
+          ADDR=$(curl -sf http://127.0.0.1:26870/addresses \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           echo "gen-1 address: $ADDR"
 
-          PUBKEY=$(curl -sf "http://127.0.0.1:16870/addresses/publicKey/$ADDR" \
+          PUBKEY=$(curl -sf "http://127.0.0.1:26870/addresses/publicKey/$ADDR" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
           echo "gen-1 pubkey: $PUBKEY"
 
@@ -184,7 +184,7 @@ jobs:
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
             local SIGNED
-            SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://127.0.0.1:16870/transactions/sign \
+            SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://127.0.0.1:26870/transactions/sign \
               -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  sign failed for period $PERIOD"; return 1; }
             local RESULT
             RESULT=$(echo "$SIGNED" | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
