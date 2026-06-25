@@ -33,11 +33,12 @@ jobs:
       - name: Download kubeconfig (LKE)
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          NETWORK: ${{ inputs.network || 'testnet' }}
         run: |
           set -euo pipefail
           CID=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" \
             "https://api.linode.com/v4/lke/clusters" \
-            | jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+            | jq -r ".data[] | select(.label==\"dcc-peer-${NETWORK}\") | .id")
           echo "Cluster ID: $CID"
           curl -sf -H "Authorization: Bearer $LINODE_TOKEN" \
             "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" \
