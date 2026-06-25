@@ -1,1 +1,1 @@
-Thu Jun 25 02:53:58 UTC 2026 — correct secureHash + SOPS decrypt + env testnet
+Thu Jun 25 02:58:51 UTC 2026 — re-trigger for gen-1 (gen-0 succeeded, main node done via SSH)
