@@ -1,1 +1,1 @@
-Thu Jun 25 01:55:44 UTC 2026 — use sender address not senderPublicKey
+Thu Jun 25 02:53:58 UTC 2026 — correct secureHash + SOPS decrypt + env testnet

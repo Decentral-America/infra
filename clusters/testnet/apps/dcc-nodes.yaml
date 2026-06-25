@@ -104,7 +104,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6869
-        api-key-hash = "B87ksWf7dVFJDwMQbYNf3mehN8cqcQ6aShcs5N18hNV3"
+        api-key-hash = "9JJ6P8coxQdrRS9XWyxwPgbF1zCL6NGMoAjwmaLDEimY"
       }
       synchronization {
         synchronization-timeout = 5m
@@ -202,7 +202,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6870
-        api-key-hash = "B87ksWf7dVFJDwMQbYNf3mehN8cqcQ6aShcs5N18hNV3"
+        api-key-hash = "2dee71STxrm5YNC8RDSAkaxCMKSoYBAw2pfwFk8TdT2S"
       }
       synchronization {
         synchronization-timeout = 5m
@@ -301,7 +301,7 @@ data:
         enable = yes
         bind-address = "127.0.0.1"
         port = 6871
-        api-key-hash = "B87ksWf7dVFJDwMQbYNf3mehN8cqcQ6aShcs5N18hNV3"
+        api-key-hash = "FMb13YEvv9XBgbRcP4SosJVWf5X2i8iTG9H2ZEswaTLE"
       }
       synchronization {
         synchronization-timeout = 5m

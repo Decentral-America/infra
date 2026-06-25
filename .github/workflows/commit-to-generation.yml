@@ -30,13 +30,13 @@ permissions:
   contents: read
 
 env:
-  NETWORK:    ${{ inputs.network || 'testnet' }}
-  GEN_API_KEY: dcc-testnet-commit   # pre-image of api-key-hash in dcc-nodes.yaml
+  NETWORK: ${{ inputs.network || 'testnet' }}
 
 jobs:
   commit:
     name: Commit all generators to next generation period
     runs-on: ubuntu-latest
+    environment: testnet
 
     steps:
       # ── 1. Cluster access ────────────────────────────────────────────────────
@@ -121,6 +121,25 @@ jobs:
           done
 
       # ── 6. Commit gen-0 via kubectl exec + wget (no port-forward) ────────────
+      - name: Checkout infra (needed for secrets/ path in SOPS decrypt)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Decrypt gen node API keys from SOPS
+        env:
+          SOPS_AGE_KEY: ${{ secrets.AGE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          SOPS_VER="v3.13.1"
+          curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VER}/sops-${SOPS_VER}.linux.amd64" \
+            -o /tmp/sops && chmod +x /tmp/sops
+          SECRETS=$(SOPS_AGE_KEY="$SOPS_AGE_KEY" /tmp/sops -d secrets/testnet.env)
+          GEN0=$(echo "$SECRETS" | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2-)
+          GEN1=$(echo "$SECRETS" | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2-)
+          echo "GEN0_API_KEY=${GEN0}" >> "$GITHUB_ENV"
+          echo "GEN1_API_KEY=${GEN1}" >> "$GITHUB_ENV"
+          echo "gen-0 key available: $([ -n "$GEN0" ] && echo YES || echo MISSING)"
+          echo "gen-1 key available: $([ -n "$GEN1" ] && echo YES || echo MISSING)"
+
       - name: Commit gen-0 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
@@ -128,6 +147,8 @@ jobs:
           set -euo pipefail
           POD=dcc-gen-0-0
           PORT=6869
+          GEN_API_KEY="${GEN0_API_KEY}"
+          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not set"; exit 1; }
 
           echo "=== gen-0: get wallet address ==="
           ADDR=$(kubectl exec -n dcc "$POD" -- \
@@ -183,6 +204,8 @@ jobs:
           set -euo pipefail
           POD=dcc-gen-1-0
           PORT=6870
+          GEN_API_KEY="${GEN1_API_KEY}"
+          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not set"; exit 1; }
 
           ADDR=$(kubectl exec -n dcc "$POD" -- \
             wget -qO- "http://127.0.0.1:${PORT}/addresses" \
