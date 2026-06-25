@@ -207,16 +207,31 @@ jobs:
           GEN_API_KEY="${GEN1_API_KEY}"
           [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not set"; exit 1; }
 
+          # gen-1 may still be coming up after rollout restart — wait up to 15 min
+          echo "=== Waiting for gen-1 pod to be ready ==="
+          for i in $(seq 1 90); do
+            READY=$(kubectl get pod "$POD" -n dcc \
+              -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+            IMAGE=$(kubectl get pod "$POD" -n dcc \
+              -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "")
+            echo "  attempt $i: ready=$READY image=$(basename $IMAGE)"
+            if [[ "$READY" == "true" && "$IMAGE" == *"node-scala-testnet-latest"* ]]; then
+              echo "✅ gen-1 ready"
+              break
+            fi
+            if [ "$i" -eq 90 ]; then
+              echo "ERROR: gen-1 pod not ready after 15 minutes"
+              kubectl describe pod "$POD" -n dcc 2>/dev/null | tail -20 || true
+              exit 1
+            fi
+            sleep 10
+          done
+
           ADDR=$(kubectl exec -n dcc "$POD" -- \
             wget -qO- "http://127.0.0.1:${PORT}/addresses" \
             --header="X-API-Key: ${GEN_API_KEY}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           echo "Address: $ADDR"
-
-          PUBKEY=$(kubectl exec -n dcc "$POD" -- \
-            wget -qO- "http://127.0.0.1:${PORT}/addresses/publicKey/${ADDR}" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "PubKey: $PUBKEY"
 
           read CURRENT_PERIOD NEXT_PERIOD < <(curl -sf "$PUBLIC_NODE/blockchain/finality" \
             | python3 -c "
