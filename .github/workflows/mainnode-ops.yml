@@ -107,11 +107,11 @@ jobs:
                 ;;
               logs)
                 $SSH 'CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
-                  echo "=== DCC container peer/sync logs ==="
+                  echo "=== DCC container last 30min peer/sync/error logs ==="
                   if [ -n "$CID" ]; then
-                    docker logs --tail=1000 "$CID" 2>&1 | \
-                      grep -iE "peer|handshake|score|sync|connect|blacklist|172.105|New height|Rollback|switch" | \
-                      grep -ivE "kamon|REST API|gRPC|HTTP" | tail -40
+                    docker logs --since 35m "$CID" 2>&1 | \
+                      grep -iE "peer|handshake|score|sync|connect|blacklist|172.105|New height|Rollback|switch|error|invalid|reject|warn" | \
+                      grep -ivE "kamon|REST API|gRPC|HTTP" | tail -60
                   else
                     echo "(DCC container not found)"
                   fi'
