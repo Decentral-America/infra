@@ -273,6 +273,7 @@ jobs:
 
       # ── 8. Commit main node ───────────────────────────────────────────────────
       - name: Commit main node (SSH → localhost sign → broadcast)
+        continue-on-error: true
         env:
           DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
