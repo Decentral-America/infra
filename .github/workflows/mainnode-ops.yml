@@ -67,7 +67,7 @@ jobs:
                     echo "Restarting systemd service: $SVC"
                     systemctl restart "$SVC" && echo "OK"
                   else
-                    CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves" | awk "{print \$1}" | head -1)
+                    CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
                     if [ -n "$CID" ]; then
                       echo "Restarting docker container: $CID"
                       docker restart "$CID" && echo "OK"
