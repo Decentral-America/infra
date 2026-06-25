@@ -329,8 +329,8 @@ jobs:
             echo "✅ main period $PERIOD TX: $TXID"
           }
 
-          commit_period "$CURRENT_PERIOD" || echo "  (current period)"
-          commit_period "$NEXT_PERIOD"
+          commit_period "$CURRENT_PERIOD" || echo "  (current period commit skipped)"
+          commit_period "$NEXT_PERIOD" || echo "  (next period commit skipped — already committed)"
           REMOTE
 
       # ── 9. Verify ─────────────────────────────────────────────────────────────
