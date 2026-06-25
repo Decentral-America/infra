@@ -103,21 +103,24 @@ jobs:
             -l 'app in (dcc-gen-0,dcc-gen-1)' \
             --for=condition=Ready --timeout=300s
 
-      # ── wait for gen-0 to sync before signing ────────────────────────────────
-      - name: Wait for gen-0 REST API to be reachable (port-forward health check)
+      # ── wait for NEW gen-0 pod (correct image + api-key-hash) to be ready ──────
+      - name: Wait for gen-0 new pod (node-scala-testnet-latest image + REST API up)
         run: |
-          echo "Waiting for gen-0 REST API..."
-          for i in $(seq 1 40); do
+          echo "Waiting for gen-0 pod running node-scala-testnet-latest image with REST API up..."
+          for i in $(seq 1 60); do
             sleep 15
-            kubectl port-forward -n dcc dcc-gen-0-0 16869:6869 >/dev/null 2>&1 &
-            PF=$!; sleep 3
-            STATUS=$(curl -sf http://127.0.0.1:16869/node/status 2>/dev/null || echo "down")
-            kill $PF 2>/dev/null; true
-            echo "  attempt $i: $STATUS"
-            if echo "$STATUS" | python3 -c "import sys,json; json.load(sys.stdin)" >/dev/null 2>&1; then
-              echo "✅ gen-0 REST API is up"
+            IMAGE=$(kubectl get pod dcc-gen-0-0 -n dcc \
+              -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+            READY=$(kubectl get pod dcc-gen-0-0 -n dcc \
+              -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+            echo "  attempt $i: image=$(basename $IMAGE) ready=$READY"
+            if [[ "$IMAGE" == *"node-scala-testnet-latest"* && "$READY" == "true" ]]; then
+              echo "✅ gen-0 is on new image and container is ready"
               break
             fi
+            # Show reason if not ready yet
+            kubectl get pod dcc-gen-0-0 -n dcc \
+              -o jsonpath='{.status.containerStatuses[0].state}' 2>/dev/null || true
           done
 
       # ── helper function: sign and broadcast for one node + one period ─────────
