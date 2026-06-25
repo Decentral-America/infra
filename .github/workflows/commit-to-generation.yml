@@ -148,11 +148,14 @@ jobs:
           set -euo pipefail
           POD=dcc-gen-0-0
           PORT=6869
-          ls /tmp/sops || { echo "ERROR: /tmp/sops not found"; exit 1; }
-          GEN_API_KEY=$(SOPS_AGE_KEY="$SOPS_AGE_KEY" /tmp/sops -d secrets/testnet.env \
-            | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2-)
-          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not set"; exit 1; }
-          echo "gen-0 API key retrieved (length ${#GEN_API_KEY})"
+          GEN_API_KEY="${GEN0_API_KEY:-}"
+          if [ -z "${GEN_API_KEY:-}" ] && [ -f /tmp/sops ]; then
+            echo "Fallback: decrypting gen-0 key directly from SOPS"
+            GEN_API_KEY=$(SOPS_AGE_KEY="${SOPS_AGE_KEY:-}" /tmp/sops -d secrets/testnet.env \
+              | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2- || true)
+          fi
+          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not available"; exit 1; }
+          echo "gen-0 API key available (length ${#GEN_API_KEY})"
 
           echo "=== gen-0: get wallet address ==="
           ADDR=$(kubectl exec -n dcc "$POD" -- \
@@ -210,11 +213,16 @@ jobs:
           POD=dcc-gen-1-0
           PORT=6870
           # Decrypt key directly here — avoids GITHUB_ENV transfer issues
-          ls /tmp/sops || { echo "ERROR: /tmp/sops not found"; exit 1; }
-          GEN_API_KEY=$(SOPS_AGE_KEY="$SOPS_AGE_KEY" /tmp/sops -d secrets/testnet.env \
-            | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2-)
-          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not set"; exit 1; }
-          echo "gen-1 API key retrieved (length ${#GEN_API_KEY})"
+          # GEN1_API_KEY is set in GITHUB_ENV by the central SOPS decrypt step
+          GEN_API_KEY="${GEN1_API_KEY:-}"
+          # Fallback: decrypt directly if GITHUB_ENV transfer failed
+          if [ -z "${GEN_API_KEY:-}" ] && [ -f /tmp/sops ]; then
+            echo "Fallback: decrypting gen-1 key directly from SOPS"
+            GEN_API_KEY=$(SOPS_AGE_KEY="${SOPS_AGE_KEY:-}" /tmp/sops -d secrets/testnet.env \
+              | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2- || true)
+          fi
+          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not available"; exit 1; }
+          echo "gen-1 API key available (length ${#GEN_API_KEY})"
 
           # gen-1 may still be coming up after rollout restart — wait up to 15 min
           echo "=== Waiting for gen-1 pod to be ready ==="

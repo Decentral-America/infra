@@ -1,1 +1,1 @@
-Thu Jun 25 03:34:24 UTC 2026 — remove 2>/dev/null from sops, explicit SOPS_AGE_KEY
+Thu Jun 25 03:39:50 UTC 2026 — use GITHUB_ENV keys primary, sops as fallback
