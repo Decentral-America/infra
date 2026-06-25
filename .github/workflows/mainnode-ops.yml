@@ -21,6 +21,7 @@ on:
           - restart
           - wipe-peers-and-restart
           - wipe-chain-and-restart
+          - disable-microblocks-and-restart
           - connect-to-gen-nodes
           - logs
           - peers
@@ -92,6 +93,23 @@ jobs:
                   docker start "$NAME" 2>/dev/null && sleep 2
                   docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED-LIVE" 2>/dev/null || echo "(live wipe failed)"
                   docker restart "$NAME" && echo "OK"'
+                ;;
+              disable-microblocks-and-restart)
+                # Sets micro-block-interval = 0 in the miner section of dcc.conf
+                # so key blocks have no microblock references, fixing cross-chain validation
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  echo "Setting micro-block-interval = 0 in $CID config..."
+                  # Check if already set
+                  if docker exec "$CID" grep -q "micro-block-interval = 0" /etc/dcc/dcc.conf 2>/dev/null; then
+                    echo "(already set)"
+                  else
+                    # Inject after "miner {" block
+                    docker exec "$CID" sh -c "sed -i \"/miner {/a\\    micro-block-interval = 0\" /etc/dcc/dcc.conf && echo PATCHED" 2>/dev/null
+                  fi
+                  echo "Restarting $CID..."
+                  docker restart "$CID" && echo "OK"'
                 ;;
               wipe-chain-and-restart)
                 # DANGER: wipes entire blockchain state. Use for full testnet reset.

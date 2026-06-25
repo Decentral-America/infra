@@ -98,6 +98,7 @@ data:
       miner {
         enable = yes
         quorum = 0
+        micro-block-interval = 0
       }
 
       rest-api {
@@ -196,6 +197,7 @@ data:
       miner {
         enable = yes
         quorum = 0
+        micro-block-interval = 0
       }
 
       rest-api {
