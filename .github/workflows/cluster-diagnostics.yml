@@ -60,19 +60,32 @@ jobs:
           echo "=== settle 60s for peer discovery ==="
           sleep 60
 
-      - name: TCP connectivity test gen-0 → main node
+      - name: TCP test + force peer connect gen-0 → main node
         run: |
           set +e
-          echo "=== Testing TCP connectivity gen-0 → 66.228.55.154:6868 ==="
+          echo "=== TCP connectivity gen-0 → 66.228.55.154:6868 ==="
           kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
-            'nc -zv -w5 66.228.55.154 6868 2>&1 && echo "TCP OK" || echo "TCP FAILED"' 2>/dev/null
-          echo "=== gen-0 outbound connections to 66.228.55.154 ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
-            'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk "{print \$3}" | grep -i "425CED42\|9A37E442" || echo "(no connections to 66.228.55.154)"' 2>/dev/null
-          echo "=== gen-0 recent P2P connection attempt logs ==="
-          kubectl logs -n dcc dcc-gen-0-0 --tail=500 2>/dev/null | \
+            'nc -zv -w5 66.228.55.154 6868 2>&1 && echo "TCP_OK" || echo "TCP_FAILED"' 2>/dev/null
+          echo "=== Force peer connect via gen-0 REST API ==="
+          kubectl port-forward -n dcc dcc-gen-0-0 17869:6869 >/dev/null 2>&1 &
+          PF=$!; sleep 3
+          curl -s -X POST http://127.0.0.1:17869/peers/connect \
+            -H 'X-API-Key: ***REDACTED_GEN0_API_KEY***=' \
+            -H 'Content-Type: application/json' \
+            -d '{"host":"66.228.55.154","port":6868}' 2>/dev/null || echo "(connect call failed)"
+          echo "=== Force peer connect via gen-1 REST API ==="
+          kubectl port-forward -n dcc dcc-gen-1-0 17870:6870 >/dev/null 2>&1 &
+          PF1=$!; sleep 3
+          curl -s -X POST http://127.0.0.1:17870/peers/connect \
+            -H 'X-API-Key: ***REDACTED_API_KEY***=' \
+            -H 'Content-Type: application/json' \
+            -d '{"host":"66.228.55.154","port":6868}' 2>/dev/null || echo "(connect call failed)"
+          kill $PF $PF1 2>/dev/null; true
+          echo "=== gen-0 recent P2P logs (post-connect-attempt) ==="
+          sleep 5
+          kubectl logs -n dcc dcc-gen-0-0 --tail=200 2>/dev/null | \
             grep -iE "connect|handshake|peer|66.228|score|blacklist|suspend" | \
-            grep -ivE "utx|kamon|REST API|gRPC" | tail -15
+            grep -ivE "utx|kamon|REST API|gRPC" | tail -10
 
       - name: DEEP DUMP gen-0 (config + listeners + conns + logs)
         run: |
