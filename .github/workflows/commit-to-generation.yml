@@ -266,9 +266,9 @@ jobs:
       # ── 8. Commit main node ───────────────────────────────────────────────────
       - name: Commit main node (SSH → localhost sign → broadcast)
         env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_KEY:  ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
           PUBLIC_NODE: https://testnet-node.decentralchain.io
         run: |

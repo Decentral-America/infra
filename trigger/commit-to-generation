@@ -1,1 +1,1 @@
-Thu Jun 25 03:18:49 UTC 2026 — proper fix: gen-1 step waits for pod ready itself
+Thu Jun 25 03:22:51 UTC 2026 — fix SSH secret names to TESTNET_DEPLOY_*
