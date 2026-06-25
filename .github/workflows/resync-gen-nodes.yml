@@ -1,0 +1,118 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Resync Gen Nodes — wipe the RocksDB data directory on gen-0 and gen-1 so
+# they re-sync from scratch using the main node's canonical chain.
+#
+# USE WHEN: gen nodes are on a divergent fork and max-rollback (20) prevents
+# automatic convergence with the main node's chain.
+#
+# WHAT IT DOES:
+#   1. kubectl exec → rm -rf /var/lib/dcc/data on each gen pod (live, safe on Linux)
+#   2. rollout restart → pods restart with empty data dirs, sync from main node
+#   3. Waits 5 min for initial sync, then checks height on each gen node
+# ──────────────────────────────────────────────────────────────────────────────
+name: Resync Gen Nodes
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Target network'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - testnet
+      confirm:
+        description: 'Type WIPE to confirm destroying gen node chain data'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "WIPE" ]; then
+            echo "ERROR: confirm input must be exactly 'WIPE'. Got: '${{ inputs.confirm }}'"
+            exit 1
+          fi
+
+      - name: Download kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+          echo "Cluster ID: $CID"
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -X GET "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Show pre-wipe chain state
+        run: |
+          set +e
+          echo "=== Pre-wipe heights ==="
+          for pod_port in "dcc-gen-0-0:6869" "dcc-gen-1-0:6870"; do
+            POD="${pod_port%%:*}"; PORT="${pod_port##*:}"
+            kubectl port-forward -n dcc "$POD" "1$PORT:$PORT" >/dev/null 2>&1 &
+            PF=$!; sleep 3
+            echo "$POD height: $(curl -s http://127.0.0.1:1$PORT/blocks/height)"
+            echo "$POD last block generator: $(curl -s http://127.0.0.1:1$PORT/blocks/headers/last | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("generator","?"))' 2>/dev/null)"
+            kill $PF 2>/dev/null; true
+          done
+          echo "=== Pre-wipe data dir sizes ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- du -sh /var/lib/dcc/data 2>/dev/null || echo "  gen-0 data dir not accessible"
+          kubectl exec -n dcc dcc-gen-1-0 -- du -sh /var/lib/dcc/data 2>/dev/null || echo "  gen-1 data dir not accessible"
+
+      - name: Wipe RocksDB data on gen-0 and gen-1
+        run: |
+          echo "=== Wiping /var/lib/dcc/data on dcc-gen-0-0 ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'rm -rf /var/lib/dcc/data && echo "WIPED gen-0"'
+          echo "=== Wiping /var/lib/dcc/data on dcc-gen-1-0 ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- sh -c 'rm -rf /var/lib/dcc/data && echo "WIPED gen-1"'
+
+      - name: Rollout restart gen StatefulSets
+        run: |
+          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 -n dcc
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status statefulset/dcc-gen-0 -n dcc --timeout=120s
+          kubectl rollout status statefulset/dcc-gen-1 -n dcc --timeout=120s
+          echo "Pods restarted successfully"
+
+      - name: Wait for initial sync (5 min)
+        run: |
+          echo "Waiting 5 minutes for gen nodes to sync from main node..."
+          sleep 300
+
+      - name: Check post-resync state
+        run: |
+          set +e
+          echo "=== Post-resync heights ==="
+          for pod_port in "dcc-gen-0-0:6869" "dcc-gen-1-0:6870"; do
+            POD="${pod_port%%:*}"; PORT="${pod_port##*:}"
+            kubectl port-forward -n dcc "$POD" "1$PORT:$PORT" >/dev/null 2>&1 &
+            PF=$!; sleep 4
+            HEIGHT=$(curl -s http://127.0.0.1:1$PORT/blocks/height | python3 -c 'import sys,json; print(json.load(sys.stdin).get("height","?"))' 2>/dev/null)
+            echo "$POD height: $HEIGHT"
+            LAST=$(curl -s http://127.0.0.1:1$PORT/blocks/headers/last 2>/dev/null)
+            echo "$POD last block: $LAST" | python3 -c \
+              'import sys,json; line=sys.stdin.readline(); parts=line.split(" last block: ",1); print(parts[0], json.dumps({k:json.loads(parts[1]).get(k) for k in ["height","generator","committedGenerators","nextGenerators"]},indent=2) if len(parts)>1 else "parse error")' 2>/dev/null || echo "$POD: $LAST"
+            kill $PF 2>/dev/null; true
+          done
+          echo "=== Miner log check (last 20 lines matching miner/commit/period) ==="
+          for POD in dcc-gen-0-0 dcc-gen-1-0; do
+            echo "--- $POD ---"
+            kubectl logs -n dcc "$POD" --tail=200 2>/dev/null \
+              | grep -iE "miner|allowed|commit|period|scheduled|error" \
+              | grep -ivE "utx|REST API|kamon|gRPC" | tail -10
+          done
