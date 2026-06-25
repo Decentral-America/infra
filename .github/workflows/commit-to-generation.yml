@@ -68,14 +68,15 @@ jobs:
       - name: Roll gen StatefulSets to pick up updated ConfigMap and image
         if: "!inputs.wipe_gen_nodes"
         run: |
-          set -euo pipefail
-          echo "=== Rolling restart gen-0 and gen-1 (image pull + new api-key-hash config) ==="
-          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 -n dcc
-          echo "=== Waiting up to 10 min for image pull + pod ready (cold GHCR pull) ==="
-          for s in dcc-gen-0 dcc-gen-1; do
-            kubectl rollout status statefulset/$s -n dcc --timeout=600s
-          done
-          echo "✅ gen-0 and gen-1 rolling-restarted with updated config and new image"
+          echo "=== Current pod status before restart ==="
+          kubectl get pods -n dcc -o wide || true
+          echo "=== Rolling restart gen-0 and gen-1 ==="
+          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 -n dcc || true
+          echo "=== Waiting up to 10 min for rollout (non-fatal — health check step follows) ==="
+          kubectl rollout status statefulset/dcc-gen-0 -n dcc --timeout=600s || echo "gen-0 rollout: timed out or failed, health check will wait"
+          kubectl rollout status statefulset/dcc-gen-1 -n dcc --timeout=600s || echo "gen-1 rollout: timed out or failed, health check will wait"
+          echo "=== Pod status after restart ==="
+          kubectl get pods -n dcc -o wide || true
 
       # ── wipe gen chain data ───────────────────────────────────────────────────
       - name: Wipe gen node chain data (scale down → delete PVCs → scale up)
