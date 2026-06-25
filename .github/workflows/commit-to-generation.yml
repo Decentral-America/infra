@@ -133,28 +133,21 @@ jobs:
           curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VER}/sops-${SOPS_VER}.linux.amd64" \
             -o /tmp/sops && chmod +x /tmp/sops
           SECRETS=$(SOPS_AGE_KEY="$SOPS_AGE_KEY" /tmp/sops -d secrets/testnet.env)
-          GEN0=$(echo "$SECRETS" | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2-)
-          GEN1=$(echo "$SECRETS" | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2-)
-          echo "GEN0_API_KEY=${GEN0}" >> "$GITHUB_ENV"
-          echo "GEN1_API_KEY=${GEN1}" >> "$GITHUB_ENV"
-          echo "gen-0 key available: $([ -n "$GEN0" ] && echo YES || echo MISSING)"
-          echo "gen-1 key available: $([ -n "$GEN1" ] && echo YES || echo MISSING)"
+          echo "$SECRETS" | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2- > /tmp/.gen0_key
+          echo "$SECRETS" | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2- > /tmp/.gen1_key
+          chmod 600 /tmp/.gen0_key /tmp/.gen1_key
+          echo "gen-0 key length: $(wc -c < /tmp/.gen0_key) bytes"
+          echo "gen-1 key length: $(wc -c < /tmp/.gen1_key) bytes"
 
       - name: Commit gen-0 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
-          SOPS_AGE_KEY: ${{ secrets.AGE_SECRET_KEY }}
         run: |
           set -euo pipefail
           POD=dcc-gen-0-0
           PORT=6869
-          GEN_API_KEY="${GEN0_API_KEY:-}"
-          if [ -z "${GEN_API_KEY:-}" ] && [ -f /tmp/sops ]; then
-            echo "Fallback: decrypting gen-0 key directly from SOPS"
-            GEN_API_KEY=$(SOPS_AGE_KEY="${SOPS_AGE_KEY:-}" /tmp/sops -d secrets/testnet.env \
-              | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2- || true)
-          fi
-          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not available"; exit 1; }
+          GEN_API_KEY=$(cat /tmp/.gen0_key 2>/dev/null | tr -d '\n')
+          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not available from /tmp/.gen0_key"; exit 1; }
           echo "gen-0 API key available (length ${#GEN_API_KEY})"
 
           echo "=== gen-0: get wallet address ==="
@@ -207,21 +200,13 @@ jobs:
       - name: Commit gen-1 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
-          SOPS_AGE_KEY: ${{ secrets.AGE_SECRET_KEY }}
         run: |
           set -euo pipefail
           POD=dcc-gen-1-0
           PORT=6870
           # Decrypt key directly here — avoids GITHUB_ENV transfer issues
-          # GEN1_API_KEY is set in GITHUB_ENV by the central SOPS decrypt step
-          GEN_API_KEY="${GEN1_API_KEY:-}"
-          # Fallback: decrypt directly if GITHUB_ENV transfer failed
-          if [ -z "${GEN_API_KEY:-}" ] && [ -f /tmp/sops ]; then
-            echo "Fallback: decrypting gen-1 key directly from SOPS"
-            GEN_API_KEY=$(SOPS_AGE_KEY="${SOPS_AGE_KEY:-}" /tmp/sops -d secrets/testnet.env \
-              | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2- || true)
-          fi
-          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not available"; exit 1; }
+          GEN_API_KEY=$(cat /tmp/.gen1_key 2>/dev/null | tr -d '\n')
+          [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not available from /tmp/.gen1_key"; exit 1; }
           echo "gen-1 API key available (length ${#GEN_API_KEY})"
 
           # gen-1 may still be coming up after rollout restart — wait up to 15 min
