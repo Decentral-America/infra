@@ -136,11 +136,6 @@ jobs:
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           echo "Address: $ADDR"
 
-          PUBKEY=$(kubectl exec -n dcc "$POD" -- \
-            wget -qO- "http://127.0.0.1:${PORT}/addresses/publicKey/${ADDR}" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "PubKey: $PUBKEY"
-
           # Get period starts from the public node
           read CURRENT_PERIOD NEXT_PERIOD < <(curl -sf "$PUBLIC_NODE/blockchain/finality" \
             | python3 -c "
@@ -154,7 +149,7 @@ jobs:
             # no spaces in JSON — safe to pass directly as --post-data arg
             PAYLOAD=$(python3 -c "
           import json
-          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD},separators=(',',':')))
+          print(json.dumps({'type':19,'version':1,'sender':'$ADDR','generationPeriodStart':$PERIOD},separators=(',',':')))
             ")
             echo "Payload: $PAYLOAD"
             # Pass JSON directly to wget without sh -c wrapper: kubectl passes args as array,
@@ -210,7 +205,7 @@ jobs:
             local PERIOD=$1 PAYLOAD SIGNED TXID
             PAYLOAD=$(python3 -c "
           import json
-          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD},separators=(',',':')))
+          print(json.dumps({'type':19,'version':1,'sender':'$ADDR','generationPeriodStart':$PERIOD},separators=(',',':')))
             ")
             SIGNED=$(kubectl exec -n dcc "$POD" -- \
               wget -qO- \
@@ -258,16 +253,14 @@ jobs:
 
           ADDR=$(curl -sf -H "X-API-Key: $API_KEY" http://localhost:6869/addresses \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
-          PUBKEY=$(curl -sf "http://localhost:6869/addresses/publicKey/$ADDR" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "Address: $ADDR  PubKey: $PUBKEY"
+          echo "Address: $ADDR"
 
           commit_period() {
             local PERIOD=$1
             local PAYLOAD
             PAYLOAD=$(python3 -c "
-          import json,sys
-          print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
+          import json
+          print(json.dumps({'type':19,'version':1,'sender':'$ADDR','generationPeriodStart':$PERIOD},separators=(',',':')))
             ")
             local SIGNED
             SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://localhost:6869/transactions/sign \
