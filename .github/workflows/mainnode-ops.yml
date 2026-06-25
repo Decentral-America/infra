@@ -19,6 +19,7 @@ on:
         options:
           - status
           - restart
+          - wipe-peers-and-restart
           - logs
           - peers
 
@@ -61,7 +62,6 @@ jobs:
                 ;;
               restart)
                 $SSH 'set -e
-                  # discover the service/container name dynamically
                   SVC=$(systemctl list-units --state=running 2>/dev/null | grep -iE "dcc|decentralchain|waves" | awk "{print \$1}" | head -1)
                   if [ -n "$SVC" ]; then
                     echo "Restarting systemd service: $SVC"
@@ -72,11 +72,19 @@ jobs:
                       echo "Restarting docker container: $CID"
                       docker restart "$CID" && echo "OK"
                     else
-                      echo "ERROR: no DCC service found via systemd or docker"
-                      ps aux | grep -iE "java|dcc|decentralchain" | grep -v grep
+                      echo "ERROR: no DCC service found"
                       exit 1
                     fi
                   fi'
+                ;;
+              wipe-peers-and-restart)
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  echo "Wiping peers.dat in container $CID..."
+                  docker exec "$CID" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat not found — may not exist yet)"
+                  echo "Restarting container $CID..."
+                  docker restart "$CID" && echo "OK"'
                 ;;
               logs)
                 $SSH 'journalctl -n 200 --no-pager 2>/dev/null || docker logs --tail 200 $(docker ps -q | head -1) 2>/dev/null || echo "(no logs)"'
