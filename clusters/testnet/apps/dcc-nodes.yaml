@@ -96,7 +96,7 @@ data:
       }
 
       miner {
-        enable = no
+        enable = yes
         quorum = 0
       }
 
@@ -194,7 +194,7 @@ data:
       }
 
       miner {
-        enable = no
+        enable = yes
         quorum = 0
       }
 
