@@ -20,6 +20,7 @@ on:
           - status
           - restart
           - wipe-peers-and-restart
+          - wipe-chain-and-restart
           - connect-to-gen-nodes
           - logs
           - peers
@@ -82,10 +83,26 @@ jobs:
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
-                  echo "Wiping peers.dat in container $CID..."
-                  docker exec "$CID" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat not found)"
-                  echo "Restarting container $CID..."
-                  docker restart "$CID" && echo "OK"'
+                  NAME=$(docker inspect "$CID" --format "{{.Name}}" | sed "s|/||")
+                  echo "Killing $NAME (SIGKILL to prevent peer-save on graceful shutdown)..."
+                  docker kill "$CID" 2>/dev/null || true
+                  sleep 2
+                  echo "Wiping peers.dat..."
+                  docker run --rm -v "$(docker inspect $NAME --format "{{range .Mounts}}{{if eq .Destination \"/var/lib/dcc\"}}{{.Source}}{{end}}{{end}}")":/data alpine sh -c "rm -f /data/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat wipe via volume failed — trying start+exec+restart)"
+                  docker start "$NAME" 2>/dev/null && sleep 2
+                  docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED-LIVE" 2>/dev/null || echo "(live wipe failed)"
+                  docker restart "$NAME" && echo "OK"'
+                ;;
+              wipe-chain-and-restart)
+                # DANGER: wipes entire blockchain state. Use for full testnet reset.
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  NAME=$(docker inspect "$CID" --format "{{.Name}}" | sed "s|/||")
+                  echo "Wiping /var/lib/dcc/data and peers.dat in $NAME..."
+                  docker exec "$NAME" sh -c "rm -rf /var/lib/dcc/data /var/lib/dcc/peers.dat && echo WIPED"
+                  echo "Restarting $NAME..."
+                  docker restart "$NAME" && echo "OK - chain wiped and restarted from genesis"'
                 ;;
               connect-to-gen-nodes)
                 # Force the main node to connect to gen-0 and gen-1 via REST API
