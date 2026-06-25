@@ -143,12 +143,15 @@ jobs:
       - name: Commit gen-0 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
+          SOPS_AGE_KEY: ${{ secrets.AGE_SECRET_KEY }}
         run: |
           set -euo pipefail
           POD=dcc-gen-0-0
           PORT=6869
-          GEN_API_KEY="${GEN0_API_KEY}"
+          GEN_API_KEY=$(/tmp/sops -d secrets/testnet.env 2>/dev/null \
+            | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2-)
           [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not set"; exit 1; }
+          echo "gen-0 API key retrieved (length ${#GEN_API_KEY})"
 
           echo "=== gen-0: get wallet address ==="
           ADDR=$(kubectl exec -n dcc "$POD" -- \
@@ -200,12 +203,16 @@ jobs:
       - name: Commit gen-1 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
+          SOPS_AGE_KEY: ${{ secrets.AGE_SECRET_KEY }}
         run: |
           set -euo pipefail
           POD=dcc-gen-1-0
           PORT=6870
-          GEN_API_KEY="${GEN1_API_KEY}"
+          # Decrypt key directly here — avoids GITHUB_ENV transfer issues
+          GEN_API_KEY=$(/tmp/sops -d secrets/testnet.env 2>/dev/null \
+            | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2-)
           [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not set"; exit 1; }
+          echo "gen-1 API key retrieved (length ${#GEN_API_KEY})"
 
           # gen-1 may still be coming up after rollout restart — wait up to 15 min
           echo "=== Waiting for gen-1 pod to be ready ==="
