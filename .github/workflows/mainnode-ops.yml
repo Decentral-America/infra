@@ -109,17 +109,9 @@ jobs:
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
-                  echo "Enabling miner in $CID config..."
-                  # Specifically enable the miner section (not rest-api or other enable fields)
-                  docker exec "$CID" sh -c "grep -n \"miner {\" /etc/dcc/dcc.conf | head -3"
-                  docker exec "$CID" sh -c "python3 -c \"
-import re
-with open(\'/etc/dcc/dcc.conf\',\'r\') as f: c=f.read()
-# Only patch enable=no within the miner block
-c2=re.sub(r\'(miner \\{[^}]*?)enable = no\',r\'\\1enable = yes\',c,flags=re.DOTALL)
-with open(\'/etc/dcc/dcc.conf\',\'w\') as f: f.write(c2)
-print(\'PATCHED\')
-\" 2>/dev/null" || echo "(python patch failed)"
+                  echo "Enabling miner in $CID config (miner block only)..."
+                  docker exec "$CID" sh -c "awk \"/miner \{/{f=1} f && /enable = no/{sub(/enable = no/,\"enable = yes\"); f=0} {print}\" /etc/dcc/dcc.conf > /tmp/dcc_patched.conf && mv /tmp/dcc_patched.conf /etc/dcc/dcc.conf && echo PATCHED" 2>/dev/null || echo "(awk patch failed)"
+                  docker exec "$CID" grep -A3 "miner {" /etc/dcc/dcc.conf 2>/dev/null | head -8 || true
                   docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
               disable-microblocks-and-restart)
