@@ -74,12 +74,18 @@ jobs:
           kubectl exec -n dcc dcc-gen-0-0 -- du -sh /var/lib/dcc/data 2>/dev/null || echo "  gen-0 data dir not accessible"
           kubectl exec -n dcc dcc-gen-1-0 -- du -sh /var/lib/dcc/data 2>/dev/null || echo "  gen-1 data dir not accessible"
 
-      - name: Wipe RocksDB data on gen-0 and gen-1
+      - name: Wipe RocksDB data + peers.dat on gen-0 and gen-1
         run: |
-          echo "=== Wiping /var/lib/dcc/data on dcc-gen-0-0 ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- sh -c 'rm -rf /var/lib/dcc/data && echo "WIPED gen-0"'
-          echo "=== Wiping /var/lib/dcc/data on dcc-gen-1-0 ==="
-          kubectl exec -n dcc dcc-gen-1-0 -- sh -c 'rm -rf /var/lib/dcc/data && echo "WIPED gen-1"'
+          # Wipe both the chain data AND peers.dat.
+          # peers.dat lives at /var/lib/dcc/peers.dat (outside /var/lib/dcc/data/).
+          # After fork incidents, peers.dat can have the main node marked as
+          # blacklisted/suspicious, which prevents peer connections on restart.
+          echo "=== Wiping /var/lib/dcc/data + peers.dat on dcc-gen-0-0 ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
+            'rm -rf /var/lib/dcc/data /var/lib/dcc/peers.dat && echo "WIPED gen-0 (data + peers.dat)"'
+          echo "=== Wiping /var/lib/dcc/data + peers.dat on dcc-gen-1-0 ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- sh -c \
+            'rm -rf /var/lib/dcc/data /var/lib/dcc/peers.dat && echo "WIPED gen-1 (data + peers.dat)"'
 
       - name: Rollout restart gen StatefulSets
         run: |
