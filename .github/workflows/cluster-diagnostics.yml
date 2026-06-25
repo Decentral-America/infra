@@ -161,24 +161,29 @@ jobs:
                   pf.terminate()
                   time.sleep(0.5)
 
-          def last_miner_error(pod):
-              r = subprocess.run(["kubectl","logs","-n","dcc",pod,"--tail=200"],
+          def pod_logs(pod, tail=300):
+              r = subprocess.run(["kubectl","logs","-n","dcc",pod,f"--tail={tail}"],
                   capture_output=True, text=True)
-              lines = [l for l in r.stdout.splitlines()
-                       if re.search(r'miner|allowed|period|commit', l, re.I)
-                       and not re.search(r'utx|kamon|REST API|gRPC', l, re.I)]
-              return lines[-1] if lines else None
+              return r.stdout.splitlines()
+
+          def filter_logs(lines, include_re, exclude_re=None):
+              out = [l for l in lines if re.search(include_re, l, re.I)]
+              if exclude_re:
+                  out = [l for l in out if not re.search(exclude_re, l, re.I)]
+              return out[-5:] if out else []
 
           results = {}
           for pod, lport, rport in [("dcc-gen-0-0",16881,6869),("dcc-gen-1-0",16882,6870),("dcc-val-0-0",16883,6871)]:
               h = pf_query(pod, lport, rport, "/blocks/height")
               last = pf_query(pod, lport, rport, "/blocks/headers/last")
+              logs = pod_logs(pod)
               results[pod] = {
                   "height": h.get("height") if h else None,
                   "last_generator": last.get("generator") if last else None,
                   "committed_generators": last.get("committedGenerators") if last else None,
                   "next_generators": last.get("nextGenerators") if last else None,
-                  "last_miner_log": last_miner_error(pod),
+                  "last_miner_log": filter_logs(logs, r'miner|allowed|period|commit', r'utx|kamon|REST API|gRPC'),
+                  "last_sync_log":  filter_logs(logs, r'synchroni|score|peer|blacklist|handshake|height|connect|block', r'utx|kamon|REST API|gRPC|HotStuff'),
               }
 
           with open("/tmp/diag-results/results.json","w") as f:
