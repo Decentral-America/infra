@@ -1,6 +1,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Cluster Diagnostics — on-demand health + P2P connectivity report for the
-# Frankfurt LKE peer-node cluster. Read-only. Safe to run anytime.
+# Cluster Diagnostics — health report, optional roll, optional wait-for-height.
+#
+# Inputs:
+#   network          — target network (testnet)
+#   roll             — Flux reconcile + rollout restart before diagnosing
+#   min_height       — if set with roll=true, waits until gen-0 reaches this
+#                      height before rolling (use for sync-then-enable-miner)
+#   poll_interval_s  — seconds between height checks when min_height is set
 # ──────────────────────────────────────────────────────────────────────────────
 name: Cluster Diagnostics
 
@@ -15,10 +21,20 @@ on:
         options:
           - testnet
       roll:
-        description: 'Force Flux reconcile + roll the dcc StatefulSets before diagnosing'
+        description: 'Flux reconcile + roll StatefulSets before diagnosing'
         required: false
         default: false
         type: boolean
+      min_height:
+        description: 'Wait until gen-0 reaches this height before rolling (requires roll=true; 0=no wait)'
+        required: false
+        default: '0'
+        type: string
+      poll_interval_s:
+        description: 'Seconds between height polls when min_height is set'
+        required: false
+        default: '30'
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +42,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Download kubeconfig
         env:
@@ -49,6 +66,24 @@ jobs:
           set +e
           curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
           export PATH=$PATH:/usr/local/bin
+
+          # Optional: wait until gen-0 reaches min_height before rolling.
+          # Use this when nodes are syncing with miner disabled and you want
+          # to roll (re-enable miner) only after they've caught up.
+          MIN_HEIGHT="${{ inputs.min_height }}"
+          INTERVAL="${{ inputs.poll_interval_s }}"
+          if [ "${MIN_HEIGHT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "=== waiting for gen-0 to reach height $MIN_HEIGHT ==="
+            while true; do
+              H=$(kubectl exec -n dcc dcc-gen-0-0 -- \
+                sh -c 'curl -sf http://localhost:6869/blocks/height 2>/dev/null' 2>/dev/null \
+                | python3 -c 'import sys,json; print(json.load(sys.stdin).get("height",0))' 2>/dev/null || echo 0)
+              echo "$(date -u +%H:%M:%S) gen-0 height=$H / target=$MIN_HEIGHT"
+              [ "${H:-0}" -ge "$MIN_HEIGHT" ] 2>/dev/null && echo "Target reached." && break
+              sleep "$INTERVAL"
+            done
+          fi
+
           echo "=== flux reconcile source + apps ==="
           flux reconcile source git flux-system --timeout=2m
           flux reconcile kustomization dcc-apps --timeout=3m

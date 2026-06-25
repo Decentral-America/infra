@@ -96,9 +96,7 @@ data:
       }
 
       miner {
-        # Temporarily disabled so the node syncs cleanly from the main node
-        # without mining a competing fork. Re-enable after reaching chain tip.
-        enable = no
+        enable = yes
         quorum = 0
       }
 
@@ -196,9 +194,7 @@ data:
       }
 
       miner {
-        # Temporarily disabled so the node syncs cleanly from the main node
-        # without mining a competing fork. Re-enable after reaching chain tip.
-        enable = no
+        enable = yes
         quorum = 0
       }
 
