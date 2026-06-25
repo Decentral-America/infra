@@ -162,7 +162,7 @@ jobs:
             | python3 -c "
           import sys,json; d=json.load(sys.stdin)
           print(d['currentGenerationPeriod']['start'], d['nextGenerationPeriod']['start'])
-          ")
+          ") || { echo "WARNING: could not read periods from finality API"; CURRENT_PERIOD=0; NEXT_PERIOD=0; }
           echo "Periods: current=$CURRENT_PERIOD next=$NEXT_PERIOD"
 
           commit_period() {
@@ -245,7 +245,7 @@ jobs:
             | python3 -c "
           import sys,json; d=json.load(sys.stdin)
           print(d['currentGenerationPeriod']['start'], d['nextGenerationPeriod']['start'])
-          ")
+          ") || { echo "WARNING: could not read periods from finality API"; CURRENT_PERIOD=0; NEXT_PERIOD=0; }
 
           commit_period() {
             local PERIOD=$1 PAYLOAD SIGNED TXID
@@ -289,7 +289,7 @@ jobs:
             | python3 -c "
           import sys,json; d=json.load(sys.stdin)
           print(d['currentGenerationPeriod']['start'], d['nextGenerationPeriod']['start'])
-          ")
+          ") || { echo "WARNING: could not read periods from finality API"; CURRENT_PERIOD=0; NEXT_PERIOD=0; }
           echo "main node periods: current=$CURRENT_PERIOD next=$NEXT_PERIOD"
 
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
