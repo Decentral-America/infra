@@ -1,1 +1,1 @@
-Thu Jun 25 00:40:44 UTC 2026 — wait for correct image before signing
+Thu Jun 25 00:45:18 UTC 2026 — definitive rewrite: kubectl exec + wget, no port-forward

@@ -1,5 +1,13 @@
 name: Commit generators to generation period
 
+# Submits CommitToGenerationTransaction for gen-0, gen-1, and main node.
+# Triggered by workflow_dispatch OR by touching trigger/commit-to-generation
+# (the push trigger bypasses the GitHub REST API rate limit).
+#
+# The gen nodes must be running node-scala-testnet-latest with api-key-hash
+# set to Blake2b256("dcc-testnet-commit") = B87ksWf7dVFJDwMQbYNf3mehN8cqcQ6aShcs5N18hNV3
+# Both are set in dcc-nodes.yaml and applied by Flux.
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,38 +16,39 @@ on:
         required: true
         default: 'testnet'
         type: choice
-        options:
-          - testnet
+        options: [testnet]
       wipe_gen_nodes:
-        description: 'Wipe gen node chain data before committing (required when gen nodes are on wrong chain)'
+        description: 'Wipe gen node chain data before committing (only if nodes are on wrong chain)'
         required: false
         default: false
         type: boolean
   push:
     branches: [main]
-    paths:
-      - 'trigger/commit-to-generation'
+    paths: ['trigger/commit-to-generation']
 
 permissions:
   contents: read
 
+env:
+  NETWORK:    ${{ inputs.network || 'testnet' }}
+  GEN_API_KEY: dcc-testnet-commit   # pre-image of api-key-hash in dcc-nodes.yaml
+
 jobs:
   commit:
-    name: Wipe gen nodes + commit both current and next generation periods
+    name: Commit all generators to next generation period
     runs-on: ubuntu-latest
 
     steps:
-      # ── kubeconfig ───────────────────────────────────────────────────────────
-      - name: Download kubeconfig (LKE)
+      # ── 1. Cluster access ────────────────────────────────────────────────────
+      - name: Download LKE kubeconfig
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-          NETWORK: ${{ inputs.network || 'testnet' }}
         run: |
           set -euo pipefail
           CID=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" \
             "https://api.linode.com/v4/lke/clusters" \
             | jq -r ".data[] | select(.label==\"dcc-peer-${NETWORK}\") | .id")
-          echo "Cluster ID: $CID"
+          echo "LKE cluster ID: $CID"
           curl -sf -H "Authorization: Bearer $LINODE_TOKEN" \
             "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" \
             | jq -r '.kubeconfig' \
@@ -48,191 +57,181 @@ jobs:
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> "$GITHUB_ENV"
 
-      - name: Install kubectl (latest stable, Node.js-free)
+      - name: Install kubectl (latest stable)
         run: |
           KUBECTL_VER=$(curl -Ls https://dl.k8s.io/release/stable.txt)
-          curl -Lo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/amd64/kubectl"
-          chmod +x /tmp/kubectl && sudo mv /tmp/kubectl /usr/local/bin/kubectl
-          kubectl version --client
+          curl -Lo /usr/local/bin/kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+          kubectl version --client --short 2>/dev/null || kubectl version --client
 
-      # ── Flux reconcile ───────────────────────────────────────────────────────
-      - name: Force Flux reconcile (picks up latest dcc-nodes.yaml — new image, no api-key-hash)
+      # ── 2. Apply latest config (Flux reconcile) ───────────────────────────────
+      - name: Flux reconcile — apply latest dcc-nodes.yaml
+        run: |
+          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1 || true
+          export PATH="$PATH:/usr/local/bin"
+          flux reconcile source git flux-system --timeout=2m \
+            && echo "source: OK" || echo "source: non-fatal, continuing"
+          flux reconcile kustomization dcc-apps --timeout=3m \
+            && echo "kustomization: OK" || echo "kustomization: non-fatal, continuing"
+
+      # ── 3. Optional chain data wipe ─────────────────────────────────────────
+      - name: Wipe gen node chain data
+        if: ${{ inputs.wipe_gen_nodes == true }}
         run: |
           set -euo pipefail
-          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
-          export PATH=$PATH:/usr/local/bin
-          flux reconcile source git flux-system --timeout=2m || echo "flux reconcile source: non-fatal"
-          flux reconcile kustomization dcc-apps --timeout=3m || echo "flux reconcile apps: non-fatal"
-          echo "ConfigMaps updated — gen nodes will boot without api-key-hash."
-
-      - name: Roll gen StatefulSets to pick up updated ConfigMap and image
-        if: "!inputs.wipe_gen_nodes"
-        run: |
-          echo "=== Current pod status before restart ==="
-          kubectl get pods -n dcc -o wide || true
-          echo "=== Rolling restart gen-0 and gen-1 ==="
-          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 -n dcc || true
-          echo "=== Waiting up to 10 min for rollout (non-fatal — health check step follows) ==="
-          kubectl rollout status statefulset/dcc-gen-0 -n dcc --timeout=600s || echo "gen-0 rollout: timed out or failed, health check will wait"
-          kubectl rollout status statefulset/dcc-gen-1 -n dcc --timeout=600s || echo "gen-1 rollout: timed out or failed, health check will wait"
-          echo "=== Pod status after restart ==="
-          kubectl get pods -n dcc -o wide || true
-
-      # ── wipe gen chain data ───────────────────────────────────────────────────
-      - name: Wipe gen node chain data (scale down → delete PVCs → scale up)
-        if: inputs.wipe_gen_nodes
-        run: |
-          set -euo pipefail
-          echo "=== Scale down ==="
           kubectl scale statefulset dcc-gen-0 dcc-gen-1 dcc-val-0 --replicas=0 -n dcc
           kubectl wait pod -n dcc \
             -l 'app in (dcc-gen-0,dcc-gen-1,dcc-val-0)' \
             --for=delete --timeout=120s || true
-
-          echo "=== Delete PVCs (fresh empty volumes on next start) ==="
           kubectl delete pvc \
-            chain-data-dcc-gen-0-0 \
-            chain-data-dcc-gen-1-0 \
-            chain-data-dcc-val-0-0 \
+            chain-data-dcc-gen-0-0 chain-data-dcc-gen-1-0 chain-data-dcc-val-0-0 \
             -n dcc --ignore-not-found=true
-          sleep 8
-
-          echo "=== Scale up ==="
+          sleep 10
           kubectl scale statefulset dcc-gen-0 dcc-gen-1 dcc-val-0 --replicas=1 -n dcc
-          kubectl wait pod -n dcc \
-            -l 'app in (dcc-gen-0,dcc-gen-1)' \
-            --for=condition=Ready --timeout=300s
 
-      # ── wait for NEW gen-0 pod (correct image + api-key-hash) to be ready ──────
-      - name: Wait for gen-0 new pod (node-scala-testnet-latest image + REST API up)
+      # ── 4. Rolling restart to pick up updated ConfigMap and image ─────────────
+      - name: Rolling restart gen-0 and gen-1
         run: |
-          echo "Waiting for gen-0 pod running node-scala-testnet-latest image with REST API up..."
-          for i in $(seq 1 60); do
-            sleep 15
-            IMAGE=$(kubectl get pod dcc-gen-0-0 -n dcc \
-              -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "unknown")
-            READY=$(kubectl get pod dcc-gen-0-0 -n dcc \
-              -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
-            echo "  attempt $i: image=$(basename $IMAGE) ready=$READY"
-            if [[ "$IMAGE" == *"node-scala-testnet-latest"* && "$READY" == "true" ]]; then
-              echo "✅ gen-0 is on new image and container is ready"
-              break
-            fi
-            # Show reason if not ready yet
-            kubectl get pod dcc-gen-0-0 -n dcc \
-              -o jsonpath='{.status.containerStatuses[0].state}' 2>/dev/null || true
+          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 -n dcc || true
+          echo "Rollout restart issued — waiting for pods to cycle..."
+
+      # ── 5. Wait for both gen pods to be READY on the NEW image ───────────────
+      - name: Wait for gen pods — new image AND readiness probe passing
+        run: |
+          for POD in dcc-gen-0-0 dcc-gen-1-0; do
+            echo "--- Waiting for $POD ---"
+            for i in $(seq 1 60); do
+              sleep 10
+              IMAGE=$(kubectl get pod "$POD" -n dcc \
+                -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+              READY=$(kubectl get pod "$POD" -n dcc \
+                -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+              STATE=$(kubectl get pod "$POD" -n dcc \
+                -o jsonpath='{.status.containerStatuses[0].state}' 2>/dev/null || echo "{}")
+              echo "  $i: image=$(basename $IMAGE) ready=$READY state=$STATE"
+              if [[ "$IMAGE" == *"node-scala-testnet-latest"* && "$READY" == "true" ]]; then
+                echo "✅ $POD is ready on the new image"
+                break
+              fi
+              if [ "$i" -eq 60 ]; then
+                echo "⚠️ $POD not ready after 10 minutes — proceeding anyway"
+              fi
+            done
           done
 
-      # ── helper function: sign and broadcast for one node + one period ─────────
-      # Runs as a reusable shell function embedded in each step.
-
-      - name: Commit gen-0 (port-forward → sign → broadcast both periods)
+      # ── 6. Commit gen-0 via kubectl exec + wget (no port-forward) ────────────
+      - name: Commit gen-0 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
         run: |
           set -euo pipefail
-          kubectl port-forward -n dcc dcc-gen-0-0 26869:6869 >/dev/null 2>&1 &
-          PF=$!; sleep 6
+          POD=dcc-gen-0-0
+          PORT=6869
 
-          ADDR=$(curl -sf -H "X-API-Key: dcc-testnet-commit" http://127.0.0.1:26869/addresses \
+          echo "=== gen-0: get wallet address ==="
+          ADDR=$(kubectl exec -n dcc "$POD" -- \
+            wget -qO- "http://127.0.0.1:${PORT}/addresses" \
+            --header="X-API-Key: ${GEN_API_KEY}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
-          echo "gen-0 address: $ADDR"
+          echo "Address: $ADDR"
 
-          PUBKEY=$(curl -sf -H "X-API-Key: dcc-testnet-commit" "http://127.0.0.1:26869/addresses/publicKey/$ADDR" \
+          PUBKEY=$(kubectl exec -n dcc "$POD" -- \
+            wget -qO- "http://127.0.0.1:${PORT}/addresses/publicKey/${ADDR}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "gen-0 pubkey: $PUBKEY"
+          echo "PubKey: $PUBKEY"
 
-          # Get both current and next period starts from the public node
-          PERIODS=$(curl -sf "$PUBLIC_NODE/blockchain/finality" | python3 -c "
-          import sys,json
-          d=json.load(sys.stdin)
+          # Get period starts from the public node
+          read CURRENT_PERIOD NEXT_PERIOD < <(curl -sf "$PUBLIC_NODE/blockchain/finality" \
+            | python3 -c "
+          import sys,json; d=json.load(sys.stdin)
           print(d['currentGenerationPeriod']['start'], d['nextGenerationPeriod']['start'])
           ")
-          CURRENT_PERIOD=$(echo $PERIODS | cut -d' ' -f1)
-          NEXT_PERIOD=$(echo $PERIODS | cut -d' ' -f2)
-          echo "Periods to commit: current=$CURRENT_PERIOD next=$NEXT_PERIOD"
+          echo "Periods: current=$CURRENT_PERIOD next=$NEXT_PERIOD"
 
           commit_period() {
-            local PERIOD=$1
-            local PAYLOAD
+            local PERIOD=$1 PAYLOAD SIGNED TXID
             PAYLOAD=$(python3 -c "
           import json
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
-            local SIGNED
-            SIGNED=$(echo "$PAYLOAD" | curl -sf -H "X-API-Key: dcc-testnet-commit" -X POST http://127.0.0.1:26869/transactions/sign \
-              -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  sign failed for period $PERIOD"; return 1; }
-            local RESULT
-            RESULT=$(echo "$SIGNED" | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
-              -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  broadcast failed for period $PERIOD"; return 1; }
-            local TXID
-            TXID=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d.get('error','?'))" 2>/dev/null || echo "?")
-            echo "  ✅ gen-0 period $PERIOD TX: $TXID"
+            echo "$PAYLOAD"
+            SIGNED=$(kubectl exec -n dcc "$POD" -- sh -c \
+              "echo '$PAYLOAD' | wget -qO- --post-data=- \
+                --header='Content-Type: application/json' \
+                --header='X-API-Key: ${GEN_API_KEY}' \
+                'http://127.0.0.1:${PORT}/transactions/sign'" \
+              ) || { echo "  sign failed for period $PERIOD"; return 1; }
+            echo "Signed: $SIGNED"
+            TXID=$(echo "$SIGNED" \
+              | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
+                  -H "Content-Type: application/json" -d @- \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d)" \
+              ) || { echo "  broadcast failed for period $PERIOD"; return 1; }
+            echo "✅ gen-0 period $PERIOD TX: $TXID"
           }
 
-          echo "--- Committing for current period $CURRENT_PERIOD (may already be too late) ---"
-          commit_period "$CURRENT_PERIOD" || echo "  (skipped — current period may not accept late commitments)"
-
-          echo "--- Committing for next period $NEXT_PERIOD ---"
+          echo "=== Committing for current period $CURRENT_PERIOD ==="
+          commit_period "$CURRENT_PERIOD" || echo "  (current period commit failed — may be too late)"
+          echo "=== Committing for next period $NEXT_PERIOD ==="
           commit_period "$NEXT_PERIOD"
 
-          kill $PF 2>/dev/null; true
-
-      - name: Commit gen-1 (port-forward → sign → broadcast both periods)
+      # ── 7. Commit gen-1 ───────────────────────────────────────────────────────
+      - name: Commit gen-1 (kubectl exec → wget → broadcast)
         env:
           PUBLIC_NODE: https://testnet-node.decentralchain.io
         run: |
           set -euo pipefail
-          kubectl port-forward -n dcc dcc-gen-1-0 26870:6870 >/dev/null 2>&1 &
-          PF=$!; sleep 4
+          POD=dcc-gen-1-0
+          PORT=6870
 
-          ADDR=$(curl -sf -H "X-API-Key: dcc-testnet-commit" http://127.0.0.1:26870/addresses \
+          ADDR=$(kubectl exec -n dcc "$POD" -- \
+            wget -qO- "http://127.0.0.1:${PORT}/addresses" \
+            --header="X-API-Key: ${GEN_API_KEY}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
-          echo "gen-1 address: $ADDR"
+          echo "Address: $ADDR"
 
-          PUBKEY=$(curl -sf -H "X-API-Key: dcc-testnet-commit" "http://127.0.0.1:26870/addresses/publicKey/$ADDR" \
+          PUBKEY=$(kubectl exec -n dcc "$POD" -- \
+            wget -qO- "http://127.0.0.1:${PORT}/addresses/publicKey/${ADDR}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "gen-1 pubkey: $PUBKEY"
+          echo "PubKey: $PUBKEY"
 
-          PERIODS=$(curl -sf "$PUBLIC_NODE/blockchain/finality" | python3 -c "
-          import sys,json
-          d=json.load(sys.stdin)
+          read CURRENT_PERIOD NEXT_PERIOD < <(curl -sf "$PUBLIC_NODE/blockchain/finality" \
+            | python3 -c "
+          import sys,json; d=json.load(sys.stdin)
           print(d['currentGenerationPeriod']['start'], d['nextGenerationPeriod']['start'])
           ")
-          CURRENT_PERIOD=$(echo $PERIODS | cut -d' ' -f1)
-          NEXT_PERIOD=$(echo $PERIODS | cut -d' ' -f2)
 
           commit_period() {
-            local PERIOD=$1
-            local PAYLOAD
+            local PERIOD=$1 PAYLOAD SIGNED TXID
             PAYLOAD=$(python3 -c "
           import json
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
-            local SIGNED
-            SIGNED=$(echo "$PAYLOAD" | curl -sf -H "X-API-Key: dcc-testnet-commit" -X POST http://127.0.0.1:26870/transactions/sign \
-              -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  sign failed for period $PERIOD"; return 1; }
-            local RESULT
-            RESULT=$(echo "$SIGNED" | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
-              -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  broadcast failed for period $PERIOD"; return 1; }
-            local TXID
-            TXID=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d.get('error','?'))" 2>/dev/null || echo "?")
-            echo "  ✅ gen-1 period $PERIOD TX: $TXID"
+            SIGNED=$(kubectl exec -n dcc "$POD" -- sh -c \
+              "echo '$PAYLOAD' | wget -qO- --post-data=- \
+                --header='Content-Type: application/json' \
+                --header='X-API-Key: ${GEN_API_KEY}' \
+                'http://127.0.0.1:${PORT}/transactions/sign'" \
+              ) || { echo "  sign failed for period $PERIOD"; return 1; }
+            TXID=$(echo "$SIGNED" \
+              | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
+                  -H "Content-Type: application/json" -d @- \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d)" \
+              ) || { echo "  broadcast failed for period $PERIOD"; return 1; }
+            echo "✅ gen-1 period $PERIOD TX: $TXID"
           }
 
-          echo "--- Committing for current period $CURRENT_PERIOD ---"
-          commit_period "$CURRENT_PERIOD" || echo "  (skipped)"
-          echo "--- Committing for next period $NEXT_PERIOD ---"
+          commit_period "$CURRENT_PERIOD" || echo "  (current period commit failed)"
           commit_period "$NEXT_PERIOD"
 
-          kill $PF 2>/dev/null; true
-
-      - name: Commit main node (SSH → localhost sign → broadcast both periods)
+      # ── 8. Commit main node ───────────────────────────────────────────────────
+      - name: Commit main node (SSH → localhost sign → broadcast)
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_KEY:  ${{ secrets.DEPLOY_KEY }}
-          API_KEY:     ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
           PUBLIC_NODE: https://testnet-node.decentralchain.io
         run: |
           set -euo pipefail
@@ -240,72 +239,63 @@ jobs:
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # Get periods before SSH so we pass them as simple integers
-          PERIODS=$(curl -sf "$PUBLIC_NODE/blockchain/finality" | python3 -c "
-          import sys,json
-          d=json.load(sys.stdin)
+          read CURRENT_PERIOD NEXT_PERIOD < <(curl -sf "$PUBLIC_NODE/blockchain/finality" \
+            | python3 -c "
+          import sys,json; d=json.load(sys.stdin)
           print(d['currentGenerationPeriod']['start'], d['nextGenerationPeriod']['start'])
           ")
-          CURRENT_PERIOD=$(echo $PERIODS | cut -d' ' -f1)
-          NEXT_PERIOD=$(echo $PERIODS | cut -d' ' -f2)
           echo "main node periods: current=$CURRENT_PERIOD next=$NEXT_PERIOD"
 
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            bash -s "$API_KEY" "$CURRENT_PERIOD" "$NEXT_PERIOD" << 'REMOTE'
+            bash -s -- "$MAIN_API_KEY" "$CURRENT_PERIOD" "$NEXT_PERIOD" "$PUBLIC_NODE" << 'REMOTE'
           set -euo pipefail
-          API_KEY="$1"
-          CURRENT_PERIOD="$2"
-          NEXT_PERIOD="$3"
+          API_KEY=$1; CURRENT_PERIOD=$2; NEXT_PERIOD=$3; PUBLIC_NODE=$4
 
           ADDR=$(curl -sf -H "X-API-Key: $API_KEY" http://localhost:6869/addresses \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           PUBKEY=$(curl -sf "http://localhost:6869/addresses/publicKey/$ADDR" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          echo "main address: $ADDR  pubkey: $PUBKEY"
+          echo "Address: $ADDR  PubKey: $PUBKEY"
 
           commit_period() {
             local PERIOD=$1
             local PAYLOAD
             PAYLOAD=$(python3 -c "
-          import json, sys
+          import json,sys
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
             local SIGNED
             SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://localhost:6869/transactions/sign \
-              -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d @-) || \
-              { echo "  sign failed for period $PERIOD"; return 1; }
+              -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d @-) \
+              || { echo "  sign failed for period $PERIOD"; return 1; }
             local TXID
             TXID=$(echo "$SIGNED" | curl -sf -X POST http://localhost:6869/transactions/broadcast \
               -H "Content-Type: application/json" -d @- \
-              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d.get('error','?'))") || \
-              { echo "  broadcast failed for period $PERIOD"; return 1; }
-            echo "  ✅ main period $PERIOD TX: $TXID"
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d)") \
+              || { echo "  broadcast failed for period $PERIOD"; return 1; }
+            echo "✅ main period $PERIOD TX: $TXID"
           }
 
-          echo "--- Committing for current period $CURRENT_PERIOD ---"
-          commit_period "$CURRENT_PERIOD" || echo "  (skipped)"
-          echo "--- Committing for next period $NEXT_PERIOD ---"
+          commit_period "$CURRENT_PERIOD" || echo "  (current period)"
           commit_period "$NEXT_PERIOD"
           REMOTE
 
-      # ── final state check ────────────────────────────────────────────────────
-      - name: Verify commitments propagated
+      # ── 9. Verify ─────────────────────────────────────────────────────────────
+      - name: Verify — check commitments appeared in finality API
         run: |
-          sleep 12
+          sleep 15
           curl -sf https://testnet-node.decentralchain.io/blockchain/finality \
             | python3 -c "
-          import sys, json
+          import sys,json
           d = json.load(sys.stdin)
           h = d['height']
           cp = d['currentGenerationPeriod']
           np = d['nextGenerationPeriod']
-          print(f'height:              {h}')
-          print(f'T0 finalizedHeight:  {d[\"finalizedHeight\"]}')
-          print(f'T2 hotStuffFinalized:{d[\"hotStuffFinalizedHeight\"]}')
-          print(f'currentPeriod ({cp[\"start\"]}-{cp[\"end\"]}): {len(d[\"currentGenerators\"])} generators committed')
-          for g in d['currentGenerators']:
-              print(f'  → {g[\"address\"]}')
-          print(f'nextPeriod    ({np[\"start\"]}-{np[\"end\"]}): {len(d[\"nextGenerators\"])} generators committed')
-          for g in d['nextGenerators']:
-              print(f'  → {g[\"address\"]}')
+          print(f'height:             {h}')
+          print(f'T0 finalizedHeight: {d[\"finalizedHeight\"]}')
+          print(f'T2 hotStuff:        {d[\"hotStuffFinalizedHeight\"]}')
+          print(f'current ({cp[\"start\"]}-{cp[\"end\"]}): {len(d[\"currentGenerators\"])} generators committed')
+          for g in d[\"currentGenerators\"]: print(f'  → {g[\"address\"]}')
+          print(f'next    ({np[\"start\"]}-{np[\"end\"]}): {len(d[\"nextGenerators\"])} generators committed')
+          for g in d[\"nextGenerators\"]: print(f'  → {g[\"address\"]}')
           "
