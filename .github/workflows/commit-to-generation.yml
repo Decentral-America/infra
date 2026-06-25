@@ -109,20 +109,6 @@ jobs:
             fi
           done
 
-      # ── debug: verify ConfigMap and REST API before committing ───────────────
-      - name: Debug — verify ConfigMap has no api-key-hash and test /addresses
-        run: |
-          echo "=== gen-0-config ConfigMap (rest-api section) ==="
-          kubectl get configmap gen-0-config -n dcc -o jsonpath='{.data.dcc\.conf}' \
-            | grep -A6 "rest-api" || echo "(not found)"
-
-          echo ""
-          echo "=== gen-0 /addresses response (no auth, verbose) ==="
-          kubectl port-forward -n dcc dcc-gen-0-0 36869:6869 >/dev/null 2>&1 &
-          PF=$!; sleep 5
-          curl -sv http://127.0.0.1:36869/addresses 2>&1 | tail -20
-          kill $PF 2>/dev/null; true
-
       # ── helper function: sign and broadcast for one node + one period ─────────
       # Runs as a reusable shell function embedded in each step.
 
@@ -134,11 +120,11 @@ jobs:
           kubectl port-forward -n dcc dcc-gen-0-0 26869:6869 >/dev/null 2>&1 &
           PF=$!; sleep 6
 
-          ADDR=$(curl -sf http://127.0.0.1:26869/addresses \
+          ADDR=$(curl -sf -H "X-API-Key: dcc-testnet-commit" http://127.0.0.1:26869/addresses \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           echo "gen-0 address: $ADDR"
 
-          PUBKEY=$(curl -sf "http://127.0.0.1:26869/addresses/publicKey/$ADDR" \
+          PUBKEY=$(curl -sf -H "X-API-Key: dcc-testnet-commit" "http://127.0.0.1:26869/addresses/publicKey/$ADDR" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
           echo "gen-0 pubkey: $PUBKEY"
 
@@ -160,7 +146,7 @@ jobs:
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
             local SIGNED
-            SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://127.0.0.1:26869/transactions/sign \
+            SIGNED=$(echo "$PAYLOAD" | curl -sf -H "X-API-Key: dcc-testnet-commit" -X POST http://127.0.0.1:26869/transactions/sign \
               -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  sign failed for period $PERIOD"; return 1; }
             local RESULT
             RESULT=$(echo "$SIGNED" | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
@@ -186,11 +172,11 @@ jobs:
           kubectl port-forward -n dcc dcc-gen-1-0 26870:6870 >/dev/null 2>&1 &
           PF=$!; sleep 4
 
-          ADDR=$(curl -sf http://127.0.0.1:26870/addresses \
+          ADDR=$(curl -sf -H "X-API-Key: dcc-testnet-commit" http://127.0.0.1:26870/addresses \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
           echo "gen-1 address: $ADDR"
 
-          PUBKEY=$(curl -sf "http://127.0.0.1:26870/addresses/publicKey/$ADDR" \
+          PUBKEY=$(curl -sf -H "X-API-Key: dcc-testnet-commit" "http://127.0.0.1:26870/addresses/publicKey/$ADDR" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
           echo "gen-1 pubkey: $PUBKEY"
 
@@ -210,7 +196,7 @@ jobs:
           print(json.dumps({'type':19,'version':1,'senderPublicKey':'$PUBKEY','generationPeriodStart':$PERIOD}))
             ")
             local SIGNED
-            SIGNED=$(echo "$PAYLOAD" | curl -sf -X POST http://127.0.0.1:26870/transactions/sign \
+            SIGNED=$(echo "$PAYLOAD" | curl -sf -H "X-API-Key: dcc-testnet-commit" -X POST http://127.0.0.1:26870/transactions/sign \
               -H "Content-Type: application/json" -d @- 2>/dev/null) || { echo "  sign failed for period $PERIOD"; return 1; }
             local RESULT
             RESULT=$(echo "$SIGNED" | curl -sf -X POST "$PUBLIC_NODE/transactions/broadcast" \
