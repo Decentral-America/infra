@@ -194,7 +194,7 @@ jobs:
           echo "=== Committing for current period $CURRENT_PERIOD ==="
           commit_period "$CURRENT_PERIOD" || echo "  (current period commit failed — may be too late)"
           echo "=== Committing for next period $NEXT_PERIOD ==="
-          commit_period "$NEXT_PERIOD"
+          commit_period "$NEXT_PERIOD" || echo "  next period commit failed or already done"
 
       # ── 7. Commit gen-1 ───────────────────────────────────────────────────────
       - name: Commit gen-1 (kubectl exec → wget → broadcast)

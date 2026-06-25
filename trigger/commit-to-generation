@@ -1,1 +1,1 @@
-Thu Jun 25 02:58:51 UTC 2026 — re-trigger for gen-1 (gen-0 succeeded, main node done via SSH)
+Thu Jun 25 03:03:23 UTC 2026 — make commit non-fatal (handles already-committed)
