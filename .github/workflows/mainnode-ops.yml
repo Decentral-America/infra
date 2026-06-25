@@ -1,0 +1,71 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Main Node Operations — SSH into the main node VPS and run a named operation.
+#
+# Operations:
+#   status   — show DCC process status + last 50 log lines
+#   restart  — restart the DCC service/container (clears in-memory blacklist)
+#   logs     — tail last 200 log lines
+#   peers    — dump connected peer list via local REST API
+# ──────────────────────────────────────────────────────────────────────────────
+name: Main Node Ops
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operation to run on the main node'
+        required: true
+        type: choice
+        options:
+          - status
+          - restart
+          - logs
+          - peers
+
+permissions:
+  contents: read
+
+jobs:
+  mainnode-op:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Run operation via SSH
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_SSH_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa
+          chmod 600 /tmp/id_rsa
+          SSH="ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${SSH_USER}@${SSH_HOST}"
+
+          case "${{ inputs.operation }}" in
+            status)
+              $SSH 'set -e
+                echo "=== DCC service status ==="
+                systemctl status dcc 2>/dev/null || docker ps --filter name=dcc 2>/dev/null || echo "(no systemd service or docker container named dcc)"
+                echo "=== last 50 log lines ==="
+                journalctl -u dcc -n 50 --no-pager 2>/dev/null || docker logs --tail 50 $(docker ps -q --filter name=dcc) 2>/dev/null || echo "(no logs found)"'
+              ;;
+            restart)
+              $SSH 'set -e
+                echo "=== restarting DCC ==="
+                systemctl restart dcc 2>/dev/null && echo "systemd restart OK" && exit 0
+                # fallback: docker
+                CID=$(docker ps -q --filter name=dcc 2>/dev/null | head -1)
+                if [ -n "$CID" ]; then
+                  docker restart "$CID" && echo "docker restart OK: $CID"
+                else
+                  echo "ERROR: could not find DCC process via systemd or docker"
+                  exit 1
+                fi'
+              ;;
+            logs)
+              $SSH 'journalctl -u dcc -n 200 --no-pager 2>/dev/null || docker logs --tail 200 $(docker ps -q --filter name=dcc) 2>/dev/null || echo "(no logs found)"'
+              ;;
+            peers)
+              $SSH 'curl -sf http://127.0.0.1:6869/peers/connected 2>/dev/null || echo "(REST unavailable — check api-key-hash requirement)"'
+              ;;
+          esac
+          rm -f /tmp/id_rsa
