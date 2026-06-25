@@ -1,1 +1,1 @@
-Thu Jun 25 03:28:51 UTC 2026 — decrypt key directly in each step instead of GITHUB_ENV
+Thu Jun 25 03:34:24 UTC 2026 — remove 2>/dev/null from sops, explicit SOPS_AGE_KEY

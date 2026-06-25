@@ -148,7 +148,8 @@ jobs:
           set -euo pipefail
           POD=dcc-gen-0-0
           PORT=6869
-          GEN_API_KEY=$(/tmp/sops -d secrets/testnet.env 2>/dev/null \
+          ls /tmp/sops || { echo "ERROR: /tmp/sops not found"; exit 1; }
+          GEN_API_KEY=$(SOPS_AGE_KEY="$SOPS_AGE_KEY" /tmp/sops -d secrets/testnet.env \
             | grep '^GEN_0_NODE_REST_API_KEY=' | cut -d= -f2-)
           [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-0 API key not set"; exit 1; }
           echo "gen-0 API key retrieved (length ${#GEN_API_KEY})"
@@ -209,7 +210,8 @@ jobs:
           POD=dcc-gen-1-0
           PORT=6870
           # Decrypt key directly here — avoids GITHUB_ENV transfer issues
-          GEN_API_KEY=$(/tmp/sops -d secrets/testnet.env 2>/dev/null \
+          ls /tmp/sops || { echo "ERROR: /tmp/sops not found"; exit 1; }
+          GEN_API_KEY=$(SOPS_AGE_KEY="$SOPS_AGE_KEY" /tmp/sops -d secrets/testnet.env \
             | grep '^GEN_1_NODE_REST_API_KEY=' | cut -d= -f2-)
           [ -z "${GEN_API_KEY:-}" ] && { echo "ERROR: gen-1 API key not set"; exit 1; }
           echo "gen-1 API key retrieved (length ${#GEN_API_KEY})"
