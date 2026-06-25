@@ -15,6 +15,10 @@ on:
         required: false
         default: false
         type: boolean
+  push:
+    branches: [main]
+    paths:
+      - 'trigger/commit-to-generation'
 
 permissions:
   contents: read
