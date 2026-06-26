@@ -124,22 +124,20 @@ jobs:
                   docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
               patch-period-length-and-restart)
-                # Sets generation-period-length = 1000 on the main node config.
-                # The config is at /opt/dcc/config/node-testnet/dcc.conf on the host.
+                # Restores generation-period-length = 100 on the main node config
+                # (reverts the earlier 1000-block hack back to production value).
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
-                  # Try host path first (known deployment location)
                   HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
                   if [ -f "$HOST_CONF" ]; then
-                    echo "Patching $HOST_CONF..."
-                    sed -i "s/generation-period-length = 100/generation-period-length = 1000/g" "$HOST_CONF"
+                    echo "Patching $HOST_CONF (1000 → 100)..."
+                    sed -i "s/generation-period-length = 1000/generation-period-length = 100/g" "$HOST_CONF"
                     grep "generation-period-length" "$HOST_CONF"
                   else
-                    # Fallback: find via docker inspect
                     CONFIG_DIR=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)
                     if [ -n "$CONFIG_DIR" ]; then
-                      sed -i "s/generation-period-length = 100/generation-period-length = 1000/g" "$CONFIG_DIR/dcc.conf"
+                      sed -i "s/generation-period-length = 1000/generation-period-length = 100/g" "$CONFIG_DIR/dcc.conf"
                       grep "generation-period-length" "$CONFIG_DIR/dcc.conf"
                     else
                       echo "ERROR: could not find config on host"
