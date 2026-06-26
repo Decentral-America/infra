@@ -111,6 +111,9 @@ data:
         synchronization-timeout = 5m
         max-rollback = 2000
         score-ttl = 90s
+        invalid-blocks-storage {
+          timeout = 1m
+        }
       }
       hotstuff {
         enabled = true
@@ -210,6 +213,9 @@ data:
         synchronization-timeout = 5m
         max-rollback = 2000
         score-ttl = 90s
+        invalid-blocks-storage {
+          timeout = 1m
+        }
       }
       hotstuff {
         enabled = true
@@ -309,6 +315,9 @@ data:
         synchronization-timeout = 5m
         max-rollback = 2000
         score-ttl = 90s
+        invalid-blocks-storage {
+          timeout = 1m
+        }
       }
     }
 

@@ -130,6 +130,27 @@ jobs:
                   grep -A3 "miner {" "$HOST_CONF" | head -5 || true
                   docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
+              debug-peer-restart)
+                # Restart with TRACE logging for P2P sync to capture exact validation error
+                # when main node rejects gen-0 blocks causing peer suspension.
+                # Check logs within 60 seconds with: mainnode-ops logs
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  echo "Wiping peers.dat..."
+                  docker exec "$CID" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || true
+                  echo "Restarting with TRACE logging..."
+                  docker stop "$CID" 2>/dev/null
+                  docker run -d --name "$CID" \
+                    $(docker inspect "$CID" 2>/dev/null | python3 -c "
+import sys,json
+d=json.load(sys.stdin)[0]
+print(\" \".join(\"--env \" + k + \"=\" + v for k,v in d[\"Config\"][\"Env\"] if k and v and k != \"DCC_LOG_LEVEL\"))
+" 2>/dev/null || true) \
+                    --env DCC_LOG_LEVEL=TRACE \
+                    2>/dev/null || echo "(complex restart failed — using simple)"
+                  docker start "$CID" 2>/dev/null && echo "OK - TRACE logging enabled"'
+                ;;
               restore-genesis-config-and-restart)
                 # Restores initial-base-target = 218 (genesis-signed value — immutable)
                 # Use when fix-genesis-config-and-restart incorrectly set 272
