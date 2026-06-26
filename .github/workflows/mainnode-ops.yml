@@ -98,6 +98,8 @@ jobs:
                   docker restart "$NAME" && echo "OK"'
                 ;;
               disable-miner-and-restart)
+                # Only disables the miner section — NOT rest-api or other sections.
+                # Uses awk to find the miner block and replace enable = yes within it only.
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
@@ -105,9 +107,12 @@ jobs:
                   if [ ! -f "$HOST_CONF" ]; then
                     HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
                   fi
-                  echo "Disabling miner in $HOST_CONF..."
-                  sed -i "s/enable = yes/enable = no/g" "$HOST_CONF" && echo "patched"
+                  echo "Disabling ONLY miner in $HOST_CONF (awk targeted patch)..."
+                  awk "/miner \{/{in_miner=1} in_miner && /enable = yes/{sub(/enable = yes/, \"enable = no\"); in_miner=0} /\}/{in_miner=0} {print}" \
+                    "$HOST_CONF" > /tmp/dcc_m.conf && mv /tmp/dcc_m.conf "$HOST_CONF" && echo "PATCHED"
                   grep -A3 "miner {" "$HOST_CONF" | head -5 || true
+                  echo "rest-api section (should still be enabled):"
+                  grep -A3 "rest-api {" "$HOST_CONF" | head -5 || true
                   docker restart "$CID" && echo "OK - miner disabled"'
                 ;;
               enable-miner-and-restart)
