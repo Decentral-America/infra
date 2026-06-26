@@ -126,16 +126,25 @@ jobs:
               wget -qO- --timeout=8 "http://127.0.0.1:6870/blocks/height" 2>/dev/null \
               | python3 -c "import sys,json; print(json.load(sys.stdin).get('height',0))" 2>/dev/null || echo 0)
 
-            # Minimum height across all nodes, minus 5 (propagation buffer)
-            MIN_H=$(python3 -c "print(min(int('$H_MAIN'or 0),int('$H_GEN0'or 0),int('$H_GEN1'or 0))-5)")
-            echo "[$ATTEMPTS/$MAX] heights: main=$H_MAIN gen0=$H_GEN0 gen1=$H_GEN1 checking_at=$MIN_H"
+            # Use only ACTIVE nodes (height > 5) for convergence check.
+            # Nodes with miner disabled don't sync blocks (DCC requires miner on to sync).
+            # Only check main node and gen-0 — the two active miners.
+            # gen-1 (miner disabled) is excluded; it will sync after gen-1 miner is re-enabled.
+            MIN_H=$(python3 -c "
+h_main=int('$H_MAIN' or 0)
+h_gen0=int('$H_GEN0' or 0)
+# Only use nodes that have actually synced (height > 5)
+active = [h for h in [h_main, h_gen0] if h > 5]
+print(min(active) - 5 if active else -1)
+")
+            echo "[$ATTEMPTS/$MAX] heights: main=$H_MAIN gen0=$H_GEN0 gen1=$H_GEN1 (checking main+gen0 only) at=$MIN_H"
 
             if [ "${MIN_H:-0}" -lt 1 ] 2>/dev/null; then
               echo "  (not enough blocks yet, waiting...)"
               sleep 30; continue
             fi
 
-            # Check all nodes agree on block at MIN_H (shared ancestor)
+            # Check main node and gen-0 agree on block at MIN_H (shared ancestor)
             MAIN_BLK=$(curl -sf --max-time 10 "$PUBLIC_NODE/blocks/headers/$MIN_H" \
               | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
             GEN0_BLK=$(kubectl exec -n dcc dcc-gen-0-0 -- \
@@ -147,8 +156,8 @@ jobs:
 
             echo "  block@$MIN_H: main=${MAIN_BLK:0:12} gen0=${GEN0_BLK:0:12} gen1=${GEN1_BLK:0:12}"
 
-            if [ -n "$MAIN_BLK" ] && [ "$MAIN_BLK" = "$GEN0_BLK" ] && [ "$MAIN_BLK" = "$GEN1_BLK" ]; then
-              echo "✅ All nodes share ancestor block at height $MIN_H (main=$H_MAIN gen0=$H_GEN0 gen1=$H_GEN1)"
+            if [ -n "$MAIN_BLK" ] && [ "$MAIN_BLK" = "$GEN0_BLK" ]; then
+              echo "✅ Main node and gen-0 share ancestor at height $MIN_H (main=$H_MAIN gen0=$H_GEN0 gen1=$H_GEN1)"
               break
             fi
 
