@@ -1,11 +1,11 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Main Node Operations — SSH into the main node VPS and run a named operation.
+# Main Node Operations - SSH into the main node VPS and run a named operation.
 #
 # Operations:
-#   status   — show DCC process status + last 50 log lines
-#   restart  — restart the DCC service/container (clears in-memory blacklist)
-#   logs     — tail last 200 log lines
-#   peers    — dump connected peer list via local REST API
+#   status   - show DCC process status + last 50 log lines
+#   restart  - restart the DCC service/container (clears in-memory blacklist)
+#   logs     - tail last 200 log lines
+#   peers    - dump connected peer list via local REST API
 # ──────────────────────────────────────────────────────────────────────────────
 name: Main Node Ops
 
@@ -94,13 +94,13 @@ jobs:
                   docker kill "$CID" 2>/dev/null || true
                   sleep 2
                   echo "Wiping peers.dat..."
-                  docker run --rm -v "$(docker inspect $NAME --format "{{range .Mounts}}{{if eq .Destination \"/var/lib/dcc\"}}{{.Source}}{{end}}{{end}}")":/data alpine sh -c "rm -f /data/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat wipe via volume failed — trying start+exec+restart)"
+                  docker run --rm -v "$(docker inspect $NAME --format "{{range .Mounts}}{{if eq .Destination \"/var/lib/dcc\"}}{{.Source}}{{end}}{{end}}")":/data alpine sh -c "rm -f /data/peers.dat && echo WIPED" 2>/dev/null || echo "(peers.dat wipe via volume failed - trying start+exec+restart)"
                   docker start "$NAME" 2>/dev/null && sleep 2
                   docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED-LIVE" 2>/dev/null || echo "(live wipe failed)"
                   docker restart "$NAME" && echo "OK"'
                 ;;
               disable-miner-and-restart)
-                # Only disables the miner section — NOT rest-api or other sections.
+                # Only disables the miner section - NOT rest-api or other sections.
                 # Uses awk to find the miner block and replace enable = yes within it only.
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
@@ -148,11 +148,11 @@ d=json.load(sys.stdin)[0]
 print(\" \".join(\"--env \" + k + \"=\" + v for k,v in d[\"Config\"][\"Env\"] if k and v and k != \"DCC_LOG_LEVEL\"))
 " 2>/dev/null || true) \
                     --env DCC_LOG_LEVEL=TRACE \
-                    2>/dev/null || echo "(complex restart failed — using simple)"
+                    2>/dev/null || echo "(complex restart failed - using simple)"
                   docker start "$CID" 2>/dev/null && echo "OK - TRACE logging enabled"'
                 ;;
               restore-genesis-config-and-restart)
-                # Restores initial-base-target = 218 (genesis-signed value — immutable)
+                # Restores initial-base-target = 218 (genesis-signed value - immutable)
                 # Use when fix-genesis-config-and-restart incorrectly set 272
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
@@ -185,7 +185,7 @@ print(\" \".join(\"--env \" + k + \"=\" + v for k,v in d[\"Config\"][\"Env\"] if
                 ;;
               patch-period-length-and-restart)
                 # Restores generation-period-length = 100.
-                # Writes a patch script to /tmp and runs it — avoids shell quoting issues.
+                # Writes a patch script to /tmp and runs it - avoids shell quoting issues.
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
