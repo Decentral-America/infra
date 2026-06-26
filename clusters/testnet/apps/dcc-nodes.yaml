@@ -63,7 +63,7 @@ data:
           }
           genesis {
             average-block-delay = 30s
-            initial-base-target = 272
+            initial-base-target = 218
             timestamp = 1782273507414
             block-timestamp = 1782273507414
             signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
@@ -162,7 +162,7 @@ data:
           }
           genesis {
             average-block-delay = 30s
-            initial-base-target = 272
+            initial-base-target = 218
             timestamp = 1782273507414
             block-timestamp = 1782273507414
             signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
@@ -261,7 +261,7 @@ data:
           }
           genesis {
             average-block-delay = 30s
-            initial-base-target = 272
+            initial-base-target = 218
             timestamp = 1782273507414
             block-timestamp = 1782273507414
             signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
