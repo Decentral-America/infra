@@ -90,34 +90,56 @@ jobs:
           sleep 10
           kubectl scale statefulset dcc-gen-0 dcc-gen-1 dcc-val-0 --replicas=1 -n dcc
 
-      # ── 4. Rolling restart to pick up updated ConfigMap and image ─────────────
-      - name: Rolling restart gen-0 and gen-1
+      # ── 4. Wait for chain convergence ────────────────────────────────────────
+      # Root cause of CommitToGeneration TX divergence: the TX lands in different
+      # blocks on competing chains, creating different state hashes that prevent
+      # chain switches (feature 21 validates state hashes). The fix: only submit
+      # CommitToGenerationTransaction AFTER all nodes are on the SAME chain
+      # (identical last block ID). This is the correct mainnet behaviour — validators
+      # on a well-connected network converge before the period boundary.
+      #
+      # NOTE: the rolling restart step was removed. It caused gen nodes to fork
+      # from the main node's chain. ConfigMap changes are picked up on the next
+      # natural restart via Flux.
+      - name: Wait for chain convergence (all nodes same last block ID)
+        timeout-minutes: 30
         run: |
-          kubectl rollout restart statefulset/dcc-gen-0 statefulset/dcc-gen-1 -n dcc || true
-          echo "Rollout restart issued — waiting for pods to cycle..."
+          set +e
+          PUBLIC_NODE="https://testnet-node.decentralchain.io"
+          ATTEMPTS=0
+          MAX=60  # 30 min at 30s intervals
 
-      # ── 5. Wait for both gen pods to be READY on the NEW image ───────────────
-      - name: Wait for gen pods — new image AND readiness probe passing
-        run: |
-          for POD in dcc-gen-0-0 dcc-gen-1-0; do
-            echo "--- Waiting for $POD ---"
-            for i in $(seq 1 60); do
-              sleep 10
-              IMAGE=$(kubectl get pod "$POD" -n dcc \
-                -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "unknown")
-              READY=$(kubectl get pod "$POD" -n dcc \
-                -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
-              STATE=$(kubectl get pod "$POD" -n dcc \
-                -o jsonpath='{.status.containerStatuses[0].state}' 2>/dev/null || echo "{}")
-              echo "  $i: image=$(basename $IMAGE) ready=$READY state=$STATE"
-              if [[ "$IMAGE" == *"node-scala-testnet-latest"* && "$READY" == "true" ]]; then
-                echo "✅ $POD is ready on the new image"
-                break
-              fi
-              if [ "$i" -eq 60 ]; then
-                echo "⚠️ $POD not ready after 10 minutes — proceeding anyway"
-              fi
-            done
+          while [ $ATTEMPTS -lt $MAX ]; do
+            ATTEMPTS=$((ATTEMPTS + 1))
+
+            # Main node last block ID
+            MAIN_ID=$(curl -sf --max-time 10 "$PUBLIC_NODE/blocks/headers/last" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+
+            # Gen-0 last block ID (via kubectl exec)
+            GEN0_ID=$(kubectl exec -n dcc dcc-gen-0-0 -- \
+              wget -qO- --timeout=8 "http://127.0.0.1:6869/blocks/headers/last" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+
+            # Gen-1 last block ID
+            GEN1_ID=$(kubectl exec -n dcc dcc-gen-1-0 -- \
+              wget -qO- --timeout=8 "http://127.0.0.1:6870/blocks/headers/last" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+
+            echo "[$ATTEMPTS/$MAX] main=$MAIN_ID gen0=$GEN0_ID gen1=$GEN1_ID"
+
+            if [ -n "$MAIN_ID" ] && [ "$MAIN_ID" = "$GEN0_ID" ] && [ "$MAIN_ID" = "$GEN1_ID" ]; then
+              echo "✅ All nodes converged on block $MAIN_ID"
+              break
+            fi
+
+            if [ $ATTEMPTS -ge $MAX ]; then
+              echo "❌ Convergence timeout after 30 minutes. Aborting — do not submit TXs on divergent chains."
+              echo "   main=$MAIN_ID gen0=$GEN0_ID gen1=$GEN1_ID"
+              exit 1
+            fi
+
+            sleep 30
           done
 
       # ── 6. Commit gen-0 via kubectl exec + wget (no port-forward) ────────────
