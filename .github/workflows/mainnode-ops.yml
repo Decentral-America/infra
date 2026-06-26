@@ -100,9 +100,18 @@ jobs:
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
-                  echo "Disabling miner in $CID config..."
-                  docker exec "$CID" sh -c "sed -i \"s/enable = yes/enable = no/\" /etc/dcc/dcc.conf && echo PATCHED" 2>/dev/null || echo "(sed failed)"
-                  docker exec "$CID" grep "enable" /etc/dcc/dcc.conf 2>/dev/null | grep -i "miner" -A1 | head -5 || true
+                  echo "Finding host config path for $CID..."
+                  CONFIG_DIR=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)
+                  if [ -z "$CONFIG_DIR" ]; then
+                    echo "No /etc/dcc volume mount found. Trying docker cp approach..."
+                    docker cp "$CID:/etc/dcc/dcc.conf" /tmp/dcc_host.conf
+                    sed -i "s/enable = yes/enable = no/g" /tmp/dcc_host.conf && echo "patched"
+                    docker cp /tmp/dcc_host.conf "$CID:/etc/dcc/dcc.conf"
+                  else
+                    echo "Host config dir: $CONFIG_DIR"
+                    sed -i "s/enable = yes/enable = no/g" "$CONFIG_DIR/dcc.conf" && echo "patched"
+                    grep -A3 "miner {" "$CONFIG_DIR/dcc.conf" | head -5
+                  fi
                   docker restart "$CID" && echo "OK - miner disabled"'
                 ;;
               enable-miner-and-restart)
