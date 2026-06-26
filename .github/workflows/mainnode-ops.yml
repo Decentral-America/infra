@@ -124,8 +124,8 @@ jobs:
                   docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
               patch-period-length-and-restart)
-                # Restores generation-period-length = 100 on the main node config.
-                # Uses Python (immune to whitespace differences) to find and replace.
+                # Restores generation-period-length = 100.
+                # Writes a patch script to /tmp and runs it — avoids shell quoting issues.
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
@@ -133,15 +133,13 @@ jobs:
                   if [ ! -f "$HOST_CONF" ]; then
                     HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
                   fi
-                  echo "Patching $HOST_CONF via Python..."
-                  python3 -c "
-import re, sys
-path = sys.argv[1]
-c = open(path).read()
-c2 = re.sub(r\"generation-period-length\s*=\s*\d+\", \"generation-period-length = 100\", c)
-open(path, \"w\").write(c2)
-print(\"PATCHED:\", [l for l in c2.splitlines() if \"generation-period-length\" in l])
-" "$HOST_CONF"
+                  echo "Patching $HOST_CONF..."
+                  grep "generation-period-length" "$HOST_CONF" || echo "(not found)"
+                  # Use awk to replace any generation-period-length value with 100
+                  awk "{gsub(/generation-period-length *= *[0-9]+/, \"generation-period-length = 100\"); print}" \
+                    "$HOST_CONF" > /tmp/dcc_patched.conf && \
+                    mv /tmp/dcc_patched.conf "$HOST_CONF" && echo "PATCHED"
+                  grep "generation-period-length" "$HOST_CONF"
                       exit 1
                     fi
                   fi
