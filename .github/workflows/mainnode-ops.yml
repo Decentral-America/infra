@@ -124,23 +124,24 @@ jobs:
                   docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
               patch-period-length-and-restart)
-                # Restores generation-period-length = 100 on the main node config
-                # (reverts the earlier 1000-block hack back to production value).
+                # Restores generation-period-length = 100 on the main node config.
+                # Uses Python (immune to whitespace differences) to find and replace.
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
                   HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
-                  if [ -f "$HOST_CONF" ]; then
-                    echo "Patching $HOST_CONF (1000 → 100)..."
-                    sed -i "s/generation-period-length = 1000/generation-period-length = 100/g" "$HOST_CONF"
-                    grep "generation-period-length" "$HOST_CONF"
-                  else
-                    CONFIG_DIR=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)
-                    if [ -n "$CONFIG_DIR" ]; then
-                      sed -i "s/generation-period-length = 1000/generation-period-length = 100/g" "$CONFIG_DIR/dcc.conf"
-                      grep "generation-period-length" "$CONFIG_DIR/dcc.conf"
-                    else
-                      echo "ERROR: could not find config on host"
+                  if [ ! -f "$HOST_CONF" ]; then
+                    HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
+                  fi
+                  echo "Patching $HOST_CONF via Python..."
+                  python3 -c "
+import re, sys
+path = sys.argv[1]
+c = open(path).read()
+c2 = re.sub(r\"generation-period-length\s*=\s*\d+\", \"generation-period-length = 100\", c)
+open(path, \"w\").write(c2)
+print(\"PATCHED:\", [l for l in c2.splitlines() if \"generation-period-length\" in l])
+" "$HOST_CONF"
                       exit 1
                     fi
                   fi
