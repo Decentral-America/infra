@@ -27,6 +27,7 @@ on:
           - fix-genesis-config-and-restart
           - restore-genesis-config-and-restart
           - debug-peer-restart
+          - patch-invalid-blocks-timeout-and-restart
           - enable-miner-and-restart
           - connect-to-gen-nodes
           - logs
@@ -179,6 +180,27 @@ jobs:
                   awk "{gsub(/initial-base-target *= *[0-9]+/, \"initial-base-target = 272\"); gsub(/generation-period-length *= *[0-9]+/, \"generation-period-length = 100\"); print}" \
                     "$HOST_CONF" > /tmp/dcc_fixed.conf && mv /tmp/dcc_fixed.conf "$HOST_CONF" && echo "PATCHED"
                   grep -E "initial-base-target|generation-period-length" "$HOST_CONF"
+                  docker restart "$CID" && echo "OK"'
+                ;;
+              patch-invalid-blocks-timeout-and-restart)
+                # Reduces invalid-blocks-storage.timeout from 1h default to 1m.
+                # Prevents persistent peer blacklisting after a single failed block validation.
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
+                  if [ ! -f "$HOST_CONF" ]; then
+                    HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
+                  fi
+                  echo "Current synchronization section:"
+                  grep -A6 "synchronization {" "$HOST_CONF" | head -8
+                  echo "Patching invalid-blocks-storage timeout..."
+                  if grep -q "invalid-blocks-storage" "$HOST_CONF"; then
+                    awk "{gsub(/timeout *= *[0-9]+[a-z]*/, \"timeout = 1m\"); print}" "$HOST_CONF" > /tmp/dcc_patched.conf && mv /tmp/dcc_patched.conf "$HOST_CONF" && echo "PATCHED (existing)"
+                  else
+                    awk "/synchronization \{/{print; print \"    invalid-blocks-storage {\"; print \"      timeout = 1m\"; print \"    }\"; next} {print}" "$HOST_CONF" > /tmp/dcc_patched.conf && mv /tmp/dcc_patched.conf "$HOST_CONF" && echo "PATCHED (added)"
+                  fi
+                  grep -A8 "synchronization {" "$HOST_CONF" | head -10
                   docker restart "$CID" && echo "OK"'
                 ;;
               patch-period-length-and-restart)
