@@ -25,6 +25,7 @@ on:
           - disable-miner-and-restart
           - patch-period-length-and-restart
           - fix-genesis-config-and-restart
+          - restore-genesis-config-and-restart
           - enable-miner-and-restart
           - connect-to-gen-nodes
           - logs
@@ -128,6 +129,22 @@ jobs:
                   sed -i "s/enable = no/enable = yes/g" "$HOST_CONF" && echo "patched"
                   grep -A3 "miner {" "$HOST_CONF" | head -5 || true
                   docker restart "$CID" && echo "OK - miner enabled"'
+                ;;
+              restore-genesis-config-and-restart)
+                # Restores initial-base-target = 218 (genesis-signed value — immutable)
+                # Use when fix-genesis-config-and-restart incorrectly set 272
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
+                  if [ ! -f "$HOST_CONF" ]; then
+                    HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
+                  fi
+                  echo "Restoring genesis values in $HOST_CONF..."
+                  awk "{gsub(/initial-base-target *= *[0-9]+/, \"initial-base-target = 218\"); print}" \
+                    "$HOST_CONF" > /tmp/dcc_restored.conf && mv /tmp/dcc_restored.conf "$HOST_CONF" && echo "RESTORED"
+                  grep "initial-base-target" "$HOST_CONF"
+                  docker restart "$CID" && echo "OK"'
                 ;;
               fix-genesis-config-and-restart)
                 # Applies all genesis config fixes: initial-base-target=272, generation-period-length=100
