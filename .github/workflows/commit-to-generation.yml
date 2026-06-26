@@ -101,41 +101,59 @@ jobs:
       # NOTE: the rolling restart step was removed. It caused gen nodes to fork
       # from the main node's chain. ConfigMap changes are picked up on the next
       # natural restart via Flux.
-      - name: Wait for chain convergence (all nodes same last block ID)
+      - name: Wait for chain convergence (shared ancestor block)
         timeout-minutes: 30
         run: |
           set +e
           PUBLIC_NODE="https://testnet-node.decentralchain.io"
           ATTEMPTS=0
           MAX=60  # 30 min at 30s intervals
+          # Check convergence at (min_height - 5) rather than current tip.
+          # P2P latency means nodes are always 1-3 blocks apart at the tip even on
+          # the same chain. Checking a shared ancestor 5 blocks back confirms they're
+          # on the same canonical chain without requiring tip synchronization.
 
           while [ $ATTEMPTS -lt $MAX ]; do
             ATTEMPTS=$((ATTEMPTS + 1))
 
-            # Main node last block ID
-            MAIN_ID=$(curl -sf --max-time 10 "$PUBLIC_NODE/blocks/headers/last" \
+            # Get current heights
+            H_MAIN=$(curl -sf --max-time 10 "$PUBLIC_NODE/blocks/height" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('height',0))" 2>/dev/null || echo 0)
+            H_GEN0=$(kubectl exec -n dcc dcc-gen-0-0 -- \
+              wget -qO- --timeout=8 "http://127.0.0.1:6869/blocks/height" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('height',0))" 2>/dev/null || echo 0)
+            H_GEN1=$(kubectl exec -n dcc dcc-gen-1-0 -- \
+              wget -qO- --timeout=8 "http://127.0.0.1:6870/blocks/height" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('height',0))" 2>/dev/null || echo 0)
+
+            # Minimum height across all nodes, minus 5 (propagation buffer)
+            MIN_H=$(python3 -c "print(min(int('$H_MAIN'or 0),int('$H_GEN0'or 0),int('$H_GEN1'or 0))-5)")
+            echo "[$ATTEMPTS/$MAX] heights: main=$H_MAIN gen0=$H_GEN0 gen1=$H_GEN1 checking_at=$MIN_H"
+
+            if [ "${MIN_H:-0}" -lt 1 ] 2>/dev/null; then
+              echo "  (not enough blocks yet, waiting...)"
+              sleep 30; continue
+            fi
+
+            # Check all nodes agree on block at MIN_H (shared ancestor)
+            MAIN_BLK=$(curl -sf --max-time 10 "$PUBLIC_NODE/blocks/headers/$MIN_H" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+            GEN0_BLK=$(kubectl exec -n dcc dcc-gen-0-0 -- \
+              wget -qO- --timeout=8 "http://127.0.0.1:6869/blocks/headers/$MIN_H" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+            GEN1_BLK=$(kubectl exec -n dcc dcc-gen-1-0 -- \
+              wget -qO- --timeout=8 "http://127.0.0.1:6870/blocks/headers/$MIN_H" 2>/dev/null \
               | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
 
-            # Gen-0 last block ID (via kubectl exec)
-            GEN0_ID=$(kubectl exec -n dcc dcc-gen-0-0 -- \
-              wget -qO- --timeout=8 "http://127.0.0.1:6869/blocks/headers/last" 2>/dev/null \
-              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+            echo "  block@$MIN_H: main=${MAIN_BLK:0:12} gen0=${GEN0_BLK:0:12} gen1=${GEN1_BLK:0:12}"
 
-            # Gen-1 last block ID
-            GEN1_ID=$(kubectl exec -n dcc dcc-gen-1-0 -- \
-              wget -qO- --timeout=8 "http://127.0.0.1:6870/blocks/headers/last" 2>/dev/null \
-              | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
-
-            echo "[$ATTEMPTS/$MAX] main=$MAIN_ID gen0=$GEN0_ID gen1=$GEN1_ID"
-
-            if [ -n "$MAIN_ID" ] && [ "$MAIN_ID" = "$GEN0_ID" ] && [ "$MAIN_ID" = "$GEN1_ID" ]; then
-              echo "✅ All nodes converged on block $MAIN_ID"
+            if [ -n "$MAIN_BLK" ] && [ "$MAIN_BLK" = "$GEN0_BLK" ] && [ "$MAIN_BLK" = "$GEN1_BLK" ]; then
+              echo "✅ All nodes share ancestor block at height $MIN_H (main=$H_MAIN gen0=$H_GEN0 gen1=$H_GEN1)"
               break
             fi
 
             if [ $ATTEMPTS -ge $MAX ]; then
-              echo "❌ Convergence timeout after 30 minutes. Aborting — do not submit TXs on divergent chains."
-              echo "   main=$MAIN_ID gen0=$GEN0_ID gen1=$GEN1_ID"
+              echo "❌ Convergence timeout — chains still divergent. Aborting TX submission."
               exit 1
             fi
 
