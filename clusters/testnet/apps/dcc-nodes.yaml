@@ -195,7 +195,7 @@ data:
       }
 
       miner {
-        enable = yes
+        enable = no
         quorum = 0
         micro-block-interval = 2s
       }
