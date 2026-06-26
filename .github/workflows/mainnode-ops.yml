@@ -23,6 +23,7 @@ on:
           - wipe-chain-and-restart
           - disable-microblocks-and-restart
           - disable-miner-and-restart
+          - patch-period-length-and-restart
           - enable-miner-and-restart
           - connect-to-gen-nodes
           - logs
@@ -122,6 +123,25 @@ jobs:
                   docker exec "$CID" sh -c "awk \"/miner \{/{f=1} f && /enable = no/{sub(/enable = no/,\"enable = yes\"); f=0} {print}\" /etc/dcc/dcc.conf > /tmp/dcc_patched.conf && mv /tmp/dcc_patched.conf /etc/dcc/dcc.conf && echo PATCHED" 2>/dev/null || echo "(awk patch failed)"
                   docker exec "$CID" grep -A3 "miner {" /etc/dcc/dcc.conf 2>/dev/null | head -8 || true
                   docker restart "$CID" && echo "OK - miner enabled"'
+                ;;
+              patch-period-length-and-restart)
+                # Sets generation-period-length = 1000 on the main node config
+                # 1000-block periods let all validators mine freely without
+                # CommitToGeneration TXs for the entire first period, eliminating
+                # state-hash divergence from TX-inclusion timing differences
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  CONFIG_DIR=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)
+                  if [ -z "$CONFIG_DIR" ]; then
+                    docker cp "$CID:/etc/dcc/dcc.conf" /tmp/dcc_host.conf
+                    sed -i "s/generation-period-length = 100/generation-period-length = 1000/g" /tmp/dcc_host.conf && echo "patched"
+                    docker cp /tmp/dcc_host.conf "$CID:/etc/dcc/dcc.conf"
+                  else
+                    sed -i "s/generation-period-length = 100/generation-period-length = 1000/g" "$CONFIG_DIR/dcc.conf" && echo "patched"
+                    grep "generation-period-length" "$CONFIG_DIR/dcc.conf"
+                  fi
+                  docker restart "$CID" && echo "OK - period length patched to 1000"'
                 ;;
               disable-microblocks-and-restart)
                 # Sets micro-block-interval = 0 in the miner section of dcc.conf

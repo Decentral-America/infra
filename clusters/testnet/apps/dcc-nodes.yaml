@@ -52,7 +52,7 @@ data:
             min-asset-info-update-interval = 5
             min-block-time = 5s
             delay-delta = 8
-            generation-period-length = 100
+            generation-period-length = 1000
           }
           rewards {
             term = 100000
@@ -151,7 +151,7 @@ data:
             min-asset-info-update-interval = 5
             min-block-time = 5s
             delay-delta = 8
-            generation-period-length = 100
+            generation-period-length = 1000
           }
           rewards {
             term = 100000
@@ -253,7 +253,7 @@ data:
             min-asset-info-update-interval = 5
             min-block-time = 5s
             delay-delta = 8
-            generation-period-length = 100
+            generation-period-length = 1000
           }
           rewards {
             term = 100000
