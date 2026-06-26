@@ -132,20 +132,22 @@ jobs:
                   docker restart "$CID" && echo "OK - miner enabled"'
                 ;;
               debug-peer-restart)
-                # Wipe peers.dat, force peer connect, then capture TRACE logs within 90s
+                # Wipe chain + peers, force connections, capture docker stdout WARN logs.
+                # The ExensionAppender WARN at line 87 shows the EXACT block validation error.
                 $SSH 'set -e
                   CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
                   if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
-                  docker exec "$CID" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || echo "(wipe failed)"
-                  docker restart "$CID" && sleep 10
+                  echo "Wiping chain data + peers.dat..."
+                  docker exec "$CID" sh -c "rm -rf /var/lib/dcc/data /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || true
+                  docker restart "$CID" && sleep 15
                   echo "Forcing peer connections..."
                   curl -sf -X POST http://localhost:6869/peers/connect -H "Content-Type: application/json" -d "{\"host\":\"172.105.64.89\",\"port\":6863}" 2>/dev/null || true
                   curl -sf -X POST http://localhost:6869/peers/connect -H "Content-Type: application/json" -d "{\"host\":\"172.105.64.89\",\"port\":6864}" 2>/dev/null || true
-                  sleep 90
-                  echo "=== TRACE log (last 100 lines, peer/hash/blacklist) ==="
-                  docker exec "$CID" sh -c "find /tmp -name \"*.log\" 2>/dev/null | head -3 | xargs ls -la 2>/dev/null || echo no-log-files"
-                  docker exec "$CID" sh -c "ls /tmp/*.log 2>/dev/null | xargs -I{} tail -200 {} 2>/dev/null" | \
-                    grep -iE "blacklist|invalid.*hash|stateHash|error.*block|hash.*mismatch|extension.*error|score.*mismatch|channel.*close|warn|error" | tail -30 || echo "(no matching trace lines)"'
+                  sleep 120
+                  echo "=== Docker stdout logs (last 3 min) - looking for exact block error ==="
+                  docker logs --since 3m "$CID" 2>&1 | \
+                    grep -iE "blacklist|invalid|error|warn|extension|fork|hash|appending|declined|signature" | \
+                    grep -iv "kamon\|REST\|gRPC\|HTTP\|score.*chan\|utx" | tail -40'
                 ;;
               restore-genesis-config-and-restart)
                 # Restores initial-base-target = 218 (genesis-signed value - immutable)
