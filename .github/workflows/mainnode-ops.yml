@@ -24,6 +24,7 @@ on:
           - disable-microblocks-and-restart
           - disable-miner-and-restart
           - patch-period-length-and-restart
+          - patch-feature21-and-restart
           - enable-miner-and-restart
           - connect-to-gen-nodes
           - logs
@@ -122,6 +123,22 @@ jobs:
                   sed -i "s/enable = no/enable = yes/g" "$HOST_CONF" && echo "patched"
                   grep -A3 "miner {" "$HOST_CONF" | head -5 || true
                   docker restart "$CID" && echo "OK - miner enabled"'
+                ;;
+              patch-feature21-and-restart)
+                # Disables feature 21 (state hash validation) on the main node.
+                # Feature 21 causes chain-switch failures when CommitToGeneration TXs
+                # land in different blocks on competing chains (state hash diverges).
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
+                  if [ ! -f "$HOST_CONF" ]; then
+                    HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
+                  fi
+                  echo "Disabling feature 21 in $HOST_CONF..."
+                  sed -i "s/21 = 0/21 = 9999999/g" "$HOST_CONF" && echo "patched"
+                  grep "21 =" "$HOST_CONF"
+                  docker restart "$CID" && echo "OK - feature 21 disabled"'
                 ;;
               patch-period-length-and-restart)
                 # Sets generation-period-length = 1000 on the main node config.
