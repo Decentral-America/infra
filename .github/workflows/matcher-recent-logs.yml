@@ -20,8 +20,11 @@ jobs:
             'set +e
              echo "=== Matcher status ==="
              docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher
-             echo "=== Config ==="
-             cat /opt/dcc/data/matcher-testnet/config/application.conf 2>/dev/null
-             echo "=== Last 30 matcher logs (raw, no filter) ==="
-             docker logs matcher-testnet --tail=30 2>&1 | grep -v "class path\|at java\|at scala\|at io\|at org\|at com\|at net" | tail -20'
+             echo "=== Config dir ==="
+             ls -la /opt/dcc/data/matcher-testnet/config/ 2>/dev/null
+             cat /opt/dcc/data/matcher-testnet/config/local.conf 2>/dev/null
+             echo "=== First 40 lines of latest run (since 13:30) ==="
+             docker logs matcher-testnet --since 2026-06-27T13:30:00Z 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|DEBUG.*pekko" | head -40
+             echo "=== Last 10 lines of latest run ==="
+             docker logs matcher-testnet --since 2026-06-27T13:30:00Z 2>&1 | tail -10'
           rm -f /tmp/id_rsa
