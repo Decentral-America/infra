@@ -42,65 +42,79 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set -e
+            'set +e
              API_KEY="***REDACTED_MAIN_API_KEY***="
              ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
              echo "=== Signing CommitToGeneration for main node ==="
-             SIGNED=$(curl -sf -X POST http://localhost:6869/transactions/sign \
+             SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
                -H "X-API-Key: $API_KEY" \
                -H "Content-Type: application/json" \
                -d "{\"type\":19,\"sender\":\"$ADDR\"}")
-             echo "Signed: $SIGNED" | head -c 200
+             echo "Signed response: $SIGNED" | head -c 300
              echo ""
-             echo "=== Broadcasting ==="
-             RESULT=$(curl -sf -X POST http://localhost:6869/transactions/broadcast \
-               -H "Content-Type: application/json" \
-               -d "$SIGNED")
-             echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"TX ID:\", d.get(\"id\",\"ERROR\"), \"Period:\", d.get(\"generationPeriodStart\",\"?\"))" 2>/dev/null || echo "$RESULT"'
+             if echo "$SIGNED" | grep -q '"id"'; then
+               echo "=== Broadcasting ==="
+               RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
+                 -H "Content-Type: application/json" \
+                 -d "$SIGNED")
+               echo "Broadcast result: $RESULT" | head -c 300
+             else
+               echo "Sign failed or already committed — skipping broadcast"
+             fi'
           rm -f /tmp/id_rsa
 
       - name: Commit gen-0 generator (port-forward)
+        continue-on-error: true
         run: |
           API_KEY="***REDACTED_GEN0_API_KEY***="
           ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
-          echo "=== Port-forward gen-0 REST API ==="
+          echo "=== Port-forward gen-0 REST API (localhost:16869) ==="
           kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
           PF_PID=$!
           sleep 5
           echo "=== Signing CommitToGeneration for gen-0 ==="
-          SIGNED=$(curl -sf -X POST http://localhost:16869/transactions/sign \
+          SIGNED=$(curl -s -X POST http://localhost:16869/transactions/sign \
             -H "X-API-Key: $API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"type\":19,\"sender\":\"$ADDR\"}")
-          echo "Signed: $SIGNED" | head -c 200
+          echo "Signed response: $SIGNED" | head -c 300
           echo ""
-          echo "=== Broadcasting ==="
-          RESULT=$(curl -sf -X POST http://localhost:16869/transactions/broadcast \
-            -H "Content-Type: application/json" \
-            -d "$SIGNED")
-          echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"TX ID:\", d.get(\"id\",\"ERROR\"), \"Period:\", d.get(\"generationPeriodStart\",\"?\"))" 2>/dev/null || echo "$RESULT"
+          if echo "$SIGNED" | grep -q '"id"'; then
+            echo "=== Broadcasting ==="
+            RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
+              -H "Content-Type: application/json" \
+              -d "$SIGNED")
+            echo "Broadcast result: $RESULT" | head -c 300
+          else
+            echo "Sign failed or already committed"
+          fi
           kill $PF_PID 2>/dev/null || true
 
       - name: Commit gen-1 generator (port-forward)
+        continue-on-error: true
         run: |
           API_KEY="***REDACTED_GEN1_API_KEY***="
           ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
-          echo "=== Port-forward gen-1 REST API ==="
+          echo "=== Port-forward gen-1 REST API (localhost:16870) ==="
           kubectl port-forward pod/dcc-gen-1-0 -n dcc 16870:6869 &
           PF_PID=$!
           sleep 5
           echo "=== Signing CommitToGeneration for gen-1 ==="
-          SIGNED=$(curl -sf -X POST http://localhost:16870/transactions/sign \
+          SIGNED=$(curl -s -X POST http://localhost:16870/transactions/sign \
             -H "X-API-Key: $API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"type\":19,\"sender\":\"$ADDR\"}")
-          echo "Signed: $SIGNED" | head -c 200
+          echo "Signed response: $SIGNED" | head -c 300
           echo ""
-          echo "=== Broadcasting ==="
-          RESULT=$(curl -sf -X POST http://localhost:16870/transactions/broadcast \
-            -H "Content-Type: application/json" \
-            -d "$SIGNED")
-          echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"TX ID:\", d.get(\"id\",\"ERROR\"), \"Period:\", d.get(\"generationPeriodStart\",\"?\"))" 2>/dev/null || echo "$RESULT"
+          if echo "$SIGNED" | grep -q '"id"'; then
+            echo "=== Broadcasting ==="
+            RESULT=$(curl -s -X POST http://localhost:16870/transactions/broadcast \
+              -H "Content-Type: application/json" \
+              -d "$SIGNED")
+            echo "Broadcast result: $RESULT" | head -c 300
+          else
+            echo "Sign failed or already committed"
+          fi
           kill $PF_PID 2>/dev/null || true
 
       - name: Verify generators committed
