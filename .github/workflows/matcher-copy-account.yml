@@ -1,0 +1,40 @@
+name: Copy account.dat from image
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Extract account.dat from matcher image to data dir
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             docker stop matcher-testnet 2>/dev/null
+             MATCHER_IMG=$(docker inspect matcher-testnet --format "{{.Config.Image}}" 2>/dev/null)
+             DATA_DIR="/opt/dcc/data/matcher-testnet"
+             echo "Image: $MATCHER_IMG"
+             echo "=== Check if account.dat exists inside image ==="
+             docker run --rm --entrypoint ls "$MATCHER_IMG" /var/lib/decentralchain-dex/ 2>/dev/null | head -10
+             echo "=== Copy account.dat from image to data dir ==="
+             docker run --rm --entrypoint cat "$MATCHER_IMG" /var/lib/decentralchain-dex/account.dat 2>/dev/null | sudo tee "$DATA_DIR/account.dat" > /dev/null
+             FILESIZE=$(stat -c%s "$DATA_DIR/account.dat" 2>/dev/null || echo 0)
+             echo "account.dat size: $FILESIZE bytes"
+             sudo chown 113:113 "$DATA_DIR/account.dat" 2>/dev/null
+             ls -la "$DATA_DIR/" 2>/dev/null | grep account
+             echo "=== Remove stale scheme env vars from secrets ==="
+             sudo sed -i "/^WAVES_DEX__/d;/^DCC_DEX__/d" /opt/dcc/secrets/testnet.env 2>/dev/null
+             echo "=== Start matcher ==="
+             docker start matcher-testnet 2>/dev/null && echo OK
+             sleep 30
+             docker logs matcher-testnet --tail=20 2>&1 | grep -v "class path\|at java\|at scala\|at io\|at org\|at com" | tail -15
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher'
+          rm -f /tmp/id_rsa
