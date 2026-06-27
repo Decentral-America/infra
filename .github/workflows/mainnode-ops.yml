@@ -257,18 +257,9 @@ jobs:
                     HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
                   fi
                   echo "Clearing known-peers from $HOST_CONF..."
-                  # Replace the known-peers block with an empty list
-                  python3 - "$HOST_CONF" << "PYEOF"
-import sys, re
-f = sys.argv[1]
-with open(f) as h:
-    content = h.read()
-# Replace known-peers = [...] with known-peers = []
-content = re.sub(r"known-peers\s*=\s*\[[^\]]*\]", "known-peers = []", content, flags=re.DOTALL)
-with open(f, "w") as h:
-    h.write(content)
-print("PATCHED")
-PYEOF
+                  # Collapse known-peers = [ ... ] (multi-line) to known-peers = []
+                  awk "BEGIN{in_kp=0} /known-peers = \[/{in_kp=1; print \"    known-peers = []\"; next} in_kp && /\]/{in_kp=0; next} in_kp{next} {print}" \
+                    "$HOST_CONF" > /tmp/dcc_kp.conf && mv /tmp/dcc_kp.conf "$HOST_CONF" && echo "PATCHED"
                   grep "known-peers" "$HOST_CONF"
                   docker restart "$CID" && echo "OK - known-peers cleared, gen nodes will connect to main-node (not vice versa)"'
                 ;;
