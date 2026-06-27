@@ -1,0 +1,33 @@
+name: Matcher CLI Help
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  help:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Run matcher --help and check binary
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             MATCHER_IMG=$(docker inspect matcher-testnet --format "{{.Config.Image}}" 2>/dev/null)
+             echo "Image: $MATCHER_IMG"
+             echo "=== Matcher entrypoint ==="
+             docker inspect matcher-testnet --format "{{json .Config.Entrypoint}}" 2>/dev/null
+             docker inspect matcher-testnet --format "{{json .Config.Cmd}}" 2>/dev/null
+             echo "=== Run matcher --help ==="
+             docker run --rm "$MATCHER_IMG" --help 2>&1 | head -40
+             echo "=== List matcher scripts/binaries ==="
+             docker run --rm "$MATCHER_IMG" ls /usr/share/decentralchain-dex/ 2>&1 | head -10
+             docker run --rm "$MATCHER_IMG" ls /usr/local/bin/ 2>&1 | head -10
+             echo "=== Check entrypoint script ==="
+             docker run --rm "$MATCHER_IMG" cat /opt/docker/bin/decentralchain-dex 2>&1 | head -30'
+          rm -f /tmp/id_rsa
