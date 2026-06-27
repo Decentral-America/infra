@@ -19,6 +19,7 @@ on:
         options:
           - status
           - restart
+          - force-recreate-node-latest
           - deploy-latest-image-and-wipe-reset
           - wipe-peers-and-restart
           - wipe-chain-and-restart
@@ -244,6 +245,29 @@ jobs:
                   fi
                   echo "Restarting $CID..."
                   docker restart "$CID" && echo "OK"'
+                ;;
+              force-recreate-node-latest)
+                # Stops node-scala-testnet, wipes chain, starts fresh with latest pulled image.
+                # Works without needing /opt/dcc/.env — passes IMAGE_TAG inline to docker compose.
+                $SSH 'set -e
+                  IMG="ghcr.io/decentral-america/node-scala:node-scala-testnet-latest"
+                  COMPOSE_DIR="/opt/dcc/compose"
+                  echo "Current image: $(docker inspect node-scala-testnet --format {{.Config.Image}} 2>/dev/null || echo unknown)"
+                  echo "New image: $IMG"
+                  echo "=== Stopping and removing old container ==="
+                  docker stop node-scala-testnet 2>/dev/null || true
+                  docker rm node-scala-testnet 2>/dev/null || true
+                  echo "=== Wiping chain data from volume ==="
+                  docker run --rm -v node-state-testnet:/data alpine \
+                    sh -c "rm -rf /data/data /data/peers.dat && echo WIPED" 2>/dev/null || true
+                  echo "=== Starting with new image ==="
+                  IMAGE_TAG="$IMG" NETWORK=testnet \
+                    docker compose -f "$COMPOSE_DIR/node-scala.yml" up -d
+                  sleep 15
+                  docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep node-scala || echo checking
+                  echo "=== Version check ==="
+                  curl -sf http://localhost:6869/node/version 2>/dev/null || echo "(not yet ready)"
+                  echo OK'
                 ;;
               deploy-latest-image-and-wipe-reset)
                 # Pulls node-scala-testnet-latest from GHCR, updates IMAGE_TAG,
