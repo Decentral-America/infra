@@ -1,0 +1,35 @@
+name: BPS Postgres Reset via data-service
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Reset BPS postgres via data-service container
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" 'set +e
+            echo "=== Stop BPS ==="
+            docker stop blockchain-postgres-sync-testnet 2>/dev/null
+            echo "=== Test psql via data-service ==="
+            docker exec data-service-testnet env | grep "^PG\|^POSTGRES" | head -5 2>/dev/null
+            docker exec data-service-testnet psql -c "\dt" 2>/dev/null | head -20
+            echo "=== Truncate BPS tables via data-service psql ==="
+            docker exec data-service-testnet sh -c "psql -c \"TRUNCATE blocks CASCADE\" 2>/dev/null && echo TRUNCATED || echo FAILED"
+            docker exec data-service-testnet sh -c "psql -c \"TRUNCATE transactions CASCADE\" 2>/dev/null && echo TRUNCATED || echo FAILED"
+            docker exec data-service-testnet sh -c "psql -c \"TRUNCATE microblocks CASCADE\" 2>/dev/null && echo TRUNCATED || echo FAILED"
+            echo "=== Start BPS ==="
+            docker start blockchain-postgres-sync-testnet 2>/dev/null && echo OK
+            sleep 15
+            echo "=== BPS status ==="
+            docker ps --format "{{.Names}}\t{{.Status}}" | grep postgres
+            docker logs blockchain-postgres-sync-testnet --tail=5 2>&1'
+          rm -f /tmp/id_rsa
