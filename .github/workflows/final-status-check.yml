@@ -1,0 +1,31 @@
+name: Full testnet status check
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Check all services and gen heights
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             echo "=== ALL DOCKER SERVICES ==="
+             docker ps --format "{{.Names}}\t{{.Status}}" | sort
+             echo "=== BPS specifically ==="
+             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -i "bps\|postgres-sync\|blockchain-postgres"
+             echo "=== NODE HEIGHT ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"Height:\", d[\"height\"])" 2>/dev/null
+             echo "=== GEN HEIGHTS (LKE) ==="
+             curl -sk https://testnet.decentralchain.io/node/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d, indent=2))" 2>/dev/null | head -20
+             echo "=== MATCHER API ==="
+             curl -s http://localhost:6886/matcher 2>/dev/null | head -5'
+          rm -f /tmp/id_rsa
