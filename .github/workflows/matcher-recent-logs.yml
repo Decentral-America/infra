@@ -18,13 +18,11 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== /blockchain/finality ==="
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null
-             echo ""
-             echo "=== /activation/status (features 22,25) ==="
-             curl -s http://localhost:6869/activation/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f) for f in d.get(\"features\",[]) if f.get(\"id\") in [22,25]]" 2>/dev/null
-             echo "=== CommitToGeneration txs ==="
-             curl -s "http://localhost:6869/transactions/address/3FPKHBRpG3xKz3RcGUzDpxFLmJtLQ2YVFt3/limit/20" 2>/dev/null | python3 -c "import json,sys; txs=json.load(sys.stdin); [print(t.get(\"type\"),t.get(\"id\",\"\")[:20]) for t in (txs[0] if isinstance(txs,list) and txs else []) if t.get(\"type\") in [17,18,26,27,28]]" 2>/dev/null || echo "no special txs"
-             echo "=== Node log HotStuff lines ==="
-             docker logs node-scala-testnet --since 2026-06-27T14:00:00Z 2>&1 | grep -i "hotstuff\|finality\|committed\|validator" | tail -10'
+             echo "=== Height and peers ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null
+             curl -s http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"Peers:\",len(d.get(\"peers\",[])), [(p[\"address\"],p.get(\"applicationName\",\"\")[:15]) for p in d.get(\"peers\",[])])" 2>/dev/null
+             echo "=== Finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[]))) " 2>/dev/null
+             echo "=== Recent node log (block appends) ==="
+             docker logs node-scala-testnet --since 2026-06-27T15:20:00Z 2>&1 | grep -i "appended\|append\|height\|peer\|disconnect\|score\|hotstuff\|error" | grep -v "HTTP\|GET\|POST" | tail -15'
           rm -f /tmp/id_rsa
