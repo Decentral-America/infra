@@ -87,7 +87,7 @@ data:
         # Only main node in known-peers — prevents loopback mini-fork with gen-1
         known-peers = ["66.228.55.154:6868"]
         enable-blacklisting = no
-        suspension-residence-time = 10s
+        suspension-residence-time = 300s
       }
 
       wallet {
@@ -116,7 +116,7 @@ data:
       }
       hotstuff {
         enabled = true
-        round-timeout-ms = 400
+        round-timeout-ms = 5000
       }
     }
 
@@ -188,7 +188,7 @@ data:
         # Only main node in known-peers — prevents loopback mini-fork with gen-0
         known-peers = ["66.228.55.154:6868"]
         enable-blacklisting = no
-        suspension-residence-time = 10s
+        suspension-residence-time = 300s
       }
 
       wallet {
@@ -217,7 +217,7 @@ data:
       }
       hotstuff {
         enabled = true
-        round-timeout-ms = 400
+        round-timeout-ms = 5000
       }
     }
 
@@ -289,7 +289,7 @@ data:
         # Only main node in known-peers — single sync source
         known-peers = ["66.228.55.154:6868"]
         enable-blacklisting = no
-        suspension-residence-time = 10s
+        suspension-residence-time = 300s
       }
 
       wallet {

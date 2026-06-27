@@ -1,0 +1,105 @@
+name: Auto-Commit Generators (T2 HotStuff)
+# Commits all 3 generators to the next generation period automatically.
+# Generation periods are 100 blocks (~50 min). Running every 35 min ensures
+# generators are always committed before the current period expires.
+on:
+  schedule:
+    - cron: '*/35 * * * *'  # every 35 minutes
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
+            jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Commit main node generator
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             API_KEY="***REDACTED_MAIN_API_KEY***="
+             ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
+             SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
+               -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+               -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+             if echo "$SIGNED" | grep -q "\"id\""; then
+               RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
+                 -H "Content-Type: application/json" -d "$SIGNED")
+               echo "Main: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+             else
+               echo "Main: already committed or sign failed"
+             fi'
+          rm -f /tmp/id_rsa
+
+      - name: Commit gen-0 generator
+        run: |
+          API_KEY="***REDACTED_GEN0_API_KEY***="
+          ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
+          kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
+          PF_PID=$!
+          sleep 5
+          SIGNED=$(curl -s -X POST http://localhost:16869/transactions/sign \
+            -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+            -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+          if echo "$SIGNED" | grep -q '"id"'; then
+            RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
+              -H "Content-Type: application/json" -d "$SIGNED")
+            echo "Gen-0: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+          else
+            echo "Gen-0: already committed or sign failed"
+          fi
+          kill $PF_PID 2>/dev/null || true
+
+      - name: Commit gen-1 generator
+        run: |
+          API_KEY="***REDACTED_GEN1_API_KEY***="
+          ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
+          kubectl port-forward pod/dcc-gen-1-0 -n dcc 16870:6870 &
+          PF_PID=$!
+          sleep 5
+          SIGNED=$(curl -s -X POST http://localhost:16870/transactions/sign \
+            -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+            -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+          if echo "$SIGNED" | grep -q '"id"'; then
+            RESULT=$(curl -s -X POST http://localhost:16870/transactions/broadcast \
+              -H "Content-Type: application/json" -d "$SIGNED")
+            echo "Gen-1: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+          else
+            echo "Gen-1: already committed or sign failed"
+          fi
+          kill $PF_PID 2>/dev/null || true
+
+      - name: Report finality
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'curl -s http://localhost:6869/blockchain/finality | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[])))  "' 2>/dev/null
+          rm -f /tmp/id_rsa
