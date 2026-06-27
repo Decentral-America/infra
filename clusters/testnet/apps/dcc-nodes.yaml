@@ -84,11 +84,8 @@ data:
         bind-address = "0.0.0.0"
         port = 6863
         declared-address = "172.105.64.89:6863"
-        known-peers = [
-          "66.228.55.154:6868"
-          "127.0.0.1:6864"
-          "127.0.0.1:6865"
-        ]
+        # Only main node in known-peers — prevents loopback mini-fork with gen-1
+        known-peers = ["66.228.55.154:6868"]
         enable-blacklisting = no
         suspension-residence-time = 10s
       }
@@ -188,11 +185,8 @@ data:
         bind-address = "0.0.0.0"
         port = 6864
         declared-address = "172.105.64.89:6864"
-        known-peers = [
-          "66.228.55.154:6868"
-          "127.0.0.1:6863"
-          "127.0.0.1:6865"
-        ]
+        # Only main node in known-peers — prevents loopback mini-fork with gen-0
+        known-peers = ["66.228.55.154:6868"]
         enable-blacklisting = no
         suspension-residence-time = 10s
       }
@@ -292,11 +286,8 @@ data:
         bind-address = "0.0.0.0"
         port = 6865
         declared-address = "172.105.64.89:6865"
-        known-peers = [
-          "66.228.55.154:6868"
-          "127.0.0.1:6863"
-          "127.0.0.1:6864"
-        ]
+        # Only main node in known-peers — single sync source
+        known-peers = ["66.228.55.154:6868"]
         enable-blacklisting = no
         suspension-residence-time = 10s
       }
