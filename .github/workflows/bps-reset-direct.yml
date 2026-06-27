@@ -1,0 +1,45 @@
+name: BPS Reset via host psql
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Reset BPS via host psql (trust/peer auth)
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" 'set +e
+            echo "=== Stop BPS ==="
+            docker stop blockchain-postgres-sync-testnet 2>/dev/null
+            echo "=== Check if psql available on host ==="
+            which psql 2>/dev/null || echo "psql not found on host"
+            psql --version 2>/dev/null || true
+            echo "=== Try psql via host (trust auth) ==="
+            psql -U dcc -d dcc_testnet -c "\dt" 2>&1 | head -10
+            echo "=== Truncate via host psql ==="
+            psql -U dcc -d dcc_testnet 2>&1 << SQLEOF
+              DO \$block\$
+              DECLARE r RECORD;
+              BEGIN
+                FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = '"'"'public'"'"'
+                LOOP
+                  EXECUTE '"'"'TRUNCATE TABLE '"'"' || quote_ident(r.tablename) || '"'"' CASCADE'"'"';
+                END LOOP;
+              END;
+              \$block\$;
+SQLEOF
+            echo "Exit code: $?"
+            echo "=== Start BPS ==="
+            docker start blockchain-postgres-sync-testnet 2>/dev/null && echo OK
+            sleep 20
+            docker logs blockchain-postgres-sync-testnet --tail=5 2>&1
+            docker ps --format "{{.Names}}\t{{.Status}}" | grep postgres'
+          rm -f /tmp/id_rsa
