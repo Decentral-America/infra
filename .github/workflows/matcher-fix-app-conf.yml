@@ -41,12 +41,7 @@ jobs:
              HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
              echo "Current height: $HEIGHT"
              for h in $(seq $((HEIGHT-9)) $HEIGHT); do
-               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-gen=d.get(\"generator\",\"?\")
-print(d.get(\"height\",\"?\"), gen[:20])
-" 2>/dev/null
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\",\"?\"), d.get(\"generator\",\"?\")[:20])" 2>/dev/null
              done
 
              echo "=== MATCHER ==="
