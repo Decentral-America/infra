@@ -18,14 +18,36 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
+             echo "=== BPS exit reason ==="
+             docker logs blockchain-postgres-sync-testnet --tail=10 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\." | head -8
+
+             echo "=== Restart BPS if stopped ==="
+             BPS_STATUS=$(docker inspect --format "{{.State.Status}}" blockchain-postgres-sync-testnet 2>/dev/null)
+             if [ "$BPS_STATUS" = "exited" ]; then
+               docker start blockchain-postgres-sync-testnet && echo "BPS restarted"
+               sleep 8
+               docker logs blockchain-postgres-sync-testnet --since 2026-06-27T14:00:00Z 2>&1 | grep -v "at java\|DEBUG" | head -10
+             else
+               echo "BPS status: $BPS_STATUS"
+             fi
+
              echo "=== ALL DOCKER SERVICES ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | sort
-             echo "=== BPS specifically ==="
-             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -i "bps\|postgres-sync\|blockchain-postgres"
+             docker ps -a --format "{{.Names}}\t{{.Status}}" | sort
+
              echo "=== NODE HEIGHT ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"Height:\", d[\"height\"])" 2>/dev/null
-             echo "=== GEN HEIGHTS (LKE) ==="
-             curl -sk https://testnet.decentralchain.io/node/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d, indent=2))" 2>/dev/null | head -20
+             curl -s http://localhost:6869/blocks/height 2>/dev/null
+
+             echo "=== BLOCK GENERATORS (last 10 blocks) ==="
+             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             for h in $(seq $((HEIGHT-9)) $HEIGHT); do
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+gen=d.get(\"generator\",\"?\")
+print(d.get(\"height\",\"?\"), gen[:20])
+" 2>/dev/null
+             done
+
              echo "=== MATCHER API ==="
-             curl -s http://localhost:6886/matcher 2>/dev/null | head -5'
+             curl -s http://localhost:6886/matcher 2>/dev/null | head -2'
           rm -f /tmp/id_rsa
