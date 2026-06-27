@@ -25,6 +25,8 @@ jobs:
             echo "=== Wipe chain data ==="
             docker run --rm -v node-state-testnet:/data alpine \
               sh -c "rm -rf /data/data /data/peers.dat && echo WIPED" 2>/dev/null || true
+            echo "=== Pull latest image ==="
+            docker pull "$IMG"
             echo "=== Start with host networking (no NAT, direct P2P) ==="
             docker run -d \
               --name node-scala-testnet \
