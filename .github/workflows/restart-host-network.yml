@@ -48,7 +48,7 @@ jobs:
             echo "=== Container state ==="
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
             echo "=== Network mode ==="
-            docker inspect node-scala-testnet --format "NetworkMode={{.HostConfig.NetworkMode}} IPAddress={{.NetworkSettings.IPAddress}}"
+            docker inspect node-scala-testnet --format "NetworkMode={{.HostConfig.NetworkMode}}" 2>/dev/null || true
             echo "=== Port check ==="
             ss -tlnp | grep 6868 || echo "(no 6868 listener yet)"
             echo "=== Version ==="
