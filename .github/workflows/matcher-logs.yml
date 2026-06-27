@@ -1,0 +1,29 @@
+name: Get Matcher Startup Logs
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Get matcher startup error
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             echo "=== Port 6887 check ==="
+             ss -tlnp | grep 6887 || echo "(6887 not listening)"
+             echo "=== Matcher ALL logs since start ==="
+             docker logs matcher-testnet 2>&1 | head -50
+             echo "=== Matcher ERRORS only ==="
+             docker logs matcher-testnet 2>&1 | grep -iE "ERROR|WARN|error|warn|failed|exception|cannot|refused|connection" | head -20
+             echo "=== Matcher config/env ==="
+             docker inspect matcher-testnet --format "{{json .Config.Env}}" 2>/dev/null | tr "," "\n" | grep -iE "HOST|PORT|URL|ADDR|DCC|NODE|WAVES|MATCHER" | head -15'
+          rm -f /tmp/id_rsa
