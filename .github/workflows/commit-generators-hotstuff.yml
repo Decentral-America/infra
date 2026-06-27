@@ -1,0 +1,111 @@
+name: Commit Generators to HotStuff (T2 Activation)
+# Submits CommitToGenerationTransaction (type 19) for all 3 generators.
+# The node's /transactions/sign endpoint auto-derives BLS keys from the
+# generator's Ed25519 private key and computes the Proof of Possession.
+# Run this once per generation period (every 100 blocks) to keep T2 active.
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
+            jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          echo "LKE cluster $CLUSTER_ID kubeconfig downloaded"
+
+      - name: Verify cluster connectivity
+        run: kubectl cluster-info --request-timeout=10s
+
+      - name: Commit main node generator
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set -e
+             API_KEY="***REDACTED_MAIN_API_KEY***="
+             ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
+             echo "=== Signing CommitToGeneration for main node ==="
+             SIGNED=$(curl -sf -X POST http://localhost:6869/transactions/sign \
+               -H "X-API-Key: $API_KEY" \
+               -H "Content-Type: application/json" \
+               -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+             echo "Signed: $SIGNED" | head -c 200
+             echo ""
+             echo "=== Broadcasting ==="
+             RESULT=$(curl -sf -X POST http://localhost:6869/transactions/broadcast \
+               -H "Content-Type: application/json" \
+               -d "$SIGNED")
+             echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"TX ID:\", d.get(\"id\",\"ERROR\"), \"Period:\", d.get(\"generationPeriodStart\",\"?\"))" 2>/dev/null || echo "$RESULT"'
+          rm -f /tmp/id_rsa
+
+      - name: Commit gen-0 generator
+        run: |
+          API_KEY="***REDACTED_GEN0_API_KEY***="
+          ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
+          echo "=== Signing CommitToGeneration for gen-0 ==="
+          SIGNED=$(kubectl exec dcc-gen-0-0 -n dcc -- \
+            curl -sf -X POST http://localhost:6869/transactions/sign \
+            -H "X-API-Key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+          echo "Signed: $SIGNED" | head -c 200
+          echo ""
+          echo "=== Broadcasting from main node ==="
+          RESULT=$(kubectl exec dcc-gen-0-0 -n dcc -- \
+            curl -sf -X POST http://localhost:6869/transactions/broadcast \
+            -H "Content-Type: application/json" \
+            -d "$SIGNED")
+          echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"TX ID:\", d.get(\"id\",\"ERROR\"), \"Period:\", d.get(\"generationPeriodStart\",\"?\"))" 2>/dev/null || echo "$RESULT"
+
+      - name: Commit gen-1 generator
+        run: |
+          API_KEY="***REDACTED_GEN1_API_KEY***="
+          ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
+          echo "=== Signing CommitToGeneration for gen-1 ==="
+          SIGNED=$(kubectl exec dcc-gen-1-0 -n dcc -- \
+            curl -sf -X POST http://localhost:6869/transactions/sign \
+            -H "X-API-Key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+          echo "Signed: $SIGNED" | head -c 200
+          echo ""
+          echo "=== Broadcasting ==="
+          RESULT=$(kubectl exec dcc-gen-1-0 -n dcc -- \
+            curl -sf -X POST http://localhost:6869/transactions/broadcast \
+            -H "Content-Type: application/json" \
+            -d "$SIGNED")
+          echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"TX ID:\", d.get(\"id\",\"ERROR\"), \"Period:\", d.get(\"generationPeriodStart\",\"?\"))" 2>/dev/null || echo "$RESULT"
+
+      - name: Verify generators committed
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          sleep 15
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'curl -s http://localhost:6869/blockchain/finality | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"Height:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"NextGens:\",d.get(\"nextGenerators\",[]))"'
+          rm -f /tmp/id_rsa
