@@ -1,0 +1,52 @@
+name: Reset BPS Postgres State
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Truncate BPS postgres tables and restart
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" '
+            set +e
+            echo "=== Stop BPS ==="
+            docker stop blockchain-postgres-sync-testnet 2>/dev/null || true
+            echo "=== Read postgres credentials ==="
+            SECRETS="/opt/dcc/secrets/testnet.env"
+            PGHOST=$(grep "^PGHOST=" "$SECRETS" 2>/dev/null | cut -d= -f2 | head -1)
+            PGPORT=$(grep "^PGPORT=" "$SECRETS" 2>/dev/null | cut -d= -f2 | head -1)
+            PGUSER=$(grep "^PGUSER=" "$SECRETS" 2>/dev/null | cut -d= -f2 | head -1)
+            PGPASSWORD=$(grep "^PGPASSWORD=" "$SECRETS" 2>/dev/null | cut -d= -f2 | head -1)
+            PGDATABASE=$(grep "^PGDATABASE=" "$SECRETS" 2>/dev/null | cut -d= -f2 | head -1)
+            PGHOST=${PGHOST:-127.0.0.1}
+            PGPORT=${PGPORT:-5432}
+            echo "PG: host=$PGHOST port=$PGPORT user=$PGUSER db=$PGDATABASE"
+            echo "=== Truncate BPS tables to reset sync state ==="
+            export PGPASSWORD
+            psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" 2>/dev/null << SQL
+            DO \$\$
+            DECLARE t text;
+            BEGIN
+              FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = '"'"'public'"'"' LOOP
+                EXECUTE '"'"'TRUNCATE '"'"' || t || '"'"' CASCADE'"'"';
+                RAISE NOTICE '"'"'Truncated %'"'"', t;
+              END LOOP;
+            END;
+            \$\$;
+SQL
+            echo "=== Restart BPS ==="
+            docker start blockchain-postgres-sync-testnet 2>/dev/null && echo "BPS started" || echo "BPS start failed"
+            sleep 20
+            echo "=== BPS health ==="
+            docker ps --format "{{.Names}}\t{{.Status}}" | grep postgres
+            docker logs blockchain-postgres-sync-testnet --tail=8 2>&1'
+          rm -f /tmp/id_rsa
