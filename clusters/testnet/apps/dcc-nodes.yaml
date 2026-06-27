@@ -89,6 +89,8 @@ data:
           "127.0.0.1:6864"
           "127.0.0.1:6865"
         ]
+        enable-blacklisting = no
+        suspension-residence-time = 10s
       }
 
       wallet {
@@ -191,6 +193,8 @@ data:
           "127.0.0.1:6863"
           "127.0.0.1:6865"
         ]
+        enable-blacklisting = no
+        suspension-residence-time = 10s
       }
 
       wallet {
@@ -293,6 +297,8 @@ data:
           "127.0.0.1:6863"
           "127.0.0.1:6864"
         ]
+        enable-blacklisting = no
+        suspension-residence-time = 10s
       }
 
       wallet {

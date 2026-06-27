@@ -21,6 +21,7 @@ on:
           - restart
           - wipe-peers-and-restart
           - wipe-chain-and-restart
+          - disable-blacklisting-and-restart
           - disable-microblocks-and-restart
           - disable-miner-and-restart
           - patch-period-length-and-restart
@@ -241,6 +242,38 @@ jobs:
                   fi
                   echo "Restarting $CID..."
                   docker restart "$CID" && echo "OK"'
+                ;;
+              disable-blacklisting-and-restart)
+                # Applies RC#2 fix: sets enable-blacklisting = no and suspension-residence-time = 10s.
+                # This prevents gen-0/gen-1 from being locked out for 1h after a failed chain-switch
+                # block validation. Also reduces invalid-blocks-storage.timeout to 30s.
+                # Safe to run at any time — clears current in-memory blacklist via restart.
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
+                  if [ ! -f "$HOST_CONF" ]; then
+                    HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
+                  fi
+                  echo "Applying RC#2 network fix to $HOST_CONF..."
+                  # Inject enable-blacklisting = no and suspension-residence-time = 10s after known-peers block
+                  if grep -q "enable-blacklisting" "$HOST_CONF"; then
+                    echo "(enable-blacklisting already set)"
+                  else
+                    awk "/known-peers = \[/{in_peers=1} in_peers && /^\s*\]/{print; print \"    enable-blacklisting = no\"; print \"    suspension-residence-time = 10s\"; in_peers=0; next} {print}" \
+                      "$HOST_CONF" > /tmp/dcc_bl.conf && mv /tmp/dcc_bl.conf "$HOST_CONF" && echo "PATCHED: enable-blacklisting + suspension-residence-time"
+                  fi
+                  # Patch invalid-blocks-storage.timeout if present
+                  if grep -q "invalid-blocks-storage" "$HOST_CONF"; then
+                    awk "{gsub(/timeout = [0-9]+[hms]/, \"timeout = 30s\"); print}" \
+                      "$HOST_CONF" > /tmp/dcc_ibs.conf && mv /tmp/dcc_ibs.conf "$HOST_CONF" && echo "PATCHED: invalid-blocks-storage.timeout = 30s"
+                  fi
+                  echo "--- network section ---"
+                  grep -A20 "network {" "$HOST_CONF" | head -20
+                  echo "--- synchronization section ---"
+                  grep -A8 "synchronization {" "$HOST_CONF" | head -10 || echo "(no synchronization section)"
+                  echo "Restarting with cleared blacklist..."
+                  docker restart "$CID" && echo "OK - blacklisting disabled, new connections accepted immediately"'
                 ;;
               wipe-chain-and-restart)
                 # DANGER: wipes entire blockchain state. Use for full testnet reset.

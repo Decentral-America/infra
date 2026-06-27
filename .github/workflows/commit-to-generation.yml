@@ -22,6 +22,12 @@ on:
         required: false
         default: false
         type: boolean
+  # Auto-commit every 35 minutes so generators stay committed across period
+  # boundaries (100 blocks × ~30s/block = 50 min per period).
+  # GitHub Actions scheduled workflows may fire up to 15 min late; 35 min
+  # interval guarantees at least one commit before each 50-min boundary.
+  schedule:
+    - cron: '*/35 * * * *'
   push:
     branches: [main]
     paths: ['trigger/commit-to-generation']

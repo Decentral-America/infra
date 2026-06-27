@@ -1,0 +1,125 @@
+name: Peer Reconnection Watchdog
+
+# Polls the main node's peer count every 5 minutes.
+# If connected peers = 0, immediately forces P2P connections to all gen nodes
+# via the REST API. If that fails (node unreachable), triggers wipe-peers-and-restart.
+#
+# This is the automated replacement for the manual "mainnode-ops wipe-peers-and-restart"
+# that was being run every 30-45 minutes. Recovery is now sub-5-minutes automatic.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  watchdog:
+    name: Check peer count and reconnect if needed
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Check peers and reconnect if zero
+        env:
+          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
+        run: |
+          set -euo pipefail
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          SSH="ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${SSH_USER}@${SSH_HOST}"
+
+          # ── 1. Get peer count and chain height from local REST API ──────────
+          PEER_INFO=$($SSH "
+            set +e
+            PEERS=\$(curl -sf --max-time 8 -H 'X-API-Key: ${MAIN_API_KEY}' \
+              http://localhost:6869/peers/connected 2>/dev/null)
+            if [ -z \"\$PEERS\" ]; then
+              echo 'peers_count=-1'
+            else
+              COUNT=\$(echo \"\$PEERS\" | python3 -c \
+                'import sys,json; d=json.load(sys.stdin); print(len(d.get(\"peers\",[])))')
+              echo \"peers_count=\$COUNT\"
+              echo \"\$PEERS\" | python3 -c \
+                'import sys,json; d=json.load(sys.stdin); [print(\"  peer:\",p.get(\"address\")) for p in d.get(\"peers\",[])]'
+            fi
+            HEIGHT=\$(curl -sf --max-time 8 http://localhost:6869/blocks/height 2>/dev/null \
+              | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"height\",0))' 2>/dev/null || echo 0)
+            echo \"chain_height=\$HEIGHT\"
+          " 2>&1 || echo "peers_count=-1 chain_height=0")
+
+          echo "Node state:"
+          echo "$PEER_INFO"
+
+          PEER_COUNT=$(echo "$PEER_INFO" | grep 'peers_count=' | cut -d= -f2 | head -1)
+          CHAIN_HEIGHT=$(echo "$PEER_INFO" | grep 'chain_height=' | cut -d= -f2 | head -1)
+
+          echo ""
+          echo "peers=$PEER_COUNT  height=$CHAIN_HEIGHT"
+
+          if [ "${PEER_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "✅ Node has $PEER_COUNT peer(s) — no action needed"
+            rm -f /tmp/id_rsa
+            exit 0
+          fi
+
+          echo "⚠️  Zero peers detected (peers=$PEER_COUNT, height=$CHAIN_HEIGHT). Attempting reconnection..."
+
+          # ── 2. Try REST API force-connect (fast path — no restart) ──────────
+          CONNECT_RESULT=$($SSH "
+            set +e
+            API_KEY='${MAIN_API_KEY}'
+            OK=0
+            echo '--- forcing P2P connections ---'
+            for ADDR in '172.105.64.89:6863' '172.105.64.89:6864' '172.105.64.89:6865'; do
+              HOST=\${ADDR%:*}; PORT=\${ADDR#*:}
+              R=\$(curl -sf --max-time 8 -X POST http://localhost:6869/peers/connect \
+                -H 'X-API-Key: '\$API_KEY \
+                -H 'Content-Type: application/json' \
+                -d \"{\\\"host\\\":\\\"\$HOST\\\",\\\"port\\\":\$PORT}\" 2>&1)
+              echo \"  \$ADDR → \$R\"
+              OK=\$((OK + 1))
+            done
+            sleep 15
+            AFTER=\$(curl -sf --max-time 8 -H 'X-API-Key: '\$API_KEY \
+              http://localhost:6869/peers/connected 2>/dev/null \
+              | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get(\"peers\",[])))')
+            echo \"peers_after=\$AFTER\"
+          " 2>&1 || echo "peers_after=-1")
+
+          echo "$CONNECT_RESULT"
+          PEERS_AFTER=$(echo "$CONNECT_RESULT" | grep 'peers_after=' | cut -d= -f2 | head -1)
+
+          if [ "${PEERS_AFTER:-0}" -gt 0 ] 2>/dev/null; then
+            echo "✅ Reconnection successful — $PEERS_AFTER peer(s) now connected"
+            rm -f /tmp/id_rsa
+            exit 0
+          fi
+
+          # ── 3. REST connect failed — wipe peers.dat and restart ─────────────
+          echo "⚠️  REST connect did not restore peers (peers_after=$PEERS_AFTER). Running wipe-peers-and-restart..."
+
+          $SSH 'set -e
+            CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null \
+              | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
+            if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+            NAME=$(docker inspect "$CID" --format "{{.Name}}" | sed "s|/||")
+            echo "SIGKILL $NAME to prevent peer-save on graceful shutdown..."
+            docker kill "$CID" 2>/dev/null || true
+            sleep 3
+            echo "Wiping peers.dat..."
+            docker start "$NAME" 2>/dev/null && sleep 3
+            docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || true
+            docker restart "$NAME" && echo "OK - node restarted with clean peer state"'
+
+          rm -f /tmp/id_rsa
+          echo "🔄 Node restarted. Peers will reconnect within 60 seconds."
+
+      - name: Upload watchdog result
+        if: always()
+        run: |
+          mkdir -p /tmp/watchdog
+          echo "run_id=${{ github.run_id }} time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /tmp/watchdog/result.txt
