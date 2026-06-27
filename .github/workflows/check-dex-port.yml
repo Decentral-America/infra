@@ -1,0 +1,31 @@
+name: Check DEX gRPC Port and Plugins
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Check DEX gRPC port 6887 and plugins dir
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             echo "=== Port 6887 listener ==="
+             ss -tlnp | grep 6887 || echo "(6887 not listening)"
+             echo "=== Port 6881 listener ==="
+             ss -tlnp | grep 6881 || echo "(6881 not listening)"
+             echo "=== Plugins directory ==="
+             ls -la /opt/dcc/plugins/testnet/ 2>/dev/null || echo "(plugins dir empty or missing)"
+             echo "=== DCC node config dex section ==="
+             grep -A 10 "dex {" /opt/dcc/config/node-testnet/dcc.conf 2>/dev/null | head -15
+             echo "=== DCC node container logs for DEX/6887 ==="
+             docker logs node-scala-testnet --since 2026-06-27T12:00:00 2>&1 | grep -iE "6887|DEX|dex|grpc.*6887|extension.*DEX" | head -10'
+          rm -f /tmp/id_rsa
