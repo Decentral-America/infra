@@ -1,0 +1,35 @@
+name: Get Main Node Recent Logs
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Get main node recent P2P logs
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" '
+            echo "=== Version ==="
+            curl -sf http://localhost:6869/node/version 2>/dev/null
+            echo ""
+            echo "=== Height ==="
+            curl -sf http://localhost:6869/blocks/height 2>/dev/null
+            echo ""
+            echo "=== Peers ==="
+            curl -sf http://localhost:6869/peers/connected 2>/dev/null | head -c 500
+            echo ""
+            echo "=== Network mode ==="
+            docker inspect node-scala-testnet --format "HostNetwork={{.HostConfig.NetworkMode}}" 2>/dev/null
+            echo "=== Recent logs (last 5 min, P2P focus) ==="
+            docker logs --since 5m node-scala-testnet 2>&1 | \
+              grep -iE "handshake|Handshake|172\.105|peer|blacklist|suspend|connect|Malformed|invalid|refused|reject|accept" | \
+              grep -v "HTTP 200\|kamon\|UTX\|gRPC\|REST API" | tail -30'
+          rm -f /tmp/id_rsa
