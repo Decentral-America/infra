@@ -1,0 +1,28 @@
+name: Inspect Matcher Entrypoint
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Read matcher entrypoint script and env
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             MATCHER_IMG=$(docker inspect matcher-testnet --format "{{.Config.Image}}" 2>/dev/null)
+             echo "=== Read entrypoint script ==="
+             docker run --rm --entrypoint cat "$MATCHER_IMG" /opt/docker/bin/decentralchain-dex 2>&1 | head -50
+             echo "=== Image ENV vars (MATCHER and DEX related) ==="
+             docker run --rm "$MATCHER_IMG" env 2>/dev/null | grep -iE "MATCHER|DEX|CHAIN|SCHEME|SEED" | head -20
+             echo "=== Current secrets relevant vars ==="
+             grep -iE "^MATCHER|^DEX|^WAVES_DEX|^DCC_DEX|^CHAIN" /opt/dcc/secrets/testnet.env 2>/dev/null | sed "s/SEED=.*/SEED=***/;s/PASSWORD=.*/PASSWORD=***/"'
+          rm -f /tmp/id_rsa
