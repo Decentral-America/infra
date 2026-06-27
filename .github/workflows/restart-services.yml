@@ -1,0 +1,28 @@
+name: Restart Dependent Services
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Restart blockchain-postgres-sync and matcher
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" '
+            echo "=== Restarting blockchain-postgres-sync ==="
+            docker restart blockchain-postgres-sync-testnet 2>/dev/null && echo "OK" || echo "FAILED"
+            sleep 5
+            echo "=== Restarting matcher ==="
+            docker restart matcher-testnet 2>/dev/null && echo "OK" || echo "FAILED"
+            sleep 10
+            echo "=== Service health ==="
+            docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "postgres|matcher|node-scala" | sort'
+          rm -f /tmp/id_rsa
