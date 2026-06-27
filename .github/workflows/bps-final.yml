@@ -1,0 +1,36 @@
+name: BPS Final Fix
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Fix BPS using POSTGRES__ password
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             docker stop blockchain-postgres-sync-testnet 2>/dev/null
+             echo "=== All PG-related vars in secrets ==="
+             grep -iE "^PG|^POSTGRES" /opt/dcc/secrets/testnet.env 2>/dev/null | sed "s/PASSWORD=.*/PASSWORD=***/"
+             PGPW=$(grep "^POSTGRES__PASSWORD=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
+             [ -z "$PGPW" ] && PGPW=$(grep "^PGPASSWORD=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
+             echo "Password found: $([ -n "$PGPW" ] && echo YES || echo NO)"
+             echo "=== Test TCP with POSTGRES__PASSWORD ==="
+             PGPASSWORD="$PGPW" psql -h 127.0.0.1 -U dcc -d dcc_testnet -c "SELECT 1" 2>&1 | head -3
+             echo "=== Truncate all tables ==="
+             PGPASSWORD="$PGPW" psql -h 127.0.0.1 -U dcc -d dcc_testnet -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>&1
+             echo "=== Restart BPS ==="
+             docker start blockchain-postgres-sync-testnet 2>/dev/null
+             sleep 20
+             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "postgres|matcher"'
+          rm -f /tmp/id_rsa
