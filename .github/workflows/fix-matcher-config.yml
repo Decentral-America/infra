@@ -1,4 +1,4 @@
-name: Fix Matcher Config (address scheme)
+name: Fix Matcher Config address scheme
 on:
   workflow_dispatch: {}
 permissions:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Create matcher config with correct testnet address scheme
+      - name: Create matcher testnet config override
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -22,27 +22,11 @@ jobs:
              CONFIG_DIR="/opt/dcc/data/matcher-testnet/config"
              sudo mkdir -p "$CONFIG_DIR" 2>/dev/null
              sudo chown 113:113 "$CONFIG_DIR" 2>/dev/null
-             echo "=== Creating testnet matcher config ==="
-             sudo tee "$CONFIG_DIR/application.conf" > /dev/null << '"'"'CONF'"'"'
-dcc {
-  dex {
-    address-scheme-character = "!"
-    cli {
-      default-args {
-        address-scheme-byte = "!"
-      }
-    }
-  }
-}
-CONF
-             echo "Config written:"
-             cat "$CONFIG_DIR/application.conf"
+             printf '"'"'dcc { dex { address-scheme-character = "!" } }\n'"'"' | sudo tee "$CONFIG_DIR/application.conf" > /dev/null
+             echo "Config: $(cat $CONFIG_DIR/application.conf)"
              sudo chown 113:113 "$CONFIG_DIR/application.conf" 2>/dev/null
-             echo "=== Also check for DEX env vars ==="
-             grep -iE "^DEX|^MATCHER" /opt/dcc/secrets/testnet.env 2>/dev/null | head -5 || echo "(no DEX/MATCHER vars)"
-             echo "=== Restart matcher ==="
              docker start matcher-testnet 2>/dev/null && echo OK
              sleep 30
-             docker logs matcher-testnet --tail=10 2>&1 | grep -iE "starting|address-scheme|ERROR|error|scheme|account|D\"|!|\!" | head -10
+             docker logs matcher-testnet --tail=10 2>&1 | tail -5
              docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher'
           rm -f /tmp/id_rsa
