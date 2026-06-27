@@ -22,7 +22,7 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             "set +e
-             IMG=ghcr.io/decentral-america/node-scala:testnet-latest
+             IMG=ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
 
              echo '=== Current node state ==='
              docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
