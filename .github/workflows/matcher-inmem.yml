@@ -1,0 +1,32 @@
+name: Fix Matcher in-mem account storage
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Switch matcher to in-mem account storage
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             docker stop matcher-testnet 2>/dev/null
+             CONFIG_DIR="/opt/dcc/data/matcher-testnet/config"
+             sudo mkdir -p "$CONFIG_DIR" 2>/dev/null
+             sudo chown 113:113 "$CONFIG_DIR" 2>/dev/null
+             printf '"'"'dcc { dex { address-scheme-character = "!"\n  account-storage { type = in-mem } } }\n'"'"' | sudo tee "$CONFIG_DIR/application.conf" > /dev/null
+             echo "Config: $(cat $CONFIG_DIR/application.conf)"
+             sudo chown 113:113 "$CONFIG_DIR/application.conf" 2>/dev/null
+             docker start matcher-testnet 2>/dev/null && echo OK
+             sleep 30
+             docker logs matcher-testnet --tail=15 2>&1 | grep -v "DEBUG\|at java\|at scala\|at io\|at org\|at com\|class path"
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher'
+          rm -f /tmp/id_rsa
