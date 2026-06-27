@@ -1,0 +1,33 @@
+name: Find Matcher Entrypoint Script
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Find and read matcher entrypoint
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             MATCHER_IMG=$(docker inspect matcher-testnet --format "{{.Config.Image}}" 2>/dev/null)
+             echo "=== Docker inspect entrypoint and cmd ==="
+             docker inspect matcher-testnet --format "Entrypoint={{json .Config.Entrypoint}} Cmd={{json .Config.Cmd}}" 2>/dev/null
+             echo "=== Find shell scripts in image ==="
+             docker run --rm --entrypoint find "$MATCHER_IMG" / -name "*.sh" -not -path "*/proc/*" 2>/dev/null | head -10
+             echo "=== Find entrypoint (look for start or run scripts) ==="
+             docker run --rm --entrypoint find "$MATCHER_IMG" /usr /opt /app /bin -name "decentralchain*" -o -name "start*" -o -name "run*" 2>/dev/null | head -10
+             echo "=== Check /proc/1/cmdline from running container ==="
+             docker exec matcher-testnet cat /proc/1/cmdline 2>/dev/null | tr "\\0" " " | head -c 500
+             echo ""
+             echo "=== Check JAVA_TOOL_OPTIONS in container env ==="
+             docker exec matcher-testnet env 2>/dev/null | grep -iE "JAVA|TOOL|OPTS|MATCHER|DEX|CONFIG" | head -10'
+          rm -f /tmp/id_rsa
