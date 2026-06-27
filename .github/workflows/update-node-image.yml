@@ -1,0 +1,66 @@
+name: Update Main Node Image (NO DATA WIPE)
+# Updates the node-scala image without wiping chain data.
+# Use this for configuration changes and image updates.
+# Use restart-host-network.yml ONLY when a clean chain reset is needed.
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Pull new image and restart without wiping data
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set +e
+             IMG=ghcr.io/decentral-america/node-scala:testnet-latest
+
+             echo '=== Current node state ==='
+             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
+
+             echo '=== Pull new image ==='
+             if [ -n '${GHCR_TOKEN}' ]; then
+               echo '${GHCR_TOKEN}' | docker login ghcr.io -u github-actions --password-stdin 2>/dev/null || true
+             fi
+             docker pull \"\$IMG\" 2>&1 | tail -3
+
+             echo '=== Stop node ==='
+             docker stop node-scala-testnet
+
+             echo '=== Remove container (keep volume!) ==='
+             docker rm node-scala-testnet
+
+             echo '=== Start with new image (SAME VOLUME, no data wipe) ==='
+             docker run -d \
+               --name node-scala-testnet \
+               --network host \
+               --restart unless-stopped \
+               --memory 4g \
+               --cap-drop ALL \
+               --read-only \
+               -v node-state-testnet:/var/lib/dcc \
+               -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
+               -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
+               --env-file /opt/dcc/secrets/testnet.env \
+               -e DCC_NETWORK=testnet \
+               -e DCC_HEAP_SIZE=2g \
+               -e DCC_REST_API_BIND=0.0.0.0 \
+               \"\$IMG\"
+
+             sleep 15
+             echo '=== New node state ==='
+             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
+             echo '=== Height check ==='
+             curl -s http://localhost:6869/blocks/height 2>/dev/null || echo '(starting up)'
+             echo '=== Version ==='
+             curl -s http://localhost:6869/node/version 2>/dev/null || echo '(starting up)'"
+          rm -f /tmp/id_rsa
