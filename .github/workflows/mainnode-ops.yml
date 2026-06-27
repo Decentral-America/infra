@@ -21,6 +21,7 @@ on:
           - restart
           - wipe-peers-and-restart
           - wipe-chain-and-restart
+          - clear-known-peers-and-restart
           - disable-blacklisting-and-restart
           - disable-microblocks-and-restart
           - disable-miner-and-restart
@@ -242,6 +243,34 @@ jobs:
                   fi
                   echo "Restarting $CID..."
                   docker restart "$CID" && echo "OK"'
+                ;;
+              clear-known-peers-and-restart)
+                # Removes gen node IPs from main-node's known-peers.
+                # Root cause of sync failure: both sides connect simultaneously → PeerKey collision →
+                # duplicate detection closes one channel → suspension cycling → sync never triggers.
+                # With empty known-peers, gen nodes connect OUT to main-node only (no race condition).
+                $SSH 'set -e
+                  CID=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "node-scala" | head -1)
+                  if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
+                  HOST_CONF="/opt/dcc/config/node-testnet/dcc.conf"
+                  if [ ! -f "$HOST_CONF" ]; then
+                    HOST_CONF=$(docker inspect "$CID" --format "{{range .Mounts}}{{if eq .Destination \"/etc/dcc\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null)/dcc.conf
+                  fi
+                  echo "Clearing known-peers from $HOST_CONF..."
+                  # Replace the known-peers block with an empty list
+                  python3 - "$HOST_CONF" << "PYEOF"
+import sys, re
+f = sys.argv[1]
+with open(f) as h:
+    content = h.read()
+# Replace known-peers = [...] with known-peers = []
+content = re.sub(r"known-peers\s*=\s*\[[^\]]*\]", "known-peers = []", content, flags=re.DOTALL)
+with open(f, "w") as h:
+    h.write(content)
+print("PATCHED")
+PYEOF
+                  grep "known-peers" "$HOST_CONF"
+                  docker restart "$CID" && echo "OK - known-peers cleared, gen nodes will connect to main-node (not vice versa)"'
                 ;;
               disable-blacklisting-and-restart)
                 # Applies RC#2 fix: sets enable-blacklisting = no and suspension-residence-time = 10s.
