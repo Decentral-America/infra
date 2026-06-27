@@ -130,15 +130,27 @@ jobs:
             echo "  suspended: $(curl -s -H "X-API-Key: $KEY" http://127.0.0.1:1$PORT/peers/suspended 2>/dev/null | head -c 300)"
             kill $PF 2>/dev/null; true
           done
-      - name: gen-0 trace log — score and extension lines
+      - name: gen-0 trace log — score and extension lines (from start)
         run: |
           set +e
-          echo "===== gen-0 trace log (score/extension/sync) ====="
+          echo "===== gen-0 trace log files ====="
+          kubectl exec -n dcc dcc-gen-0-0 -- ls -la /tmp/*.log 2>/dev/null || echo "(no .log files)"
+          echo "===== gen-0 trace log FIRST score/extension/sync messages ====="
           kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
-            'ls /tmp/*.log 2>/dev/null; find /tmp -name "*.log" -maxdepth 1 2>/dev/null | xargs -I{} tail -n 8000 {} 2>/dev/null' \
-            | grep -iE "score|Score|extension|Extension|appending|Can.t process|syncWith|bestChannel|GetSignatures|GetBlock|Ignoring extension|Error appending|declined|Declined|applying|Applying|height|Height|blacklist|suspend|fork|Fork" \
+            'find /tmp -name "*.log" -maxdepth 1 2>/dev/null | xargs -I{} grep -m 80 -iE "score|Score|extension|Extension|appending|Can.t process|syncWith|bestChannel|GetSignatures|GetBlock|Ignoring|Error appending|declined|blacklist|suspend|fork|Fork|remoteScore|localScore|bestScore" {} 2>/dev/null' \
             | grep -v "HTTP 200\|HTTP 400\|HTTP 403\|kamon\|utxPool\|REST API\|gRPC" \
-            | tail -80 || echo "(no trace log found)"
+            | head -80 || echo "(no score/sync messages in trace log)"
+          echo "===== gen-0 ALL WARN/ERROR from stdout (full history) ====="
+          kubectl logs -n dcc dcc-gen-0-0 2>/dev/null \
+            | python3 -c "
+          import sys,json
+          for line in sys.stdin:
+            try:
+              d=json.loads(line)
+              if d.get('level') in ('WARN','ERROR') or any(k in d.get('message','') for k in ['extension','Extension','appending','Can\\'t process','score mismatch','Error appending','declined','validation failed','state hash','stateHash','GetSig','syncWith','bestChannel']):
+                print(d.get('@timestamp','')[-12:], d.get('level',''), d.get('message','')[:200])
+            except: pass
+          " | grep -v "kamon\|HTTP 200\|HTTP 400\|REST API\|utxPool" | head -60
 
       - name: Recent P2P log lines per generator
         run: |
