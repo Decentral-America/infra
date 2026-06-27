@@ -113,16 +113,32 @@ jobs:
 
       - name: P2P connectivity via port-forward
         run: |
+          GEN0_KEY="***REDACTED_GEN0_API_KEY***="
+          GEN1_KEY="***REDACTED_API_KEY***="
+          VAL0_KEY="FMb13YEvv9XBgbRcP4SosJVWf5X2i8iTG9H2ZEswaTLE"
+          declare -A KEYS=(["dcc-gen-0-0:6869"]="$GEN0_KEY" ["dcc-gen-1-0:6870"]="$GEN1_KEY" ["dcc-val-0-0:6871"]="$VAL0_KEY")
           for pod_port in "dcc-gen-0-0:6869" "dcc-gen-1-0:6870" "dcc-val-0-0:6871"; do
             POD="${pod_port%%:*}"; PORT="${pod_port##*:}"
+            KEY="${KEYS[$pod_port]}"
             echo "===== $POD ====="
             kubectl port-forward -n dcc "$POD" "1$PORT:$PORT" >/dev/null 2>&1 &
             PF=$!; sleep 4
             echo "  height: $(curl -s http://127.0.0.1:1$PORT/blocks/height 2>/dev/null)"
             echo "  version: $(curl -s http://127.0.0.1:1$PORT/node/version 2>/dev/null)"
-            echo "  peer count: $(curl -s http://127.0.0.1:1$PORT/peers/connected 2>/dev/null | head -c 400)"
+            echo "  peers/connected: $(curl -s -H "X-API-Key: $KEY" http://127.0.0.1:1$PORT/peers/connected 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); peers=d.get("peers",[]); print(f"{len(peers)} peers"); [print(f"    {p.get(\"declaredAddress\")} {p.get(\"peerName\")}") for p in peers]' 2>/dev/null || echo "(unavailable)")"
+            echo "  blacklisted: $(curl -s -H "X-API-Key: $KEY" http://127.0.0.1:1$PORT/peers/blacklisted 2>/dev/null | head -c 300)"
+            echo "  suspended: $(curl -s -H "X-API-Key: $KEY" http://127.0.0.1:1$PORT/peers/suspended 2>/dev/null | head -c 300)"
             kill $PF 2>/dev/null; true
           done
+      - name: gen-0 trace log — score and extension lines
+        run: |
+          set +e
+          echo "===== gen-0 trace log (score/extension/sync) ====="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
+            'ls /tmp/*.log 2>/dev/null; find /tmp -name "*.log" -maxdepth 1 2>/dev/null | xargs -I{} tail -n 8000 {} 2>/dev/null' \
+            | grep -iE "score|Score|extension|Extension|appending|Can.t process|syncWith|bestChannel|GetSignatures|GetBlock|Ignoring extension|Error appending|declined|Declined|applying|Applying|height|Height|blacklist|suspend|fork|Fork" \
+            | grep -v "HTTP 200\|HTTP 400\|HTTP 403\|kamon\|utxPool\|REST API\|gRPC" \
+            | tail -80 || echo "(no trace log found)"
 
       - name: Recent P2P log lines per generator
         run: |
