@@ -19,6 +19,7 @@ on:
         options:
           - status
           - restart
+          - deploy-latest-image-and-wipe-reset
           - wipe-peers-and-restart
           - wipe-chain-and-restart
           - clear-known-peers-and-restart
@@ -243,6 +244,39 @@ jobs:
                   fi
                   echo "Restarting $CID..."
                   docker restart "$CID" && echo "OK"'
+                ;;
+              deploy-latest-image-and-wipe-reset)
+                # Pulls node-scala-testnet-latest from GHCR, updates IMAGE_TAG,
+                # wipes chain data + peers.dat, and restarts. Use after a new
+                # image build to deploy the fix to main node from scratch.
+                $SSH "set -e
+                  GHCR_TOKEN='${{ secrets.GHCR_TOKEN }}'
+                  IMAGE='ghcr.io/decentral-america/node-scala:node-scala-testnet-latest'
+                  COMPOSE_DIR='/opt/dcc/compose'
+                  ENV_FILE='/opt/dcc/.env'
+                  echo '=== Logging in to GHCR ==='
+                  echo \"\$GHCR_TOKEN\" | docker login ghcr.io -u github-actions --password-stdin 2>/dev/null || echo '(login skipped)'
+                  echo '=== Pulling new image ==='
+                  docker pull \"\$IMAGE\"
+                  echo '=== Updating IMAGE_TAG in env file ==='
+                  if [ -f \"\$ENV_FILE\" ]; then
+                    sed -i \"s|^IMAGE_TAG=.*|IMAGE_TAG=\$IMAGE|\" \"\$ENV_FILE\"
+                    grep IMAGE_TAG \"\$ENV_FILE\"
+                  else
+                    echo \"IMAGE_TAG=\$IMAGE\" >> \"\$ENV_FILE\"
+                    echo \"NETWORK=testnet\" >> \"\$ENV_FILE\"
+                  fi
+                  echo '=== Stopping container ==='
+                  docker compose -f \"\$COMPOSE_DIR/node-scala.yml\" --env-file \"\$ENV_FILE\" down 2>/dev/null || true
+                  echo '=== Wiping chain data + peers ==='
+                  VOL=\"node-state-testnet\"
+                  docker run --rm -v \"\$VOL\":/data alpine sh -c 'rm -rf /data/data /data/peers.dat && echo WIPED' 2>/dev/null || \
+                    docker volume rm \"\$VOL\" 2>/dev/null && echo 'volume cleared'
+                  echo '=== Starting with new image ==='
+                  IMAGE_TAG=\"\$IMAGE\" NETWORK=testnet docker compose -f \"\$COMPOSE_DIR/node-scala.yml\" up -d
+                  sleep 10
+                  docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala || echo 'checking...'
+                  echo OK"
                 ;;
               clear-known-peers-and-restart)
                 # Removes gen node IPs from main-node's known-peers.
