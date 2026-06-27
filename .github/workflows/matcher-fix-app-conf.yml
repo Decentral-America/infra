@@ -1,4 +1,4 @@
-name: Fix Matcher - remove stale application.conf
+name: Fix Matcher and BPS + full status check
 on:
   workflow_dispatch: {}
 permissions:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Write local.conf to CORRECT config dir and restart
+      - name: Restart BPS if stopped + full status check
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,30 +18,37 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             docker stop matcher-testnet 2>/dev/null
+             echo "=== BPS exit reason (last logs) ==="
+             docker logs blockchain-postgres-sync-testnet --tail=15 2>&1 \
+               | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\." | head -10
 
-             echo "=== Both dirs on host ==="
-             echo "DATA config (wrong, was shadowed by config mount):"
-             ls -la /opt/dcc/data/matcher-testnet/config/ 2>/dev/null || echo "missing"
-             echo "CONFIG dir (correct read-only bind mount to /var/lib/decentralchain-dex/config):"
-             ls -la /opt/dcc/config/matcher-testnet/ 2>/dev/null || echo "DIR MISSING"
+             echo "=== Restart BPS ==="
+             BPS_STATUS=$(docker inspect --format "{{.State.Status}}" blockchain-postgres-sync-testnet 2>/dev/null)
+             if [ "$BPS_STATUS" = "exited" ]; then
+               docker start blockchain-postgres-sync-testnet && echo "BPS started"
+               sleep 10
+               echo "BPS init logs:"
+               docker logs blockchain-postgres-sync-testnet --since 2026-06-27T14:00:00Z 2>&1 \
+                 | grep -v "at java\|DEBUG" | head -10
+             else
+               echo "BPS status: $BPS_STATUS (no restart needed)"
+             fi
 
-             echo "=== Write local.conf to CORRECT config dir ==="
-             sudo mkdir -p /opt/dcc/config/matcher-testnet
-             printf "dcc.dex {\n  address-scheme-character = \"!\"\n  account-storage.type = in-mem\n}\n" \
-               | sudo tee /opt/dcc/config/matcher-testnet/local.conf > /dev/null
-             echo "Written:"
-             cat /opt/dcc/config/matcher-testnet/local.conf
+             echo "=== ALL SERVICES ==="
+             docker ps -a --format "{{.Names}}\t{{.Status}}" | sort
 
-             echo "=== Start matcher ==="
-             docker start matcher-testnet
-             sleep 15
+             echo "=== BLOCK GENERATORS (last 10 blocks) ==="
+             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "Current height: $HEIGHT"
+             for h in $(seq $((HEIGHT-9)) $HEIGHT); do
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+gen=d.get(\"generator\",\"?\")
+print(d.get(\"height\",\"?\"), gen[:20])
+" 2>/dev/null
+             done
 
-             echo "=== First startup logs ==="
-             docker logs matcher-testnet --since 2026-06-27T14:00:00Z 2>&1 \
-               | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|DEBUG.*pekko\|class path\|WARNING.*Unsafe" \
-               | head -25
-
-             echo "=== Status ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher'
+             echo "=== MATCHER ==="
+             curl -s http://localhost:6886/matcher 2>/dev/null | head -2'
           rm -f /tmp/id_rsa
