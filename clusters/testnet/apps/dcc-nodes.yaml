@@ -353,7 +353,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
+          image: ghcr.io/decentral-america/node-scala:testnet-latest
           imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
@@ -456,7 +456,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
+          image: ghcr.io/decentral-america/node-scala:testnet-latest
           imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
@@ -559,7 +559,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
+          image: ghcr.io/decentral-america/node-scala:testnet-latest
           imagePullPolicy: Always
           env:
             - name: DCC_NETWORK
