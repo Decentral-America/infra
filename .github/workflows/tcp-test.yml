@@ -1,0 +1,51 @@
+name: TCP Connectivity Test from Gen-0
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+          curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" \
+            | jq -r '.kubeconfig' \
+            | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip()+"=="))' \
+            > /tmp/kubeconfig && chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - uses: azure/setup-kubectl@v4
+      - name: Python TCP test from gen-0 to main-node
+        run: |
+          echo "=== TCP test: gen-0 → 66.228.55.154:6868 ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- python3 -c "
+          import socket, sys
+          try:
+              s = socket.socket()
+              s.settimeout(8)
+              s.connect(('66.228.55.154', 6868))
+              print('TCP OPEN: connection to 66.228.55.154:6868 SUCCEEDED from gen-0')
+              s.close()
+          except Exception as e:
+              print(f'TCP FAILED: {e}')
+          sys.exit(0)
+          " 2>/dev/null
+          echo "=== gen-0 /proc/net/tcp for 66.228 connections ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c \
+            'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk "{print \$2, \$3, \$4}" | grep -i 9A37E442 || echo "(no connections to 66.228.55.154)"'
+          echo "=== gen-0 suspended list ==="
+          kubectl port-forward -n dcc dcc-gen-0-0 17869:6869 >/dev/null 2>&1 &
+          PF=$!; sleep 3
+          curl -s -H "X-API-Key: ***REDACTED_GEN0_API_KEY***=" \
+            http://127.0.0.1:17869/peers/suspended 2>/dev/null
+          echo ""
+          curl -s -H "X-API-Key: ***REDACTED_GEN0_API_KEY***=" \
+            http://127.0.0.1:17869/peers/connected 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'gen-0 peers={len(d.get(\"peers\",[])})')" 2>/dev/null
+          kill $PF 2>/dev/null; true
