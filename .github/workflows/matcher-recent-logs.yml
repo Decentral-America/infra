@@ -1,0 +1,27 @@
+name: Get Matcher Recent Raw Logs
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Get last 30 matcher log lines unfiltered
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             echo "=== Matcher status ==="
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher
+             echo "=== Config ==="
+             cat /opt/dcc/data/matcher-testnet/config/application.conf 2>/dev/null
+             echo "=== Last 30 matcher logs (raw, no filter) ==="
+             docker logs matcher-testnet --tail=30 2>&1 | grep -v "class path\|at java\|at scala\|at io\|at org\|at com\|at net" | tail -20'
+          rm -f /tmp/id_rsa
