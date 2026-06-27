@@ -1,0 +1,47 @@
+name: Fix BPS Starting Height (no sudo)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Reset BPS starting height via docker env override
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" '
+            set +e
+            echo "=== Current BPS state ==="
+            docker inspect blockchain-postgres-sync-testnet --format "{{.State.Status}}" 2>/dev/null
+            echo "=== BPS env (looking for STARTING_HEIGHT) ==="
+            docker inspect blockchain-postgres-sync-testnet --format "{{json .Config.Env}}" 2>/dev/null | tr "," "\n" | grep -iE "START|HEIGHT|FROM" | head -5
+            echo "=== Stop BPS ==="
+            docker stop blockchain-postgres-sync-testnet 2>/dev/null || true
+            echo "=== Restart BPS with STARTING_HEIGHT=1 env override ==="
+            # Use docker update to add env var, then restart
+            docker update --restart no blockchain-postgres-sync-testnet 2>/dev/null || true
+            # Remove and recreate via compose with env override
+            COMPOSE_DIR="/opt/dcc/compose"
+            if [ -f "$COMPOSE_DIR/blockchain-postgres-sync.yml" ]; then
+              echo "Found compose file, restarting with env override..."
+              STARTING_HEIGHT=1 NETWORK=testnet \
+                docker compose -f "$COMPOSE_DIR/blockchain-postgres-sync.yml" \
+                --env-file /opt/dcc/secrets/testnet.env \
+                up -d 2>&1 | tail -5
+            else
+              echo "No compose file found, trying docker run..."
+              docker start blockchain-postgres-sync-testnet 2>/dev/null || true
+            fi
+            sleep 15
+            echo "=== BPS health ==="
+            docker ps --format "{{.Names}}\t{{.Status}}" | grep postgres
+            echo "=== BPS last 5 logs ==="
+            docker logs blockchain-postgres-sync-testnet --tail=5 2>&1'
+          rm -f /tmp/id_rsa
