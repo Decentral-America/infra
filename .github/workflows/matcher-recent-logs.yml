@@ -23,6 +23,8 @@ jobs:
              curl -s http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"Peers:\",len(d.get(\"peers\",[])), [(p[\"address\"],p.get(\"applicationName\",\"\")[:15]) for p in d.get(\"peers\",[])])" 2>/dev/null
              echo "=== Finality ==="
              curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[]))) " 2>/dev/null
+             echo "=== StateHashDiag diagnostic lines ==="
+             docker logs node-scala-testnet --since 2026-06-27T16:30:00Z 2>&1 | grep -i "StateHashDiag\|InvalidStateHash\|Error mining" | tail -20
              echo "=== Recent node log (block appends) ==="
-             docker logs node-scala-testnet --since 2026-06-27T15:20:00Z 2>&1 | grep -i "appended\|append\|height\|peer\|disconnect\|score\|hotstuff\|error" | grep -v "HTTP\|GET\|POST" | tail -15'
+             docker logs node-scala-testnet --since 2026-06-27T16:30:00Z 2>&1 | grep -i "appended\|New height\|hotstuff\|error" | grep -v "HTTP\|GET\|POST" | tail -10'
           rm -f /tmp/id_rsa
