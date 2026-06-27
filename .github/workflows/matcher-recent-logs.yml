@@ -18,14 +18,13 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Matcher status ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep matcher
-             echo "=== Correct config (config dir) ==="
-             cat /opt/dcc/config/matcher-testnet/local.conf 2>/dev/null
-             echo "=== Blockchain ID check and startup logs ==="
-             docker logs matcher-testnet --since 2026-06-27T14:00:00Z 2>&1 \
-               | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|DEBUG.*pekko\|class path\|WARNING.*Unsafe\|jfr\|kanela" \
-               | head -30
-             echo "=== Service status (all) ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "testnet"'
+             echo "=== /blockchain/finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null
+             echo ""
+             echo "=== /activation/status (features 22,25) ==="
+             curl -s http://localhost:6869/activation/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f) for f in d.get(\"features\",[]) if f.get(\"id\") in [22,25]]" 2>/dev/null
+             echo "=== CommitToGeneration txs ==="
+             curl -s "http://localhost:6869/transactions/address/3FPKHBRpG3xKz3RcGUzDpxFLmJtLQ2YVFt3/limit/20" 2>/dev/null | python3 -c "import json,sys; txs=json.load(sys.stdin); [print(t.get(\"type\"),t.get(\"id\",\"\")[:20]) for t in (txs[0] if isinstance(txs,list) and txs else []) if t.get(\"type\") in [17,18,26,27,28]]" 2>/dev/null || echo "no special txs"
+             echo "=== Node log HotStuff lines ==="
+             docker logs node-scala-testnet --since 2026-06-27T14:00:00Z 2>&1 | grep -i "hotstuff\|finality\|committed\|validator" | tail -10'
           rm -f /tmp/id_rsa
