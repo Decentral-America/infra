@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Get node startup logs
+      - name: Get node and BPS crash logs
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,10 +18,10 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
+             echo "=== Node crash logs ==="
+             docker logs node-scala-testnet --tail=20 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\." | head -15
+             echo "=== BPS crash logs ==="
+             docker logs blockchain-postgres-sync-testnet --tail=20 2>&1 | head -15
              echo "=== Container status ==="
-             docker ps -a --format "{{.Names}}\t{{.Status}}\t{{.Image}}" | grep node-scala
-             echo "=== Last 30 lines of node logs ==="
-             docker logs node-scala-testnet --tail=30 2>&1
-             echo "=== Any core dumps or OOM ==="
-             journalctl -n 20 --no-pager 2>/dev/null | grep -i "oom\|killed\|core" | tail -5'
+             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -E "node-scala|blockchain-postgres"'
           rm -f /tmp/id_rsa
