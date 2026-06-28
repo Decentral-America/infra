@@ -1,13 +1,4 @@
-name: Rebalance Validators (30M/30M/30M)
-# Transfers DCC so every pair of validators can form a T2 HotStuff quorum.
-# Current: main=40M, gen-0=35M, gen-1=15M — only main+gen-0 forms quorum.
-# Target:  main=30M, gen-0=30M, gen-1=30M — any 2-of-3 forms quorum (2/3 of 90M = 60M).
-#
-# Transfers:
-#   main → gen-1: 10,000,000 DCC (10_000_000_00000000 dcclets)
-#   gen-0 → gen-1: 5,000,000 DCC  (5_000_000_00000000 dcclets)
-#
-# Each transfer uses /transactions/sign (auto-signs with node wallet seed) then /transactions/broadcast.
+name: Rebalance Validators to 30M each
 on:
   workflow_dispatch: {}
 permissions:
@@ -17,36 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Transfer 10M DCC: main → gen-1
-        env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-        run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'set -e
-             API_KEY="***REDACTED_MAIN_API_KEY***="
-             GEN1_ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
-             MAIN_ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
-             AMOUNT=1000000000000000   # 10,000,000 DCC in dcclets (8 decimal places)
-             echo "=== Current balances ==="
-             curl -s "http://localhost:6869/addresses/balance/$MAIN_ADDR" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Main balance:', d['balance']//100000000, 'DCC')"
-             curl -s "http://localhost:6869/addresses/balance/$GEN1_ADDR" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Gen-1 balance:', d['balance']//100000000, 'DCC')"
-             echo "=== Signing transfer: main → gen-1 (10M DCC) ==="
-             SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
-               -H "X-API-Key: $API_KEY" \
-               -H "Content-Type: application/json" \
-               -d "{\"type\":4,\"sender\":\"$MAIN_ADDR\",\"recipient\":\"$GEN1_ADDR\",\"amount\":$AMOUNT,\"fee\":100000,\"attachment\":\"\"}")
-             echo "Signed: $(echo $SIGNED | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:50])" 2>/dev/null)"
-             echo "=== Broadcasting ==="
-             RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
-               -H "Content-Type: application/json" \
-               -d "$SIGNED")
-             echo "TX ID: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\")))" 2>/dev/null)"'
-          rm -f /tmp/id_rsa
-
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
@@ -64,49 +25,62 @@ jobs:
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
-      - name: Transfer 5M DCC: gen-0 → gen-1
-        run: |
-          GEN0_API_KEY="***REDACTED_GEN0_API_KEY***="
-          GEN0_ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
-          GEN1_ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
-          AMOUNT=500000000000000  # 5,000,000 DCC in dcclets
-
-          echo "=== Port-forward gen-0 REST API ==="
-          kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
-          PF_PID=$!
-          sleep 5
-
-          echo "=== Signing transfer: gen-0 → gen-1 (5M DCC) ==="
-          SIGNED=$(curl -s -X POST http://localhost:16869/transactions/sign \
-            -H "X-API-Key: $GEN0_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"type\":4,\"sender\":\"$GEN0_ADDR\",\"recipient\":\"$GEN1_ADDR\",\"amount\":$AMOUNT,\"fee\":100000,\"attachment\":\"\"}")
-          echo "Signed: $(echo $SIGNED | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:50])" 2>/dev/null)"
-
-          echo "=== Broadcasting ==="
-          RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
-            -H "Content-Type: application/json" \
-            -d "$SIGNED")
-          echo "TX ID: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\")))" 2>/dev/null)"
-
-          kill $PF_PID 2>/dev/null || true
-
-      - name: Verify and report
+      - name: Check balances and transfer main to gen-1 (10M DCC)
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          sleep 10
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Balance check (may take 1+ blocks to confirm) ==="
-             for ADDR in "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6" "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD" "31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"; do
-               BAL=$(curl -s "http://localhost:6869/addresses/balance/$ADDR" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['balance']//100000000)" 2>/dev/null)
-               echo "  $ADDR: $BAL DCC"
+             MAIN="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
+             GEN0="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
+             GEN1="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
+             MAIN_KEY="***REDACTED_MAIN_API_KEY***="
+             echo "=== Current balances ==="
+             curl -s "http://localhost:6869/addresses/balance/$MAIN" | python3 -c "import json,sys; print(\"Main:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"
+             curl -s "http://localhost:6869/addresses/balance/$GEN0" | python3 -c "import json,sys; print(\"Gen-0:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"
+             curl -s "http://localhost:6869/addresses/balance/$GEN1" | python3 -c "import json,sys; print(\"Gen-1:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"
+             echo "=== Transfer 1: main->gen-1 (10M DCC) ==="
+             PAYLOAD=$(printf '\''{"type":4,"sender":"%s","recipient":"%s","amount":1000000000000000,"fee":100000,"attachment":""}'\''" $MAIN $GEN1)
+             SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign -H "Content-Type: application/json" -H "X-API-Key: $MAIN_KEY" -d "$PAYLOAD")
+             echo "Signed TX: $(echo $SIGNED | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"id\",\"error\")[:30])" 2>/dev/null)"
+             RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast -H "Content-Type: application/json" -d "$SIGNED")
+             echo "Broadcast: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:40])" 2>/dev/null)"'
+          rm -f /tmp/id_rsa
+
+      - name: Transfer gen-0 to gen-1 (5M DCC) via port-forward
+        run: |
+          GEN0_KEY="***REDACTED_GEN0_API_KEY***="
+          GEN0="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
+          GEN1="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
+          kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
+          PF_PID=$!
+          sleep 5
+          PAYLOAD=$(printf '{"type":4,"sender":"%s","recipient":"%s","amount":500000000000000,"fee":100000,"attachment":""}' "$GEN0" "$GEN1")
+          SIGNED=$(curl -s -X POST http://localhost:16869/transactions/sign -H "Content-Type: application/json" -H "X-API-Key: $GEN0_KEY" -d "$PAYLOAD")
+          echo "Signed TX: $(echo $SIGNED | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','error')[:30])")"
+          RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast -H "Content-Type: application/json" -d "$SIGNED")
+          echo "Broadcast: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',d.get('message','error'))[:40])")"
+          kill $PF_PID 2>/dev/null || true
+
+      - name: Verify final balances
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          sleep 15
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             echo "=== Final balances (30M/30M/30M target) ==="
+             for A in "31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6" "31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD" "31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"; do
+               B=$(curl -s "http://localhost:6869/addresses/balance/$A" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"balance\"]//100000000)")
+               echo "  $A: $B DCC"
              done
-             echo "=== Pending transactions ==="
              curl -s http://localhost:6869/transactions/unconfirmed/size 2>/dev/null'
           rm -f /tmp/id_rsa
