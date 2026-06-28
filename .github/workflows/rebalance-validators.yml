@@ -44,27 +44,17 @@ jobs:
              curl -s "http://localhost:6869/addresses/balance/$GEN0" | python3 -c "import json,sys; print(\"Gen-0:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"
              curl -s "http://localhost:6869/addresses/balance/$GEN1" | python3 -c "import json,sys; print(\"Gen-1:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"
              echo "=== Transfer 1: main->gen-0 (6.67M DCC) ==="
-             PAYLOAD=$(jq -nc --arg s "$MAIN" --arg r "$GEN0" \
-               "{type:4,sender:\$s,recipient:\$r,amount:666666600000000,fee:100000,attachment:\"\"}")
-             SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
-               -H "Content-Type: application/json" \
-               -H "X-API-Key: $MAIN_KEY" \
-               -d "$PAYLOAD")
-             echo "Signed: $(echo $SIGNED | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"id\",\"error\")[:30])" 2>/dev/null)"
-             RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
-               -H "Content-Type: application/json" -d "$SIGNED")
-             echo "TX1: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:40])" 2>/dev/null)"
+             P1=$(python3 -c "import json; print(json.dumps({\"type\":4,\"sender\":\"$MAIN\",\"recipient\":\"$GEN0\",\"amount\":666666600000000,\"fee\":100000,\"attachment\":\"\"}))")
+             S1=$(curl -s -X POST http://localhost:6869/transactions/sign -H "Content-Type: application/json" -H "X-API-Key: $MAIN_KEY" -d "$P1")
+             echo "Signed: $(echo $S1 | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"id\",\"error\")[:30])" 2>/dev/null)"
+             R1=$(curl -s -X POST http://localhost:6869/transactions/broadcast -H "Content-Type: application/json" -d "$S1")
+             echo "TX1: $(echo $R1 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:40])" 2>/dev/null)"
              echo "=== Transfer 2: main->gen-1 (6.67M DCC) ==="
-             PAYLOAD2=$(jq -nc --arg s "$MAIN" --arg r "$GEN1" \
-               "{type:4,sender:\$s,recipient:\$r,amount:666666700000000,fee:100000,attachment:\"\"}")
-             SIGNED2=$(curl -s -X POST http://localhost:6869/transactions/sign \
-               -H "Content-Type: application/json" \
-               -H "X-API-Key: $MAIN_KEY" \
-               -d "$PAYLOAD2")
-             echo "Signed: $(echo $SIGNED2 | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"id\",\"error\")[:30])" 2>/dev/null)"
-             RESULT2=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
-               -H "Content-Type: application/json" -d "$SIGNED2")
-             echo "TX2: $(echo $RESULT2 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:40])" 2>/dev/null)"'
+             P2=$(python3 -c "import json; print(json.dumps({\"type\":4,\"sender\":\"$MAIN\",\"recipient\":\"$GEN1\",\"amount\":666666700000000,\"fee\":100000,\"attachment\":\"\"}))")
+             S2=$(curl -s -X POST http://localhost:6869/transactions/sign -H "Content-Type: application/json" -H "X-API-Key: $MAIN_KEY" -d "$P2")
+             echo "Signed: $(echo $S2 | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"id\",\"error\")[:30])" 2>/dev/null)"
+             R2=$(curl -s -X POST http://localhost:6869/transactions/broadcast -H "Content-Type: application/json" -d "$S2")
+             echo "TX2: $(echo $R2 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:40])" 2>/dev/null)"'
           rm -f /tmp/id_rsa
 
       - name: Verify final balances and quorum math
