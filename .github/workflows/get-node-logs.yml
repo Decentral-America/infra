@@ -19,7 +19,7 @@ jobs:
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
              echo "=== Node crash logs ==="
-             docker logs node-scala-testnet --tail=20 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\." | head -15
+             docker logs node-scala-testnet --tail=50 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|WARNING.*Unsafe" | head -40
              echo "=== BPS crash logs ==="
              docker logs blockchain-postgres-sync-testnet --tail=20 2>&1 | head -15
              echo "=== Container status ==="
