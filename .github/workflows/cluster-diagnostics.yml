@@ -61,6 +61,9 @@ jobs:
           sleep 60
 
       - name: TCP test + force peer connect gen-0 → main node
+        env:
+          GEN_0_API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
+          GEN_1_API_KEY: ${{ secrets.GEN_1_NODE_REST_API_KEY }}
         run: |
           set +e
           echo "=== TCP connectivity gen-0 → 66.228.55.154:6868 ==="
@@ -70,14 +73,14 @@ jobs:
           kubectl port-forward -n dcc dcc-gen-0-0 17869:6869 >/dev/null 2>&1 &
           PF=$!; sleep 3
           curl -s -X POST http://127.0.0.1:17869/peers/connect \
-            -H 'X-API-Key: ***REDACTED_GEN0_API_KEY***=' \
+            -H "X-API-Key: ${GEN_0_API_KEY}" \
             -H 'Content-Type: application/json' \
             -d '{"host":"66.228.55.154","port":6868}' 2>/dev/null || echo "(connect call failed)"
           echo "=== Force peer connect via gen-1 REST API ==="
           kubectl port-forward -n dcc dcc-gen-1-0 17870:6870 >/dev/null 2>&1 &
           PF1=$!; sleep 3
           curl -s -X POST http://127.0.0.1:17870/peers/connect \
-            -H 'X-API-Key: ***REDACTED_API_KEY***=' \
+            -H "X-API-Key: ${GEN_1_API_KEY}" \
             -H 'Content-Type: application/json' \
             -d '{"host":"66.228.55.154","port":6868}' 2>/dev/null || echo "(connect call failed)"
           kill $PF $PF1 2>/dev/null; true
@@ -112,9 +115,12 @@ jobs:
           echo "=== RESTART COUNTS ==="; kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.metadata.name}{": restarts="}{.status.containerStatuses[0].restartCount}{"\n"}{end}'
 
       - name: P2P connectivity via port-forward
+        env:
+          GEN_0_API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
+          GEN_1_API_KEY: ${{ secrets.GEN_1_NODE_REST_API_KEY }}
         run: |
-          GEN0_KEY="***REDACTED_GEN0_API_KEY***="
-          GEN1_KEY="***REDACTED_API_KEY***="
+          GEN0_KEY="${GEN_0_API_KEY}"
+          GEN1_KEY="${GEN_1_API_KEY}"
           VAL0_KEY="FMb13YEvv9XBgbRcP4SosJVWf5X2i8iTG9H2ZEswaTLE"
           declare -A KEYS=(["dcc-gen-0-0:6869"]="$GEN0_KEY" ["dcc-gen-1-0:6870"]="$GEN1_KEY" ["dcc-val-0-0:6871"]="$VAL0_KEY")
           for pod_port in "dcc-gen-0-0:6869" "dcc-gen-1-0:6870" "dcc-val-0-0:6871"; do

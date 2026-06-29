@@ -23,6 +23,8 @@ jobs:
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
       - uses: azure/setup-kubectl@v4
       - name: TCP test from gen-0 to main-node
+        env:
+          GEN_0_API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
         run: |
           set +e
           echo "=== Pod state ==="
@@ -39,10 +41,10 @@ jobs:
           echo "=== gen-0 suspended list ==="
           kubectl port-forward -n dcc dcc-gen-0-0 17869:6869 >/dev/null 2>&1 &
           PF=$!; sleep 3
-          curl -s -H "X-API-Key: ***REDACTED_GEN0_API_KEY***=" \
+          curl -s -H "X-API-Key: ${GEN_0_API_KEY}" \
             http://127.0.0.1:17869/peers/suspended 2>/dev/null
           echo ""
-          curl -s -H "X-API-Key: ***REDACTED_GEN0_API_KEY***=" \
+          curl -s -H "X-API-Key: ${GEN_0_API_KEY}" \
             http://127.0.0.1:17869/peers/connected 2>/dev/null | \
             python3 -c "import sys,json; d=json.load(sys.stdin); print(f'gen-0 peers={len(d.get(\"peers\",[]))}')" 2>/dev/null
           kill $PF 2>/dev/null; true
