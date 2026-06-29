@@ -1,0 +1,25 @@
+name: Check Plugins Dir
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Check VPS plugins directory
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+            'echo "=== Plugins dir content ==="
+             ls -la /opt/dcc/plugins/testnet/ 2>/dev/null || echo "(empty or missing)"
+             echo "=== Check for Block$Header in any plugin JAR ==="
+             for f in /opt/dcc/plugins/testnet/*.jar 2>/dev/null; do
+               [ -f "$f" ] && jar tf "$f" 2>/dev/null | grep "Block.Header" && echo "  ^ in $(basename $f)"
+             done || echo "(no plugin JARs found)"'
+          rm -f /tmp/id_rsa
