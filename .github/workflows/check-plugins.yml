@@ -3,24 +3,33 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
-  packages: read
 jobs:
   check:
     runs-on: ubuntu-latest
+    environment: testnet
     steps:
-      - name: Login and inspect startup script + classpath
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check startup script classpath order
+      - name: Check plugin JARs for Block$Header and BlockchainUpdates
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
-          docker pull ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
-          docker create --name tmp_inspect ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
-          echo "=== Startup script header (classpath order) ==="
-          docker cp tmp_inspect:/usr/share/dcc/bin/ /tmp/dcc-bin/
-          grep -A5 "declare -r app_classpath\|CLASSPATH\|plugins" /tmp/dcc-bin/* 2>/dev/null | head -30
-          echo "=== Files in /usr/share/dcc/lib/plugins in image ==="
-          docker exec tmp_inspect ls /usr/share/dcc/lib/plugins/ 2>/dev/null || echo "(empty or no container)"
-          docker rm tmp_inspect 2>/dev/null
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+            'python3 -c "
+import zipfile
+for jar in [\"/opt/dcc/plugins/testnet/dcc-grpc.jar\", \"/opt/dcc/plugins/testnet/dcc-ext.jar\"]:
+    try:
+        z = zipfile.ZipFile(jar)
+        names = z.namelist()
+        has_bh = [n for n in names if n == \"io/decentralchain/protobuf/block/Block\$Header.class\"]
+        has_bu = [n for n in names if \"BlockchainUpdates\" in n or \"blockchain_updates\" in n.lower()]
+        has_svc = [n for n in names if \"META-INF/services\" in n]
+        print(f\"{jar}:\")
+        print(f\"  Block\$Header: {has_bh}\")
+        print(f\"  BlockchainUpdates: {has_bu[:3]}\")
+        print(f\"  Services: {has_svc[:3]}\")
+    except Exception as e:
+        print(f\"{jar}: ERROR {e}\")
+"'
+          rm -f /tmp/id_rsa
