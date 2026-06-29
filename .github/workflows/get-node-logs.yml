@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Check META-INF/services specifically in each plugin JAR
+      - name: Find Extension service file in lib
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,14 +18,18 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Plugin dir ==="
-             ls -lh /opt/dcc/plugins/testnet/
-             for jar in /opt/dcc/plugins/testnet/*.jar /opt/dcc/plugins/testnet/*.disabled; do
-               echo "--- $jar ---"
-               unzip -p "$jar" META-INF/services/com.decentralchain.Extension 2>/dev/null || echo "  (no Extension service file)"
+             echo "=== Check dcc-grpc-server JAR for Extension service ==="
+             ls /usr/share/dcc/lib/ | grep grpc
+             GRPC_JAR=$(ls /usr/share/dcc/lib/ | grep "dcc-grpc-server" | head -1)
+             unzip -p /usr/share/dcc/lib/$GRPC_JAR META-INF/services/com.decentralchain.Extension 2>/dev/null || echo "Not found in grpc-server JAR"
+             echo "=== Check ALL lib JARs for any META-INF/services ==="
+             for f in /usr/share/dcc/lib/*.jar; do
+               result=$(unzip -p "$f" META-INF/services/com.decentralchain.Extension 2>/dev/null)
+               if [ -n "$result" ]; then
+                 echo "FOUND in $(basename $f): $result"
+               fi
              done
-             echo "=== Node height ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null
+             echo "=== Done checking lib JARs ==="
              echo "=== Port 6881 ==="
              ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"'
           rm -f /tmp/id_rsa
