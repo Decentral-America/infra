@@ -22,19 +22,20 @@ jobs:
           docker rm tmp_inspect
           echo "=== Looking for node JAR ==="
           find /tmp/dcc* -name "*.jar" 2>/dev/null | grep "decentralchain.node\|node-1\." | head -5
-          echo "=== Total JARs in image ==="
-          find /tmp/dcc* -name "*.jar" 2>/dev/null | wc -l
-          echo "=== Searching ALL JARs for Block Header class ==="
+          echo "=== Searching ALL JARs for Extension service file ==="
           find /tmp/dcc* -name "*.jar" 2>/dev/null | while read jar; do
-            if jar tf "$jar" 2>/dev/null | grep -qE "Block\\\$Header.class$"; then
-              bname=$(basename "$jar")
-              echo "FOUND: $bname"
-              cd /tmp && jar xf "$jar" "io/decentralchain/protobuf/block/Block\$Header.class" 2>/dev/null
-              echo "--- committedGeneratorsHash accessor exists? ---"
-              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "committedGeneratorsHash" || echo "  METHOD MISSING"
-              echo "--- All accessor methods ---"
-              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "public.*Hash\|public.*Voting\|public.*stateHash\|public.*Signature" | head -10
-              rm -rf /tmp/io 2>/dev/null
+            result=$(jar xf "$jar" META-INF/services/com.decentralchain.Extension -C /tmp/ext_check/ 2>/dev/null; cat /tmp/ext_check/META-INF/services/com.decentralchain.Extension 2>/dev/null)
+            if [ -n "$result" ]; then
+              echo "FOUND in $(basename $jar):"
+              echo "$result"
+            fi
+            rm -rf /tmp/ext_check 2>/dev/null
+          done
+          echo "=== Simpler check: unzip approach ==="
+          find /tmp/dcc* -name "*.jar" 2>/dev/null | while read jar; do
+            result=$(unzip -p "$jar" META-INF/services/com.decentralchain.Extension 2>/dev/null)
+            if [ -n "$result" ]; then
+              echo "FOUND in $(basename $jar): $result"
             fi
           done
           echo "=== Done ==="
