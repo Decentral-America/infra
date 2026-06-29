@@ -18,36 +18,35 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'true'
-          # Write Python fix script on runner and SCP to VPS
-          python3 - << 'PYEOF' > /tmp/fix_jars.py
-import zipfile, shutil, sys
-PREFIXES = ("io/decentralchain/protobuf", "scalapb/", "io/decentralchain/events/")
-for jar in ["/opt/dcc/plugins/testnet/dcc-grpc.jar", "/opt/dcc/plugins/testnet/dcc-ext.jar"]:
-    tmp = "/tmp/fixed_jar.zip"
-    removed = 0
-    try:
-        with zipfile.ZipFile(jar, "r") as zin:
-            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
-                for item in zin.infolist():
-                    if any(item.filename.startswith(p) for p in PREFIXES):
-                        removed += 1
-                    else:
-                        zout.writestr(item, zin.read(item.filename))
-        shutil.copyfile(jar, jar + ".bak")
-        shutil.move(tmp, jar)
-        print(jar + ": removed " + str(removed) + " stale classes")
-    except Exception as e:
-        print(jar + ": " + str(e))
-PYEOF
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/fix_jars.py "${SSH_USER}@${SSH_HOST}:/tmp/fix_jars.py"
+          python3 -c "
+import base64
+s='''import zipfile,shutil
+P=(\"io/decentralchain/protobuf\",\"scalapb/\",\"io/decentralchain/events/\")
+for j in [\"/opt/dcc/plugins/testnet/dcc-grpc.jar\",\"/opt/dcc/plugins/testnet/dcc-ext.jar\"]:
+ t=\"/tmp/fj.zip\"
+ try:
+  n=0
+  zin=zipfile.ZipFile(j)
+  zout=zipfile.ZipFile(t,\"w\",8)
+  for i in zin.infolist():
+   if i.filename.startswith(P): n+=1
+   else: zout.writestr(i,zin.read(i.filename))
+  zout.close(); zin.close()
+  shutil.copyfile(j,j+\".bak\"); shutil.move(t,j)
+  print(j+\": removed \"+str(n))
+ except Exception as e: print(j+\": \"+str(e))
+'''
+print(base64.b64encode(s.encode()).decode())
+" > /tmp/encoded_script.txt
+          ENCODED=$(cat /tmp/encoded_script.txt)
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             python3 /tmp/fix_jars.py && rm /tmp/fix_jars.py
-             echo "=== Restarting node ==="
+            "set +e
+             echo '${ENCODED}' | base64 -d | python3
+             echo '=== Restarting node ==='
              docker restart node-scala-testnet
              sleep 25
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not yet open"
-             curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"'
+             docker ps --format '{{.Names}}\t{{.Status}}' | grep node-scala
+             ss -tlnp 2>/dev/null | grep 6881 || echo 'port 6881 not yet open'
+             curl -s http://localhost:6869/node/version 2>/dev/null || echo '(starting)'"
           rm -f /tmp/id_rsa
