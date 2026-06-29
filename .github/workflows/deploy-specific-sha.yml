@@ -1,0 +1,55 @@
+name: Deploy Specific SHA Image (Emergency)
+on:
+  workflow_dispatch:
+    inputs:
+      sha_tag:
+        description: 'Docker image SHA tag (e.g. sha-8aab9ca)'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Deploy specific SHA image without data wipe
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SHA_TAG: ${{ inputs.sha_tag }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set +e
+             IMG=ghcr.io/decentral-america/node-scala:${SHA_TAG}
+             echo '=== Pulling specific image: '${SHA_TAG}' ==='
+             echo '${GHCR_TOKEN}' | docker login ghcr.io -u nobody --password-stdin 2>/dev/null || true
+             docker pull \$IMG
+             echo '=== Stopping current node ==='
+             docker stop node-scala-testnet; docker rm node-scala-testnet
+             echo '=== Starting with SHA-tagged image ==='
+             docker run -d \
+               --name node-scala-testnet \
+               --network host \
+               --restart unless-stopped \
+               --memory 4g \
+               --memory-reservation 1g \
+               --security-opt no-new-privileges:true \
+               --cap-drop ALL \
+               --read-only \
+               --tmpfs /tmp:size=256m,mode=1777,exec \
+               -v node-state-testnet:/var/lib/dcc \
+               -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
+               -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
+               --env-file /opt/dcc/secrets/testnet.env \
+               -e DCC_NETWORK=testnet \
+               -e DCC_HEAP_SIZE=2g \
+               -e DCC_REST_API_BIND=0.0.0.0 \
+               \$IMG
+             sleep 20
+             docker ps --format '{{.Names}}\t{{.Status}}' | grep node-scala"
+          rm -f /tmp/id_rsa
