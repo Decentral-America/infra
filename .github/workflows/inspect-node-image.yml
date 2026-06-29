@@ -30,8 +30,10 @@ jobs:
               bname=$(basename "$jar")
               echo "FOUND: $bname"
               cd /tmp && jar xf "$jar" "io/decentralchain/protobuf/block/Block\$Header.class" 2>/dev/null
-              echo "--- ALL public methods (grep: public) ---"
-              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "public\|private final" | grep -v "static\|serialVersionUID" | head -20
+              echo "--- committedGeneratorsHash accessor exists? ---"
+              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "committedGeneratorsHash" || echo "  METHOD MISSING"
+              echo "--- All accessor methods ---"
+              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "public.*Hash\|public.*Voting\|public.*stateHash\|public.*Signature" | head -10
               rm -rf /tmp/io 2>/dev/null
             fi
           done
