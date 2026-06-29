@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Re-enable dcc-ext.jar and restart node
+      - name: Check META-INF/services specifically in each plugin JAR
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,17 +18,14 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Re-enabling dcc-ext.jar (has META-INF/services for BlockchainUpdates) ==="
-             sudo mv /opt/dcc/plugins/testnet/dcc-ext.jar.disabled /opt/dcc/plugins/testnet/dcc-ext.jar
-             echo "=== Plugin dir now ==="
+             echo "=== Plugin dir ==="
              ls -lh /opt/dcc/plugins/testnet/
-             echo "=== Restarting node ==="
-             docker restart node-scala-testnet
-             sleep 35
-             echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
-             echo "=== Extension startup logs ==="
-             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|6881\|started gRPC\|bound" | head -8
+             for jar in /opt/dcc/plugins/testnet/*.jar /opt/dcc/plugins/testnet/*.disabled; do
+               echo "--- $jar ---"
+               unzip -p "$jar" META-INF/services/com.decentralchain.Extension 2>/dev/null || echo "  (no Extension service file)"
+             done
              echo "=== Node height ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null'
+             curl -s http://localhost:6869/blocks/height 2>/dev/null
+             echo "=== Port 6881 ==="
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"'
           rm -f /tmp/id_rsa
