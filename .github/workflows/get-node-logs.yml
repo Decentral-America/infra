@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Check extension services in lib JARs
+      - name: Fix dcc-grpc.jar - keep services, remove stale implementations
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,15 +18,14 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== META-INF/services in lib JARs ==="
-             for f in /usr/share/dcc/lib/*.jar; do
-               if unzip -l "$f" 2>/dev/null | grep -q "META-INF/services"; then
-                 echo "JAR: $(basename $f)"
-                 unzip -p "$f" META-INF/services/com.decentralchain.Extension 2>/dev/null || echo "  (no com.decentralchain.Extension service)"
-               fi
-             done
-             echo "=== Plugins dir ==="
-             ls -la /opt/dcc/plugins/testnet/ 2>/dev/null
-             echo "=== Node height ==="
+             echo aW1wb3J0IHppcGZpbGUsc2h1dGlsLHN1YnByb2Nlc3MKIyBVc2Ugb3JpZ2luYWwgLmRpc2FibGVkIEpBUiBhcyBzb3VyY2UgKGhhcyBNRVRBLUlORi9zZXJ2aWNlcyB3ZSBuZWVkIHRvIGtlZXApCnNyYyA9ICcvb3B0L2RjYy9wbHVnaW5zL3Rlc3RuZXQvZGNjLWdycGMuamFyLmRpc2FibGVkJwpkc3QgPSAnL29wdC9kY2MvcGx1Z2lucy90ZXN0bmV0L2RjYy1ncnBjLmphcicKdG1wID0gJy90bXAvZmouemlwJwojIFJlbW92ZSBzdGFsZSBwcm90byBjbGFzc2VzIEFORCBvbGQgZXh0ZW5zaW9uIGltcGxlbWVudGF0aW9ucwojIEtlZXA6IE1FVEEtSU5GL3NlcnZpY2VzLCBjb20vZGVjZW50cmFsY2hhaW4vZGV4L2dycGMvKiwgY29tL3dhdmVzcGxhdGZvcm0vKgojIFJlbW92ZTogaW8vZGVjZW50cmFsY2hhaW4vcHJvdG9idWYvKiwgc2NhbGFwYi8qLCBpby9kZWNlbnRyYWxjaGFpbi9ldmVudHMvKiwgCiMgICAgICAgICBjb20vZGVjZW50cmFsY2hhaW4vZXZlbnRzL0Jsb2NrY2hhaW5VcGRhdGVzKiwgY29tL2RlY2VudHJhbGNoYWluL2FwaS9ncnBjL0dSUEMqClJFTU9WRV9QUkVGSVhFUz0oImlvL2RlY2VudHJhbGNoYWluL3Byb3RvYnVmIiwic2NhbGFwYi8iLCJpby9kZWNlbnRyYWxjaGFpbi9ldmVudHMvIikKUkVNT1ZFX05BTUVTPSgiY29tL2RlY2VudHJhbGNoYWluL2V2ZW50cy9CbG9ja2NoYWluVXBkYXRlcyIsImNvbS9kZWNlbnRyYWxjaGFpbi9hcGkvZ3JwYy9HUlBDIiwiY29tL2RlY2VudHJhbGNoYWluL2FwaS9ncnBjL2dycGMiKQpuPTAKd2l0aCB6aXBmaWxlLlppcEZpbGUoc3JjLCJyIikgYXMgemluOgogICAgd2l0aCB6aXBmaWxlLlppcEZpbGUodG1wLCJ3Iix6aXBmaWxlLlpJUF9ERUZMQVRFRCkgYXMgem91dDoKICAgICAgICBmb3IgaXRlbSBpbiB6aW4uaW5mb2xpc3QoKToKICAgICAgICAgICAgZj1pdGVtLmZpbGVuYW1lCiAgICAgICAgICAgIHNraXA9KGFueShmLnN0YXJ0c3dpdGgocCkgZm9yIHAgaW4gUkVNT1ZFX1BSRUZJWEVTKSBvcgogICAgICAgICAgICAgICAgICBhbnkoZi5zdGFydHN3aXRoKHApIGZvciBwIGluIFJFTU9WRV9OQU1FUykpCiAgICAgICAgICAgIGlmIHNraXA6IG4rPTEKICAgICAgICAgICAgZWxzZTogem91dC53cml0ZXN0cihpdGVtLHppbi5yZWFkKGl0ZW0uZmlsZW5hbWUpKQpzdWJwcm9jZXNzLnJ1bihbInN1ZG8iLCJtdiIsdG1wLGRzdF0sY2hlY2s9VHJ1ZSkKcHJpbnQoIlJlbW92ZWQgIitzdHIobikrIiBzdGFsZSBjbGFzc2VzLCBrZXB0IE1FVEEtSU5GL3NlcnZpY2VzIikKIyBWZXJpZnkgc2VydmljZXMgZmlsZSBzdGlsbCB0aGVyZQp3aXRoIHppcGZpbGUuWmlwRmlsZShkc3QpIGFzIHo6CiAgICBzdmM9W2YgZm9yIGYgaW4gei5uYW1lbGlzdCgpIGlmICJzZXJ2aWNlcyIgaW4gZl0KICAgIHByaW50KCJTZXJ2aWNlcyBmaWxlczogIitzdHIoc3ZjKSkK | base64 -d | python3
+             echo "=== Restarting node ==="
+             docker restart node-scala-testnet
+             sleep 35
+             echo "=== Port 6881 ==="
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
+             echo "=== Extension startup logs ==="
+             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|6881\|started gRPC" | head -8
+             echo "=== Height ==="
              curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
