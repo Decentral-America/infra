@@ -16,10 +16,6 @@ jobs:
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== Plugins JARs ==="
-             ls -lh /opt/dcc/plugins/testnet/
-             echo "=== Block Header in dcc-grpc.jar ==="
-             jar tf /opt/dcc/plugins/testnet/dcc-grpc.jar | grep -i "Block"
-             echo "=== Block Header in dcc-ext.jar ==="
-             jar tf /opt/dcc/plugins/testnet/dcc-ext.jar | grep -i "Block"'
+            'python3 -c "import zipfile; z=zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\"); matches=[n for n in z.namelist() if \"Block\" in n]; print(\"dcc-grpc.jar Block classes:\", matches[:10])"
+             python3 -c "import zipfile; z=zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-ext.jar\"); matches=[n for n in z.namelist() if \"Block\" in n]; print(\"dcc-ext.jar Block classes:\", matches[:10])"'
           rm -f /tmp/id_rsa
