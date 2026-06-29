@@ -98,6 +98,7 @@ data:
         enable = yes
         quorum = 0
         micro-block-interval = 2s
+        interval-after-last-block-then-generation-is-allowed = 15d
       }
 
       rest-api {
@@ -199,6 +200,7 @@ data:
         enable = yes
         quorum = 0
         micro-block-interval = 2s
+        interval-after-last-block-then-generation-is-allowed = 15d
       }
 
       rest-api {
