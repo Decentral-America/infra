@@ -17,17 +17,36 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
+            'true'
+          # Write Python fix script on runner and SCP to VPS
+          python3 - << 'PYEOF' > /tmp/fix_jars.py
+import zipfile, shutil, sys
+PREFIXES = ("io/decentralchain/protobuf", "scalapb/", "io/decentralchain/events/")
+for jar in ["/opt/dcc/plugins/testnet/dcc-grpc.jar", "/opt/dcc/plugins/testnet/dcc-ext.jar"]:
+    tmp = "/tmp/fixed_jar.zip"
+    removed = 0
+    try:
+        with zipfile.ZipFile(jar, "r") as zin:
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if any(item.filename.startswith(p) for p in PREFIXES):
+                        removed += 1
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+        shutil.copyfile(jar, jar + ".bak")
+        shutil.move(tmp, jar)
+        print(jar + ": removed " + str(removed) + " stale classes")
+    except Exception as e:
+        print(jar + ": " + str(e))
+PYEOF
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/fix_jars.py "${SSH_USER}@${SSH_HOST}:/tmp/fix_jars.py"
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Removing stale proto classes from plugin JARs ==="
-             PLUGINS=/opt/dcc/plugins/testnet
-             for jar in dcc-grpc.jar dcc-ext.jar; do
-               cp "$PLUGINS/$jar" "$PLUGINS/$jar.bak" 2>/dev/null
-               zip -d "$PLUGINS/$jar" "io/decentralchain/protobuf/*" "scalapb/*" "io/decentralchain/events/*" 2>&1 || echo "$jar: zip -d result above"
-             done
+             python3 /tmp/fix_jars.py && rm /tmp/fix_jars.py
              echo "=== Restarting node ==="
              docker restart node-scala-testnet
              sleep 25
-             echo "=== Container + gRPC port ==="
              docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
              ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not yet open"
              curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"'
