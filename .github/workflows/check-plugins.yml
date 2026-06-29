@@ -16,10 +16,10 @@ jobs:
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== Plugins dir content ==="
-             ls -la /opt/dcc/plugins/testnet/ 2>/dev/null || echo "(empty or missing)"
-             echo "=== Check for Block$Header in any plugin JAR ==="
-             for f in /opt/dcc/plugins/testnet/*.jar 2>/dev/null; do
-               [ -f "$f" ] && jar tf "$f" 2>/dev/null | grep "Block.Header" && echo "  ^ in $(basename $f)"
-             done || echo "(no plugin JARs found)"'
+            'echo "=== Plugins JARs ==="
+             ls -lh /opt/dcc/plugins/testnet/
+             echo "=== Block Header in dcc-grpc.jar ==="
+             jar tf /opt/dcc/plugins/testnet/dcc-grpc.jar | grep -i "Block"
+             echo "=== Block Header in dcc-ext.jar ==="
+             jar tf /opt/dcc/plugins/testnet/dcc-ext.jar | grep -i "Block"'
           rm -f /tmp/id_rsa
