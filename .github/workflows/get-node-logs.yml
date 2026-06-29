@@ -25,7 +25,9 @@ jobs:
              echo "=== BPS crash logs ==="
              docker logs blockchain-postgres-sync-testnet --tail=10 2>&1 | grep -v "^Error:" | head -8
              echo "=== Container status ==="
-             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -E "node-scala|blockchain-postgres"
+             docker ps -a --format "{{.Names}}\t{{.Status}}"
+             echo "=== Matcher health ==="
+             curl -s --max-time 5 http://localhost:6886/matcher 2>/dev/null || echo "matcher not responding on 6886"
              echo "=== Chain height ==="
              curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
