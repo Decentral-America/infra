@@ -17,36 +17,12 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'true'
-          python3 -c "
-import base64
-s='''import zipfile,shutil
-P=(\"io/decentralchain/protobuf\",\"scalapb/\",\"io/decentralchain/events/\")
-for j in [\"/opt/dcc/plugins/testnet/dcc-grpc.jar\",\"/opt/dcc/plugins/testnet/dcc-ext.jar\"]:
- t=\"/tmp/fj.zip\"
- try:
-  n=0
-  zin=zipfile.ZipFile(j)
-  zout=zipfile.ZipFile(t,\"w\",8)
-  for i in zin.infolist():
-   if i.filename.startswith(P): n+=1
-   else: zout.writestr(i,zin.read(i.filename))
-  zout.close(); zin.close()
-  shutil.copyfile(j,j+\".bak\"); shutil.move(t,j)
-  print(j+\": removed \"+str(n))
- except Exception as e: print(j+\": \"+str(e))
-'''
-print(base64.b64encode(s.encode()).decode())
-" > /tmp/encoded_script.txt
-          ENCODED=$(cat /tmp/encoded_script.txt)
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            "set +e
-             echo '${ENCODED}' | base64 -d | python3
-             echo '=== Restarting node ==='
+            'set +e
+             echo aW1wb3J0IHppcGZpbGUsc2h1dGlsClA9KCdpby9kZWNlbnRyYWxjaGFpbi9wcm90b2J1ZicsJ3NjYWxhcGIvJywnaW8vZGVjZW50cmFsY2hhaW4vZXZlbnRzLycpCmZvciBqIGluIFsnL29wdC9kY2MvcGx1Z2lucy90ZXN0bmV0L2RjYy1ncnBjLmphcicsJy9vcHQvZGNjL3BsdWdpbnMvdGVzdG5ldC9kY2MtZXh0LmphciddOgogICAgdD0nL3RtcC9mai56aXAnCiAgICB0cnk6CiAgICAgICAgbj0wCiAgICAgICAgemluPXppcGZpbGUuWmlwRmlsZShqKQogICAgICAgIHpvdXQ9emlwZmlsZS5aaXBGaWxlKHQsJ3cnLDgpCiAgICAgICAgZm9yIGkgaW4gemluLmluZm9saXN0KCk6CiAgICAgICAgICAgIGlmIGkuZmlsZW5hbWUuc3RhcnRzd2l0aChQKTogbis9MQogICAgICAgICAgICBlbHNlOiB6b3V0LndyaXRlc3RyKGksemluLnJlYWQoaS5maWxlbmFtZSkpCiAgICAgICAgem91dC5jbG9zZSgpOyB6aW4uY2xvc2UoKQogICAgICAgIHNodXRpbC5jb3B5ZmlsZShqLGorJy5iYWsnKTsgc2h1dGlsLm1vdmUodCxqKQogICAgICAgIHByaW50KGorJzogcmVtb3ZlZCAnK3N0cihuKSkKICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZTogcHJpbnQoaisnOiAnK3N0cihlKSkK | base64 -d | python3
+             echo "=== Restarting node ==="
              docker restart node-scala-testnet
              sleep 25
-             docker ps --format '{{.Names}}\t{{.Status}}' | grep node-scala
-             ss -tlnp 2>/dev/null | grep 6881 || echo 'port 6881 not yet open'
-             curl -s http://localhost:6869/node/version 2>/dev/null || echo '(starting)'"
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not yet open"
+             curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"'
           rm -f /tmp/id_rsa
