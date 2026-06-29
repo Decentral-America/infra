@@ -17,20 +17,8 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet 2>&1 | python3 -c "
-import sys, json
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    try:
-        d = json.loads(line)
-        if d.get(\"level\") == \"ERROR\" or \"NoSuchMethod\" in d.get(\"stack_trace\",\"\"):
-            print(\"MSG:\", d.get(\"message\"))
-            st = d.get(\"stack_trace\",\"\")
-            for l in st.split(\"\\n\")[:15]:
-                print(\" \", l)
-    except:
-        pass
-"'
+            'docker logs node-scala-testnet 2>&1 | grep -i "NoSuchMethod\|error.*miner\|error.*extension\|Error in" | head -5'
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'docker logs node-scala-testnet 2>&1 | grep "\"ERROR\"" | cut -c1-4000 | head -3'
           rm -f /tmp/id_rsa
