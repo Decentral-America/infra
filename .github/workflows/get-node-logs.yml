@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Get node and BPS status
+      - name: Get node startup extension logs
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,15 +18,10 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Container status ==="
-             docker ps -a --format "{{.Names}}\t{{.Status}}"
+             echo "=== Startup extension messages (first 100 lines) ==="
+             docker logs node-scala-testnet 2>&1 | head -100 | grep -v "HTTP 200"
              echo "=== Port 6881 ==="
              ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
-             echo "=== BPS logs ==="
-             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1 | grep -v "^Error:" | head -5
-             echo "=== Node version + height ==="
-             curl -s http://localhost:6869/node/version 2>/dev/null
-             curl -s http://localhost:6869/blocks/height 2>/dev/null
-             echo "=== Node ERROR logs ==="
-             docker logs node-scala-testnet 2>&1 | grep "ERROR\|NoSuchMethod\|BlockchainUpdates.*started\|grpc.*6881" | head -10'
+             echo "=== BPS current log ==="
+             docker logs blockchain-postgres-sync-testnet --tail=3 2>&1 | grep -v "^Error:" | head -3'
           rm -f /tmp/id_rsa
