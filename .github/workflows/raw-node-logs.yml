@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Get full miner error stack trace
+      - name: Get startup + extension + port logs
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -17,8 +17,11 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet 2>&1 | grep -i "NoSuchMethod\|error.*miner\|error.*extension\|Error in" | head -5'
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet 2>&1 | grep "\"ERROR\"" | cut -c1-4000 | head -3'
+            'set +e
+             echo "=== Node startup + extension logs ==="
+             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|6881\|Enable extension\|extension.*start\|grpc.*port\|ERROR\|NoSuchMethod" | head -20
+             echo "=== Port 6881 listening? ==="
+             ss -tlnp 2>/dev/null | grep 6881 || netstat -tlnp 2>/dev/null | grep 6881 || echo "(not found in ss/netstat)"
+             echo "=== BPS current error ==="
+             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1 | grep -v "^Error:" | head -5'
           rm -f /tmp/id_rsa
