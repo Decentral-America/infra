@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Remove stale plugin JARs and restart node
+      - name: Check extension services in lib JARs
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,19 +18,15 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Removing stale plugin JARs (extensions are in lib/dcc-grpc-server now) ==="
-             sudo mv /opt/dcc/plugins/testnet/dcc-grpc.jar /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled 2>/dev/null && echo "dcc-grpc.jar disabled"
-             sudo mv /opt/dcc/plugins/testnet/dcc-ext.jar /opt/dcc/plugins/testnet/dcc-ext.jar.disabled 2>/dev/null && echo "dcc-ext.jar disabled"
-             ls /opt/dcc/plugins/testnet/
-             echo "=== Restarting node ==="
-             docker restart node-scala-testnet
-             sleep 30
-             echo "=== Container status ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
-             echo "=== Startup extension logs ==="
-             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|6881\|grpc.*bound" | head -5
-             echo "=== Height ==="
+             echo "=== META-INF/services in lib JARs ==="
+             for f in /usr/share/dcc/lib/*.jar; do
+               if unzip -l "$f" 2>/dev/null | grep -q "META-INF/services"; then
+                 echo "JAR: $(basename $f)"
+                 unzip -p "$f" META-INF/services/com.decentralchain.Extension 2>/dev/null || echo "  (no com.decentralchain.Extension service)"
+               fi
+             done
+             echo "=== Plugins dir ==="
+             ls -la /opt/dcc/plugins/testnet/ 2>/dev/null
+             echo "=== Node height ==="
              curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
