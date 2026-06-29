@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Get node and BPS crash logs
+      - name: Get node and BPS status
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,11 +18,15 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo aW1wb3J0IHppcGZpbGUsc2h1dGlsLHN1YnByb2Nlc3Msb3MKUD0oJ2lvL2RlY2VudHJhbGNoYWluL3Byb3RvYnVmJywnc2NhbGFwYi8nLCdpby9kZWNlbnRyYWxjaGFpbi9ldmVudHMvJykKZm9yIGogaW4gWycvb3B0L2RjYy9wbHVnaW5zL3Rlc3RuZXQvZGNjLWdycGMuamFyJywnL29wdC9kY2MvcGx1Z2lucy90ZXN0bmV0L2RjYy1leHQuamFyJ106CiAgICB0PScvdG1wL2ZqLnppcCcKICAgIHRtcF9zcmM9Jy90bXAvc3JjLmphcicKICAgIHRyeToKICAgICAgICBzdWJwcm9jZXNzLnJ1bihbJ2NwJyxqLHRtcF9zcmNdLGNoZWNrPVRydWUpCiAgICAgICAgbj0wCiAgICAgICAgemluPXppcGZpbGUuWmlwRmlsZSh0bXBfc3JjKQogICAgICAgIHpvdXQ9emlwZmlsZS5aaXBGaWxlKHQsJ3cnLDgpCiAgICAgICAgZm9yIGkgaW4gemluLmluZm9saXN0KCk6CiAgICAgICAgICAgIGlmIGkuZmlsZW5hbWUuc3RhcnRzd2l0aChQKTogbis9MQogICAgICAgICAgICBlbHNlOiB6b3V0LndyaXRlc3RyKGksemluLnJlYWQoaS5maWxlbmFtZSkpCiAgICAgICAgem91dC5jbG9zZSgpOyB6aW4uY2xvc2UoKQogICAgICAgIHN1YnByb2Nlc3MucnVuKFsnc3VkbycsJ212Jyx0LGpdLGNoZWNrPVRydWUpCiAgICAgICAgcHJpbnQoaisnOiByZW1vdmVkICcrc3RyKG4pKycgc3RhbGUgY2xhc3NlcycpCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6IHByaW50KGorJzogJytzdHIoZSkpCg== | base64 -d | python3
-             echo "=== Restarting node ==="
-             docker restart node-scala-testnet
-             sleep 25
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not yet open"
-             curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"'
+             echo "=== Container status ==="
+             docker ps -a --format "{{.Names}}\t{{.Status}}"
+             echo "=== Port 6881 ==="
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
+             echo "=== BPS logs ==="
+             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1 | grep -v "^Error:" | head -5
+             echo "=== Node version + height ==="
+             curl -s http://localhost:6869/node/version 2>/dev/null
+             curl -s http://localhost:6869/blocks/height 2>/dev/null
+             echo "=== Node ERROR logs ==="
+             docker logs node-scala-testnet 2>&1 | grep "ERROR\|NoSuchMethod\|BlockchainUpdates.*started\|grpc.*6881" | head -10'
           rm -f /tmp/id_rsa
