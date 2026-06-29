@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Delete stale BlockchainUpdates state and restart
+      - name: Get latest node logs and status
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,17 +18,12 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Stopping node ==="
-             docker stop node-scala-testnet
-             echo "=== Deleting stale blockchain-updates state ==="
-             docker run --rm -v node-state-testnet:/data alpine sh -c "rm -rf /data/blockchain-updates && echo DELETED"
-             echo "=== Starting node ==="
-             docker start node-scala-testnet
-             sleep 30
              echo "=== Container status ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             echo "=== Extension startup ==="
-             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|6881\|started gRPC\|height" | head -8
+             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -E "node-scala|blockchain-postgres|matcher"
              echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open yet"'
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
+             echo "=== Last 5 min node logs ==="
+             docker logs node-scala-testnet --since 5m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|6881\|startup.*check\|ERROR\|height\|version\|Blockchain Id" | head -15
+             echo "=== Height ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null || echo "(not responding)"'
           rm -f /tmp/id_rsa
