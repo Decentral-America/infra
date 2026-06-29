@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Get raw node logs
+      - name: Get full miner error stack trace
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -17,9 +17,20 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             echo "=== Node startup lines (first 80) ==="
-             docker logs node-scala-testnet 2>&1 | head -80
-             echo "=== ERROR/WARN since startup ==="
-             docker logs node-scala-testnet 2>&1 | grep -i "error\|warn\|genesis\|miner\|generat\|forging\|cannot\|failed\|exception" | grep -v "HTTP 200\|at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\." | head -40'
+            'docker logs node-scala-testnet 2>&1 | python3 -c "
+import sys, json
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+        if d.get(\"level\") == \"ERROR\" or \"NoSuchMethod\" in d.get(\"stack_trace\",\"\"):
+            print(\"MSG:\", d.get(\"message\"))
+            st = d.get(\"stack_trace\",\"\")
+            for l in st.split(\"\\n\")[:15]:
+                print(\" \", l)
+    except:
+        pass
+"'
           rm -f /tmp/id_rsa
