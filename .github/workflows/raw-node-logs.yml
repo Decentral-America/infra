@@ -17,5 +17,9 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet --since 3m 2>&1 | head -60'
+            'set +e
+             echo "=== Node startup lines (first 80) ==="
+             docker logs node-scala-testnet 2>&1 | head -80
+             echo "=== ERROR/WARN since startup ==="
+             docker logs node-scala-testnet 2>&1 | grep -i "error\|warn\|genesis\|miner\|generat\|forging\|cannot\|failed\|exception" | grep -v "HTTP 200\|at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\." | head -40'
           rm -f /tmp/id_rsa
