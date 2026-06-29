@@ -14,28 +14,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check Block$Header methods in deployed image
+      - name: Check application.conf in ALL lib JARs
         run: |
           docker pull ghcr.io/decentral-america/node-scala:node-scala-testnet-latest 2>/dev/null
           docker create --name tmp_inspect ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
-          docker cp tmp_inspect:/usr/share/dcc/lib/ /tmp/dcc-lib/ 2>/dev/null || docker cp tmp_inspect:/usr/share/dcc/ /tmp/dcc/ 2>/dev/null
+          docker cp tmp_inspect:/usr/share/dcc/lib/ /tmp/dcc-lib/ 2>/dev/null
           docker rm tmp_inspect
-          echo "=== Looking for node JAR ==="
-          find /tmp/dcc* -name "*.jar" 2>/dev/null | grep "decentralchain.node\|node-1\." | head -5
-          echo "=== Searching ALL JARs for Extension service file ==="
-          find /tmp/dcc* -name "*.jar" 2>/dev/null | while read jar; do
-            result=$(jar xf "$jar" META-INF/services/com.decentralchain.Extension -C /tmp/ext_check/ 2>/dev/null; cat /tmp/ext_check/META-INF/services/com.decentralchain.Extension 2>/dev/null)
+          echo "=== JARs with application.conf containing dcc.extensions ==="
+          find /tmp/dcc-lib -name "*.jar" | while read jar; do
+            result=$(unzip -p "$jar" application.conf 2>/dev/null | grep -i "extension")
             if [ -n "$result" ]; then
               echo "FOUND in $(basename $jar):"
-              echo "$result"
-            fi
-            rm -rf /tmp/ext_check 2>/dev/null
-          done
-          echo "=== Simpler check: unzip approach ==="
-          find /tmp/dcc* -name "*.jar" 2>/dev/null | while read jar; do
-            result=$(unzip -p "$jar" META-INF/services/com.decentralchain.Extension 2>/dev/null)
-            if [ -n "$result" ]; then
-              echo "FOUND in $(basename $jar): $result"
+              unzip -p "$jar" application.conf 2>/dev/null | grep -A5 -B5 "extension"
             fi
           done
           echo "=== Done ==="
