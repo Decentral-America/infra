@@ -1,4 +1,4 @@
-name: Fix Plugin JAR — Remove Stale Proto Classes
+name: Fix Plugin JARs
 on:
   workflow_dispatch: {}
 permissions:
@@ -8,73 +8,44 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Remove stale protobuf classes from dcc-grpc.jar
+      - name: Write fix script
+        run: |
+          cat > /tmp/fix_jars.py << 'PYEOF'
+import zipfile, shutil, os
+for jar, label in [("/opt/dcc/plugins/testnet/dcc-grpc.jar", "dcc-grpc"), ("/opt/dcc/plugins/testnet/dcc-ext.jar", "dcc-ext")]:
+    try:
+        tmp = "/tmp/" + label + "-fixed.jar"
+        removed = 0
+        with zipfile.ZipFile(jar, "r") as zin:
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    n = item.filename
+                    if n.startswith("io/decentralchain/protobuf") or n.startswith("scalapb/") or n.startswith("io/decentralchain/events/"):
+                        removed += 1
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+        shutil.copyfile(jar, jar + ".bak")
+        shutil.move(tmp, jar)
+        print(f"{label}: removed {removed} stale classes")
+    except Exception as e:
+        print(f"{label}: ERROR {e}")
+PYEOF
+      - name: Deploy fix to VPS
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/fix_jars.py "${SSH_USER}@${SSH_HOST}:/tmp/fix_jars.py"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             echo "=== Before: check for protobuf classes in dcc-grpc.jar ==="
-             python3 -c "
-import zipfile
-z = zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\")
-protos = [n for n in z.namelist() if n.startswith(\"io/decentralchain/protobuf\") or n.startswith(\"io/decentralchain/events\")]
-print(\"Proto/events classes in dcc-grpc.jar:\", len(protos))
-print(\"First 5:\", protos[:5])
-z.close()
-" 2>/dev/null
-             echo "=== Removing stale io.decentralchain.protobuf + io.decentralchain.events classes ==="
-             cp /opt/dcc/plugins/testnet/dcc-grpc.jar /opt/dcc/plugins/testnet/dcc-grpc.jar.bak
-             python3 -c "
-import zipfile, os, shutil
-src = \"/opt/dcc/plugins/testnet/dcc-grpc.jar\"
-tmp = \"/tmp/dcc-grpc-fixed.jar\"
-with zipfile.ZipFile(src, \"r\") as zin:
-    with zipfile.ZipFile(tmp, \"w\", zipfile.ZIP_DEFLATED) as zout:
-        removed = 0
-        for item in zin.infolist():
-            n = item.filename
-            if n.startswith(\"io/decentralchain/protobuf\") or n.startswith(\"io/decentralchain/events\") or n.startswith(\"scalapb/\"):
-                removed += 1
-            else:
-                zout.writestr(item, zin.read(item.filename))
-        print(f\"Removed {removed} stale classes\")
-shutil.move(tmp, src)
-print(\"Done\")
-" 2>/dev/null
-             echo "=== After: verify Block\$Header gone ==="
-             python3 -c "
-import zipfile
-z = zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\")
-bh = [n for n in z.namelist() if \"Block\" in n and \"Header\" in n and \"protobuf\" in n]
-print(\"Block\$Header in dcc-grpc.jar:\", bh)
-z.close()
-"
-             echo "=== Do same for dcc-ext.jar ==="
-             python3 -c "
-import zipfile, os, shutil
-src = \"/opt/dcc/plugins/testnet/dcc-ext.jar\"
-tmp = \"/tmp/dcc-ext-fixed.jar\"
-with zipfile.ZipFile(src, \"r\") as zin:
-    with zipfile.ZipFile(tmp, \"w\", zipfile.ZIP_DEFLATED) as zout:
-        removed = 0
-        for item in zin.infolist():
-            n = item.filename
-            if n.startswith(\"io/decentralchain/protobuf\") or n.startswith(\"scalapb/\"):
-                removed += 1
-            else:
-                zout.writestr(item, zin.read(item.filename))
-        print(f\"dcc-ext.jar: removed {removed} stale classes\")
-shutil.move(tmp, src)
-print(\"Done\")
-" 2>/dev/null
-             echo "=== Restart node to pick up clean plugin JARs ==="
+            'python3 /tmp/fix_jars.py && rm /tmp/fix_jars.py
              docker restart node-scala-testnet
-             sleep 20
+             sleep 25
              docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"'
+             curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"
+             sleep 10
+             curl -s http://localhost:6869/node/version 2>/dev/null
+             ss -tlnp | grep 6881 || echo "port 6881 not found"'
           rm -f /tmp/id_rsa
