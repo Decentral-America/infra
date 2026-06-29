@@ -38,21 +38,26 @@ jobs:
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          # Write key to temp file to avoid SSH quoting issues with Base64 special chars
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            "set +e
-             API_KEY='${MAIN_API_KEY}'
-             ADDR='31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6'
+            'set +e
+             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n")
+             rm -f /tmp/.main_key
+             ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
              SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
                -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-               -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+               -d "{\"type\":19,\"sender\":\"$ADDR\"}" 2>/dev/null)
              if echo "$SIGNED" | grep -q "\"id\""; then
                RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
-                 -H "Content-Type: application/json" -d "$SIGNED")
+                 -H "Content-Type: application/json" -d "$SIGNED" 2>/dev/null)
                echo "Main: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
              else
-               echo "Main: already committed or sign failed"
-             fi"
+               echo "Main: sign failed: $(echo $SIGNED | head -c 150)"
+             fi'
           rm -f /tmp/id_rsa
 
       - name: Commit gen-0 generator
