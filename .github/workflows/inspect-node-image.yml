@@ -1,0 +1,32 @@
+name: Inspect Node Image Classes
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  packages: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check Block$Header methods in deployed image
+        run: |
+          docker pull ghcr.io/decentral-america/node-scala:node-scala-testnet-latest 2>/dev/null
+          docker create --name tmp_inspect ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
+          docker cp tmp_inspect:/usr/share/dcc/lib/ /tmp/dcc-lib/ 2>/dev/null || docker cp tmp_inspect:/usr/share/dcc/ /tmp/dcc/ 2>/dev/null
+          docker rm tmp_inspect
+          echo "=== Looking for node JAR ==="
+          find /tmp/dcc* -name "*.jar" 2>/dev/null | grep "decentralchain.node\|node-1\." | head -5
+          echo "=== Checking Block\$Header methods ==="
+          for jar in $(find /tmp/dcc* -name "*.jar" 2>/dev/null | head -20); do
+            if jar tf "$jar" 2>/dev/null | grep -q "Block\$Header.class"; then
+              echo "Found in: $jar"
+              jar xf "$jar" "io/decentralchain/protobuf/block/Block\$Header.class" -C /tmp/ 2>/dev/null
+              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "committed\|finalization" || echo "  (no committed method)"
+            fi
+          done
