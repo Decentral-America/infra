@@ -22,11 +22,16 @@ jobs:
           docker rm tmp_inspect
           echo "=== Looking for node JAR ==="
           find /tmp/dcc* -name "*.jar" 2>/dev/null | grep "decentralchain.node\|node-1\." | head -5
-          echo "=== Checking Block\$Header methods ==="
-          for jar in $(find /tmp/dcc* -name "*.jar" 2>/dev/null | head -20); do
-            if jar tf "$jar" 2>/dev/null | grep -q "Block\$Header.class"; then
-              echo "Found in: $jar"
-              jar xf "$jar" "io/decentralchain/protobuf/block/Block\$Header.class" -C /tmp/ 2>/dev/null
-              javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep "committed\|finalization" || echo "  (no committed method)"
+          echo "=== Total JARs in image ==="
+          find /tmp/dcc* -name "*.jar" 2>/dev/null | wc -l
+          echo "=== Searching ALL JARs for Block Header class ==="
+          find /tmp/dcc* -name "*.jar" 2>/dev/null | while read jar; do
+            if jar tf "$jar" 2>/dev/null | grep -qE "Block.Header|Block\\\$Header"; then
+              bname=$(basename "$jar")
+              echo "FOUND: $bname"
+              cd /tmp && jar xf "$jar" "io/decentralchain/protobuf/block/Block\$Header.class" 2>/dev/null && \
+                javap -p /tmp/io/decentralchain/protobuf/block/Block\$Header.class 2>/dev/null | grep -E "committed|finalization" | head -3 || echo "  (no committed field)"
+              rm -rf /tmp/io 2>/dev/null
             fi
           done
+          echo "=== Done ==="
