@@ -18,10 +18,14 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Node crash logs ==="
-             docker logs node-scala-testnet --tail=50 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|WARNING.*Unsafe" | head -40
+             echo "=== Node ERROR/WARN/miner logs (last 5 min) ==="
+             docker logs node-scala-testnet --since 5m 2>&1 | grep -i "error\|warn\|miner\|generat\|append\|block\|peer\|suspend\|blacklist\|hotstuff\|wallet\|height" | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|WARNING.*Unsafe\|HTTP 200" | head -40
+             echo "=== Node last 20 raw lines ==="
+             docker logs node-scala-testnet --tail=20 2>&1 | grep -v "at java\|at scala\|at io\.\|at org\.\|at com\.\|at net\.\|WARNING.*Unsafe\|HTTP 200" | head -20
              echo "=== BPS crash logs ==="
-             docker logs blockchain-postgres-sync-testnet --tail=20 2>&1 | head -15
+             docker logs blockchain-postgres-sync-testnet --tail=10 2>&1 | grep -v "^Error:" | head -8
              echo "=== Container status ==="
-             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -E "node-scala|blockchain-postgres"'
+             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -E "node-scala|blockchain-postgres"
+             echo "=== Chain height ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
