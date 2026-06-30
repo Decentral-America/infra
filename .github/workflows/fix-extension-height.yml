@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Truncate BPS tables (sudo postgres) and restart
+      - name: Drop-recreate BPS database and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -19,11 +19,12 @@ jobs:
             'set +e
              echo "=== Stop BPS ==="
              docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1
-             echo "=== Truncate all public tables ==="
-             sudo -u postgres psql -d bps_testnet -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>&1
-             echo "=== Start BPS ==="
+             echo "=== Drop and recreate bps_testnet database ==="
+             sudo -u postgres psql -c "DROP DATABASE IF EXISTS bps_testnet;" 2>&1
+             sudo -u postgres psql -c "CREATE DATABASE bps_testnet OWNER dcc;" 2>&1
+             echo "=== Start BPS (Diesel will recreate schema) ==="
              docker start blockchain-postgres-sync-testnet 2>&1 | tail -1
-             sleep 25
+             sleep 30
              docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --since 30s 2>&1 | grep -v "^Error:" | head -8'
+             docker logs blockchain-postgres-sync-testnet --since 35s 2>&1 | grep -v "^Error:" | head -12'
           rm -f /tmp/id_rsa
