@@ -42,8 +42,14 @@ jobs:
       - name: Install all workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build workspace packages (ts-lib-crypto and dependencies)
-        run: pnpm nx run-many -t build --projects=@decentralchain/ts-lib-crypto,@decentralchain/crypto,@decentralchain/node-api --parallel=3
+      - name: Build required workspace packages (bypass Nx Cloud)
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_SKIP_NX_CACHE: 'true'
+        run: |
+          pnpm --filter @decentralchain/types build
+          pnpm --filter @decentralchain/ts-lib-crypto build
+          pnpm --filter @decentralchain/node-api build
 
       - name: Run E2E smoke suite
         if: ${{ inputs.suite == 'smoke' || inputs.suite == '' }}
