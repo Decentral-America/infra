@@ -38,14 +38,23 @@ jobs:
           set -euo pipefail
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
 
-          # Read JWT secret from VPS secrets file
+          # Debug: show all admin-related keys in testnet.env (no values)
+          echo "=== Admin-related keys in testnet.env ==="
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+            'grep -i "admin\|jwt\|dashboard\|secret" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f1 | sort'
+
+          # Try multiple key names
           JWT_SECRET=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'grep "^ADMIN_DASHBOARD_JWT_SECRET=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-')
+            'for k in ADMIN_DASHBOARD_JWT_SECRET JWT_SECRET DASHBOARD_JWT_SECRET ADMIN_JWT_SECRET; do
+               val=$(grep "^${k}=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-)
+               if [ -n "$val" ]; then echo "$val"; exit 0; fi
+             done')
 
           if [ -z "$JWT_SECRET" ]; then
-            echo "ERROR: ADMIN_DASHBOARD_JWT_SECRET not found in testnet.env"
+            echo "ERROR: No JWT secret found in testnet.env (tried ADMIN_DASHBOARD_JWT_SECRET, JWT_SECRET, DASHBOARD_JWT_SECRET, ADMIN_JWT_SECRET)"
             exit 1
           fi
+          echo "JWT secret found (${#JWT_SECRET} chars)"
 
           # Sign HS256 JWT via Node.js built-in crypto (no heredoc, no deps)
           TOKEN=$(JWT_SECRET="${JWT_SECRET}" node -e "
