@@ -20,11 +20,20 @@ jobs:
             'set +e
              echo "=== Stop BPS ==="
              docker stop blockchain-postgres-sync-testnet
-             echo "=== Get BPS credentials from its environment ==="
-             eval $(docker inspect blockchain-postgres-sync-testnet --format "{{range .Config.Env}}export {{.}}; {{end}}" 2>/dev/null) || true
-             echo "PGHOST=$PGHOST PGUSER=$PGUSER PGDATABASE=$PGDATABASE"
-             echo "=== Truncate via psql using BPS credentials ==="
-             PGPASSWORD="$POSTGRES_PASSWORD" psql -h "${PGHOST:-localhost}" -U "${PGUSER:-dcc}" -d "${PGDATABASE:-bps_testnet}" -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>&1
+             echo "=== Extract credentials safely via Python ==="
+             docker inspect blockchain-postgres-sync-testnet 2>/dev/null | python3 -c "
+import sys,json,subprocess,os
+data=json.load(sys.stdin)
+env={e.split(\"=\",1)[0]:e.split(\"=\",1)[1] for e in data[0][\"Config\"][\"Env\"] if \"=\" in e}
+pgpass=env.get(\"POSTGRES_PASSWORD\",\"\")
+pghost=env.get(\"PGHOST\",\"localhost\")
+pguser=env.get(\"PGUSER\",\"dcc\")
+pgdb=env.get(\"PGDATABASE\",\"bps_testnet\")
+print(f\"Connecting: {pguser}@{pghost}/{pgdb}\")
+os.environ[\"PGPASSWORD\"]=pgpass
+r=subprocess.run([\"psql\",\"-h\",pghost,\"-U\",pguser,\"-d\",pgdb,\"-c\",\"DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname=\\'public\\' LOOP EXECUTE \\'TRUNCATE \\'||r.tablename||\\'CASCADE\\'; END LOOP; END; \$\$;\"],capture_output=True,text=True)
+print(r.stdout.strip() or r.stderr.strip() or \"Done\")
+" 2>&1
              echo "=== Start BPS ==="
              docker start blockchain-postgres-sync-testnet
              sleep 20
