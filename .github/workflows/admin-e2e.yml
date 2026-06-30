@@ -47,18 +47,15 @@ jobs:
             exit 1
           fi
 
-          # Sign HS256 JWT via Python — write to file to avoid YAML heredoc issues
-          cat > /tmp/sign_jwt.py << 'PEOF'
-import base64, hmac as _hmac, hashlib, json, sys, time
-secret = sys.argv[1].encode()
-header  = base64.urlsafe_b64encode(json.dumps({"alg":"HS256","typ":"JWT"}).encode()).rstrip(b"=")
-now     = int(time.time())
-payload = base64.urlsafe_b64encode(json.dumps({"role":"admin","username":"jourlez","iat":now,"exp":now+3600}).encode()).rstrip(b"=")
-msg     = header + b"." + payload
-sig     = base64.urlsafe_b64encode(_hmac.new(secret, msg, hashlib.sha256).digest()).rstrip(b"=")
-print((msg + b"." + sig).decode())
-PEOF
-          TOKEN=$(python3 /tmp/sign_jwt.py "${JWT_SECRET}")
+          # Sign HS256 JWT via Node.js built-in crypto (no heredoc, no deps)
+          TOKEN=$(node -e "
+            const c=require('crypto'),s=JSON.stringify,e=v=>Buffer.from(v).toString('base64url');
+            const h=e(s({alg:'HS256',typ:'JWT'}));
+            const now=Math.floor(Date.now()/1000);
+            const p=e(s({role:'admin',username:'jourlez',iat:now,exp:now+3600}));
+            const sig=c.createHmac('sha256',process.env.JWT_SECRET).update(h+'.'+p).digest('base64url');
+            console.log(h+'.'+p+'.'+sig);
+          " JWT_SECRET="${JWT_SECRET}")
 
           ADMIN_URL="https://testnet-admin.decentralchain.io"
           echo "=== Step 1: Start E2E run (POST /api/e2e/stream) ==="
