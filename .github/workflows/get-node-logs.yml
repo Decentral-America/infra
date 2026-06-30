@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Replace plugin JARs with fresh thin builds from current image
+      - name: Delete corrupt extension DB and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,33 +18,19 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Current plugin dir ==="
-             ls -lh /opt/dcc/plugins/testnet/
-             echo "=== Extract fresh grpc-server JAR from running container ==="
-             GRPC_JAR=$(docker exec node-scala-testnet find /usr/share/dcc/lib -name "io.decentralchain.dcc-grpc-server-*.jar" 2>/dev/null | head -1)
-             echo "Found in container: $GRPC_JAR"
-             docker cp "node-scala-testnet:${GRPC_JAR}" /tmp/fresh-grpc-server.jar 2>/dev/null && echo "Copied OK"
-             ls -lh /tmp/fresh-grpc-server.jar
-             echo "=== Replace dcc-grpc.jar with fresh thin JAR ==="
-             sudo cp /tmp/fresh-grpc-server.jar /opt/dcc/plugins/testnet/dcc-grpc.jar && echo "Replaced OK"
-             sudo rm -f /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled
-             echo "=== New plugin dir ==="
-             ls -lh /opt/dcc/plugins/testnet/
-             echo "=== Verify no Block\$Header in new dcc-grpc.jar ==="
-             python3 -c "
-import zipfile
-z=zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\")
-bh=[n for n in z.namelist() if n==\"io/decentralchain/protobuf/block/Block\$Header.class\"]
-print(\"Block\$Header in new dcc-grpc.jar:\",bh if bh else \"NONE (clean)\")
-ext=[n for n in z.namelist() if \"BlockchainUpdates\" in n or \"GRPCServer\" in n]
-print(\"Extension classes:\",ext[:3])
-"
-             echo "=== Restart node ==="
-             docker restart node-scala-testnet
-             sleep 30
+             echo "=== Stop node ==="
+             docker stop node-scala-testnet
+             echo "=== Delete corrupt blockchain-updates DB ==="
+             docker run --rm -v node-state-testnet:/data alpine sh -c "rm -rf /data/blockchain-updates && echo DELETED"
+             echo "=== Start node ==="
+             docker start node-scala-testnet
+             sleep 35
+             echo "=== Container status ==="
              docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open yet"
              echo "=== Extension startup ==="
-             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|6881\|started gRPC\|Error" | head -8'
+             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|Error\|height\|started gRPC\|6881" | head -10
+             echo "=== Port 6881 ==="
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
+             echo "=== Height ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
