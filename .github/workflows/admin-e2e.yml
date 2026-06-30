@@ -39,9 +39,11 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm
 
-      - name: Install dependencies
+      - name: Install all workspace dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: packages/e2e-blockchain
+
+      - name: Build workspace packages (ts-lib-crypto and dependencies)
+        run: pnpm nx run-many -t build --projects=@decentralchain/ts-lib-crypto,@decentralchain/crypto,@decentralchain/node-api --parallel=3
 
       - name: Run E2E smoke suite
         if: ${{ inputs.suite == 'smoke' || inputs.suite == '' }}
