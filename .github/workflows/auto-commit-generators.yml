@@ -102,9 +102,10 @@ jobs:
           kill $PF_PID 2>/dev/null || true
 
       - name: Commit val-0 generator (T2 upgrade)
-        # val-0 is now a T2 validator with miner enabled (upgraded in nodes.yaml).
-        # Address 31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq is the genesis allocation
-        # for the val-0 wallet seed (1B DCC — first unassigned genesis recipient).
+        # val-0 has miner+hotstuff enabled (nodes.yaml). Address needs verification:
+        # run check-val0-address.yml to get the actual wallet address, then update
+        # ADDR below. Val-0 also needs DCC funding before it can generate blocks.
+        # continue-on-error: true ensures this step never blocks main/gen-0/gen-1.
         # Port 6871 is val-0's REST API port.
         continue-on-error: true
         env:
