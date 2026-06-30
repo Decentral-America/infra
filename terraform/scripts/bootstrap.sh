@@ -602,6 +602,50 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
+      # ── Rate limiting ────────────────────────────────────────────────────────
+      # The standard caddy:alpine image does NOT include the caddy-ratelimit
+      # module (github.com/mholt/caddy-ratelimit). Rate limiting requires a
+      # custom Caddy build with that module compiled in.
+      #
+      # TO ENABLE: replace the caddy image with a custom build that includes
+      # the rate_limit directive, then uncomment the block below.
+      #
+      # Custom image recipe (Dockerfile):
+      #   FROM caddy:2.11.4-builder AS builder
+      #   RUN xcaddy build \
+      #       --with github.com/mholt/caddy-ratelimit
+      #   FROM caddy:2.11.4-alpine
+      #   COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+      #
+      # Once the custom image is deployed, add to ${NODE_DOMAIN} block:
+      #
+      #   @blocks_path path /blocks/*
+      #   rate_limit @blocks_path {
+      #       zone blocks_per_ip {
+      #           key    {remote_host}
+      #           events 1000
+      #           window 1m
+      #       }
+      #   }
+      #
+      #   @broadcast path /transactions/broadcast
+      #   rate_limit @broadcast {
+      #       zone broadcast_per_ip {
+      #           key    {remote_host}
+      #           events 50
+      #           window 1m
+      #       }
+      #   }
+      #
+      #   @other_api not path /blocks/* /transactions/broadcast
+      #   rate_limit @other_api {
+      #       zone api_per_ip {
+      #           key    {remote_host}
+      #           events 300
+      #           window 1m
+      #       }
+      #   }
+      # ────────────────────────────────────────────────────────────────────────
       printf '    log\n'
       printf '}\n\n'
     fi
@@ -616,6 +660,18 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
+      # ── Rate limiting (matcher) ───────────────────────────────────────────────
+      # Same caddy-ratelimit module requirement as NODE_DOMAIN above.
+      # Once the custom caddy image is deployed, add to ${MATCHER_DOMAIN} block:
+      #
+      #   rate_limit {
+      #       zone matcher_per_ip {
+      #           key    {remote_host}
+      #           events 300
+      #           window 1m
+      #       }
+      #   }
+      # ─────────────────────────────────────────────────────────────────────────
       printf '    log\n'
       printf '}\n'
     fi

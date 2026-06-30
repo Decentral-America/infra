@@ -1,0 +1,101 @@
+# docker-compose for Loki + Promtail — centralised log aggregation
+# Location on server: /opt/dcc/compose/loki.yml
+#
+# Architecture:
+#   Promtail scrapes container logs from /var/lib/docker/containers/**/*.log
+#   (Docker json-file format — no Docker logging plugin needed, no restart required)
+#   and ships them to Loki. Grafana queries Loki via the datasource provisioned in
+#   monitoring/datasources/loki.yaml.
+#
+# Start: NETWORK=testnet docker compose -f /opt/dcc/compose/loki.yml up -d
+#
+# Ports (all localhost-only):
+#   3100 — Loki HTTP API (push + query)
+#
+# Grafana datasource: provisioned from monitoring/datasources/loki.yaml
+# Prometheus scrape:  Loki exposes /metrics at :3100/metrics — add to prometheus.yml
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  loki:
+    # grafana/loki:3.3.2 — stable release as of 2026-Q1
+    image: grafana/loki:3.3.2
+    container_name: "loki-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - /opt/dcc/monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  promtail:
+    # grafana/promtail:3.3.2 — must match Loki version
+    image: grafana/promtail:3.3.2
+    container_name: "promtail-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Promtail needs read access to Docker log files and the Docker socket
+    # (to resolve container labels for log metadata). Root filesystem read-only.
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - /opt/dcc/monitoring/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      # Docker container logs — json-file driver writes here by default.
+      # Promtail reads these files directly; no Docker plugin install required.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Docker socket — read-only for service discovery (container label metadata).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-positions:/var/lib/promtail
+    command: -config.file=/etc/promtail/config.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9080/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 32m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  loki-data:
+    name: "loki-data-${NETWORK:-testnet}"
+  promtail-positions:
+    name: "promtail-positions-${NETWORK:-testnet}"

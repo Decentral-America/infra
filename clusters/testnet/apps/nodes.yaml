@@ -301,7 +301,9 @@ data:
       }
 
       miner {
-        enable = no
+        enable = yes
+        quorum = 0
+        interval-after-last-block-then-generation-is-allowed = 15d
       }
 
       rest-api {
@@ -317,6 +319,10 @@ data:
         invalid-blocks-storage {
           timeout = 1m
         }
+      }
+      hotstuff {
+        enabled = true
+        round-timeout-ms = 1200
       }
     }
 

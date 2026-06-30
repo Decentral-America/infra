@@ -1,0 +1,18 @@
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://127.0.0.1:3100
+    access: proxy
+    isDefault: false
+    editable: false
+    jsonData:
+      # Maximum number of lines returned per query — keeps Grafana responsive.
+      maxLines: 1000
+      # Derived fields: link node-scala log lines to the relevant Prometheus
+      # metrics by correlating on container label.
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id":"(\w+)"'
+          url: ''
