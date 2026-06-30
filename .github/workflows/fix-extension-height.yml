@@ -24,8 +24,12 @@ jobs:
              docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
              docker rm blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
              echo '=== Start with correct image (no DB wipe) ==='
-             IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d blockchain-postgres-sync
+             IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
              sleep 35
              docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15"
+             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15
+             echo '=== Verify migrations ran (txs_19 table must exist) ==='
+             sudo -u postgres psql -d bps_testnet -c '\dt txs_19' 2>&1 | grep -q 'txs_19' && echo 'txs_19 table: OK' || echo 'WARN: txs_19 table missing — migrations may not have run'
+             echo '=== BPS health check ==='
+             curl -sf http://localhost:9090/readiness 2>/dev/null && echo 'BPS /readiness: OK' || echo 'BPS /readiness: not yet ready (normal within first 60s)'"
           rm -f /tmp/id_rsa
