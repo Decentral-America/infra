@@ -1,0 +1,32 @@
+name: Restart Admin Dashboard
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Check and restart admin dashboard
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" '
+            set +e
+            echo "=== All containers ==="
+            docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -i "admin\|dashboard"
+            echo "=== Admin dashboard logs (last 30 lines) ==="
+            docker logs admin-dashboard-testnet --tail 30 2>&1 || echo "(no container)"
+            echo "=== Restart admin dashboard ==="
+            docker restart admin-dashboard-testnet 2>&1 || \
+              NETWORK=testnet docker compose -f /opt/dcc/compose/admin-dashboard.yml up -d 2>&1 || \
+              echo "Cannot restart — container may need redeploy"
+            sleep 15
+            docker ps --format "{{.Names}}\t{{.Status}}" | grep -i admin
+            echo "=== Health check ==="
+            curl -sf http://localhost:3001/healthz 2>/dev/null && echo "HEALTHY" || echo "UNHEALTHY"'
+          rm -f /tmp/id_rsa
