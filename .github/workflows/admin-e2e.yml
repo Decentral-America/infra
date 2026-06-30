@@ -1,0 +1,89 @@
+name: Admin Panel E2E Test Suite
+
+# Triggers the admin dashboard's built-in E2E test runner against testnet.
+# Authenticates via JWT signed with ADMIN_DASHBOARD_JWT_SECRET (read from VPS),
+# then POSTs to /api/e2e/stream and streams results.
+#
+# Suites:
+#   smoke — fast subset (transfer, invoke-script, node-api)
+#   full  — all available spec files
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Test suite to run'
+        required: false
+        default: 'smoke'
+        type: choice
+        options: [smoke, full]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Admin E2E (${{ inputs.suite || 'smoke' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: testnet
+    steps:
+      - name: Sign JWT and run E2E suite via admin panel API
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          SUITE:    ${{ inputs.suite || 'smoke' }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+
+          # Read JWT secret from VPS secrets file and sign a token locally
+          JWT_SECRET=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+            'grep ADMIN_DASHBOARD_JWT_SECRET /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-')
+
+          if [ -z "$JWT_SECRET" ]; then
+            echo "ERROR: ADMIN_DASHBOARD_JWT_SECRET not found in testnet.env"
+            exit 1
+          fi
+
+          # Sign a JWT token (HS256, 1h expiry)
+          HEADER=$(echo -n '{"alg":"HS256","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          PAYLOAD=$(echo -n "{\"role\":\"admin\",\"username\":\"jourlez\",\"iat\":$(date +%s),\"exp\":$(($(date +%s)+3600))}" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          SIG=$(echo -n "${HEADER}.${PAYLOAD}" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          TOKEN="${HEADER}.${PAYLOAD}.${SIG}"
+
+          ADMIN_URL="https://testnet-admin.decentralchain.io"
+          echo "=== Triggering ${SUITE} E2E suite ==="
+          echo "URL: ${ADMIN_URL}/api/e2e/stream"
+
+          # Stream E2E results (SSE) — collect for up to 25 min
+          echo "## Admin Panel E2E — ${SUITE} suite" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          curl -sf -X POST "${ADMIN_URL}/api/e2e/stream" \
+            -H "Cookie: admin_token=${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"suite\":\"${SUITE}\"}" \
+            --max-time 1500 \
+            --no-buffer 2>&1 | while IFS= read -r line; do
+              echo "$line"
+              # Parse SSE data lines for summary
+              if [[ "$line" == data:* ]]; then
+                echo "$line" | sed 's/^data: //'
+              fi
+            done | tee /tmp/e2e-output.txt
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Check for failures
+          if grep -q '"status":"fail"\|FAIL\|failed' /tmp/e2e-output.txt 2>/dev/null; then
+            echo "::error::E2E tests had failures — see output above"
+            exit 1
+          fi
+          rm -f /tmp/id_rsa
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-${{ github.run_id }}
+          path: /tmp/e2e-output.txt
+          retention-days: 30
