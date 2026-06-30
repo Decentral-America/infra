@@ -57,8 +57,8 @@ on:
         default: 120
     secrets:
       GHCR_TOKEN:
-        required: true
-        description: 'PAT with read:packages for GHCR pull on server'
+        required: false
+        description: 'PAT with read:packages for GHCR pull on server. Optional when the image is on a public GHCR package.'
       # DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_HOST_FINGERPRINT are
       # NOT declared here. The deploy job has environment: ${{ inputs.network }}
       # which reads them directly from infra repo's environments (testnet/stagenet/mainnet).
@@ -224,8 +224,12 @@ jobs:
             sudo install -d -m 755 -o deploy -g deploy "/opt/dcc/config/node-\${NETWORK}"
           fi
 
-          echo "Authenticating with GHCR..."
-          echo "\$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
+          if [ -n "\${GHCR_TOKEN:-}" ]; then
+            echo "Authenticating with GHCR..."
+            echo "\$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
+          else
+            echo "GHCR_TOKEN not set — skipping GHCR login (assuming public image)"
+          fi
 
           # ── Capture previous image for rollback ────────────────────────
           # docker inspect returns the image digest/tag currently running.
