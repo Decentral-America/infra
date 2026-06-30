@@ -33,6 +33,17 @@ jobs:
              fi
              docker pull \"\$IMG\" 2>&1 | tail -3
 
+             echo '=== Extract fresh plugin JARs from new image ==='
+             TMP_CONTAINER=\$(docker create \"\$IMG\")
+             GRPC_JAR=\$(docker run --rm \"\$IMG\" find /usr/share/dcc/lib -name 'io.decentralchain.dcc-grpc-server-*.jar' 2>/dev/null | head -1)
+             echo \"Extracting: \$GRPC_JAR\"
+             docker cp \"\$TMP_CONTAINER:\$GRPC_JAR\" /tmp/fresh-grpc-server.jar
+             docker rm \"\$TMP_CONTAINER\"
+             sudo cp /tmp/fresh-grpc-server.jar /opt/dcc/plugins/testnet/dcc-grpc.jar
+             sudo rm -f /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled /opt/dcc/plugins/testnet/dcc-grpc.jar.bak
+             ls -lh /opt/dcc/plugins/testnet/
+             echo '=== Plugin JAR refreshed from new image ==='
+
              echo '=== Stop node ==='
              docker stop node-scala-testnet
 
