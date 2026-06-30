@@ -31,5 +31,8 @@ print(\"Period:\",d.get(\"currentGenerationPeriod\",{}),\"Next:\",d.get(\"nextGe
              echo "=== BPS blocks ==="
              sudo -u postgres psql -d bps_testnet -t -c "SELECT count(*) FROM blocks_microblocks;" 2>/dev/null
              echo "=== BPS health ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres'
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
+             echo "=== Admin dashboard ==="
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep admin || echo "(admin-dashboard not running)"
+             docker logs admin-dashboard-testnet --since 120s 2>&1 | tail -10 || echo "(no logs)"'
           rm -f /tmp/id_rsa
