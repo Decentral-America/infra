@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Delete stale extension DB and restart
+      - name: Truncate BPS tables (sudo postgres) and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -17,12 +17,13 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             docker stop node-scala-testnet
-             docker run --rm -v node-state-testnet:/data alpine sh -c "rm -rf /data/blockchain-updates && echo DELETED"
-             docker start node-scala-testnet
-             sleep 35
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|DEXExtension\|Enable extension\|6881\|started gRPC\|ERROR" | head -8
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 check"
-             curl -s http://localhost:6869/blocks/height 2>/dev/null'
+             echo "=== Stop BPS ==="
+             docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1
+             echo "=== Truncate all public tables ==="
+             sudo -u postgres psql -d bps_testnet -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>&1
+             echo "=== Start BPS ==="
+             docker start blockchain-postgres-sync-testnet 2>&1 | tail -1
+             sleep 25
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
+             docker logs blockchain-postgres-sync-testnet --since 30s 2>&1 | grep -v "^Error:" | head -8'
           rm -f /tmp/id_rsa
