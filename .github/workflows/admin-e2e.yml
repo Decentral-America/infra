@@ -47,19 +47,18 @@ jobs:
             exit 1
           fi
 
-          # Sign HS256 JWT via Python — matches jose library exactly
-          TOKEN=$(python3 - <<PYEOF
-import base64, hmac, hashlib, json, time
-
-secret = b"${JWT_SECRET}"
+          # Sign HS256 JWT via Python — write to file to avoid YAML heredoc issues
+          cat > /tmp/sign_jwt.py << 'PEOF'
+import base64, hmac as _hmac, hashlib, json, sys, time
+secret = sys.argv[1].encode()
 header  = base64.urlsafe_b64encode(json.dumps({"alg":"HS256","typ":"JWT"}).encode()).rstrip(b"=")
 now     = int(time.time())
 payload = base64.urlsafe_b64encode(json.dumps({"role":"admin","username":"jourlez","iat":now,"exp":now+3600}).encode()).rstrip(b"=")
 msg     = header + b"." + payload
-sig     = base64.urlsafe_b64encode(hmac.new(secret, msg, hashlib.sha256).digest()).rstrip(b"=")
+sig     = base64.urlsafe_b64encode(_hmac.new(secret, msg, hashlib.sha256).digest()).rstrip(b"=")
 print((msg + b"." + sig).decode())
-PYEOF
-          )
+PEOF
+          TOKEN=$(python3 /tmp/sign_jwt.py "${JWT_SECRET}")
 
           ADMIN_URL="https://testnet-admin.decentralchain.io"
           echo "=== Step 1: Start E2E run (POST /api/e2e/stream) ==="
