@@ -8,29 +8,28 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Reset BPS database, migrate schema, restart consumer
+      - name: Deploy new BPS image, reset DB, migrate, start consumer
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          NEW_IMAGE: ghcr.io/decentral-america/blockchain-postgres-sync:81184af0797f04506bae4cc59949cf39b2e7febf
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'set -e
-             echo "=== Stop BPS consumer ==="
-             docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1
-             echo "=== Drop and recreate bps_testnet ==="
-             sudo -u postgres psql -c "DROP DATABASE IF EXISTS bps_testnet;"
-             sudo -u postgres psql -c "CREATE DATABASE bps_testnet OWNER dcc;"
-             echo "=== Run Diesel migrations ==="
-             IMAGE=$(docker inspect blockchain-postgres-sync-testnet --format "{{.Config.Image}}")
-             echo "Image: $IMAGE"
-             docker run --rm --network host \
-               --env-file /opt/dcc/secrets/testnet.env \
-               "$IMAGE" ./migration up
-             echo "=== Start BPS consumer ==="
-             docker start blockchain-postgres-sync-testnet 2>&1 | tail -1
-             sleep 30
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --since 35s 2>&1 | grep -v "^Error:" | head -12'
+            "set -e
+             echo '=== Pull new image ==='
+             docker pull ${NEW_IMAGE}
+             echo '=== Stop BPS consumer ==='
+             docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
+             echo '=== Drop and recreate bps_testnet ==='
+             sudo -u postgres psql -c 'DROP DATABASE IF EXISTS bps_testnet;'
+             sudo -u postgres psql -c 'CREATE DATABASE bps_testnet OWNER dcc;'
+             echo '=== Run Diesel migrations with new image ==='
+             docker run --rm --network host --env-file /opt/dcc/secrets/testnet.env ${NEW_IMAGE} ./migration up
+             echo '=== Update container to new image and start ==='
+             IMAGE_TAG=${NEW_IMAGE} docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d --no-wait blockchain-postgres-sync
+             sleep 35
+             docker ps --format '{{.Names}}\t{{.Status}}' | grep blockchain-postgres
+             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15"
           rm -f /tmp/id_rsa
