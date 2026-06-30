@@ -84,6 +84,43 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  alert-webhook:
+    image: python:3.13-slim
+    container_name: "alert-webhook-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    volumes:
+      - /opt/dcc/monitoring/alert-webhook.py:/app/alert-webhook.py:ro
+    command: ["python3", "/app/alert-webhook.py"]
+    environment:
+      GITHUB_REPO: "Decentral-America/infra"
+      ALERT_WEBHOOK_PORT: "9099"
+      # GITHUB_TOKEN injected via env_file (SOPS-managed)
+    env_file:
+      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9099/healthz 2>/dev/null || exit 0"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   prometheus-data:
     name: "prometheus-data-${NETWORK:-testnet}"
