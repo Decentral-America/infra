@@ -1,0 +1,41 @@
+name: Deploy Monitoring Config
+# Copies prometheus.yml + alerts.yml to VPS and reloads Prometheus.
+# Does NOT restart Prometheus — uses /-/reload hot-reload endpoint.
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy monitoring config and reload Prometheus
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
+            monitoring/prometheus.yml monitoring/alerts.yml \
+            "${SSH_USER}@${SSH_HOST}:/tmp/"
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+            'set -e
+             sudo cp /tmp/prometheus.yml /opt/dcc/monitoring/prometheus.yml
+             sudo cp /tmp/alerts.yml /opt/dcc/monitoring/alerts.yml
+             rm -f /tmp/prometheus.yml /tmp/alerts.yml
+             echo "=== Hot-reload Prometheus ==="
+             curl -s -X POST http://127.0.0.1:9091/-/reload && echo "Reloaded"
+             echo "=== Verify alerts loaded ==="
+             sleep 3
+             curl -s http://127.0.0.1:9091/api/v1/rules 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+groups = d.get(\"data\",{}).get(\"groups\",[])
+print(f\"Rule groups: {len(groups)}\")
+for g in groups:
+    print(f\"  {g[\"name\"]}: {len(g[\"rules\"])} rules\")
+" 2>/dev/null || echo "(prometheus not reachable yet)"'
+          rm -f /tmp/id_rsa
