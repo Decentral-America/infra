@@ -35,15 +35,16 @@ jobs:
 
       - name: Commit main node generator
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             API_KEY="***REDACTED_MAIN_API_KEY***="
+            "set +e
+             API_KEY='${MAIN_API_KEY}'
              ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
              echo "=== Signing CommitToGeneration for main node ==="
              SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
@@ -65,8 +66,9 @@ jobs:
 
       - name: Commit gen-0 generator (port-forward)
         continue-on-error: true
+        env:
+          API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
         run: |
-          API_KEY="***REDACTED_GEN0_API_KEY***="
           ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
           echo "=== Port-forward gen-0 REST API (localhost:16869) ==="
           kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
@@ -92,8 +94,9 @@ jobs:
 
       - name: Commit gen-1 generator (port-forward)
         continue-on-error: true
+        env:
+          API_KEY: ${{ secrets.GEN_1_NODE_REST_API_KEY }}
         run: |
-          API_KEY="***REDACTED_GEN1_API_KEY***="
           ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
           echo "=== Port-forward gen-1 REST API (localhost:16870 -> pod:6870) ==="
           kubectl port-forward pod/dcc-gen-1-0 -n dcc 16870:6870 &

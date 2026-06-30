@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Check service status (read-only)
+      - name: Check service status + Kamon metrics (read-only)
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,15 +18,18 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Containers ==="
-             docker ps --format "{{.Names}}\t{{.Status}}\t{{.Image}}" | grep -E "node-scala|blockchain-postgres|matcher"
-             echo "=== Node height ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null
-             echo ""
-             echo "=== T2 finality ==="
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null
-             echo "=== BPS block count ==="
-             sudo -u postgres psql -d bps_testnet -c "SELECT count(*) as blocks FROM blocks_microblocks;" 2>&1
-             echo "=== BPS last 3 logs ==="
-             docker logs blockchain-postgres-sync-testnet --since 60s 2>&1 | grep -v "^Error:" | tail -5'
+             echo "=== Finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"])
+print(\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[])))
+print(\"Period:\",d.get(\"currentGenerationPeriod\",{}),\"Next:\",d.get(\"nextGenerationPeriod\",{}))
+" 2>/dev/null
+             echo "=== Kamon hotstuff round latency ==="
+             curl -s http://localhost:6870/metrics 2>/dev/null | grep -E "hotstuff_round_latency|hotstuff_round" | grep -v "^#" | head -15
+             echo "=== BPS blocks ==="
+             sudo -u postgres psql -d bps_testnet -t -c "SELECT count(*) FROM blocks_microblocks;" 2>/dev/null
+             echo "=== BPS health ==="
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres'
           rm -f /tmp/id_rsa
