@@ -2,76 +2,88 @@ groups:
   - name: dcc-testnet-critical
     interval: 60s
     rules:
-      # ── Chain liveness ─────────────────────────────────────────────────────
+      # ── Chain liveness — dcc_blockchain_height_age_seconds is seconds since last block ──
       - alert: BlockProductionStalled
         expr: |
-          (time() - dcc_blockchain_height_timestamp_seconds) > 300
+          dcc_blockchain_height_age_seconds > 300
         for: 5m
         labels:
           severity: critical
           network: testnet
         annotations:
-          summary: "DCC testnet block production stalled"
-          description: "No new block in >5 min. Chain may be halted or main node offline."
+          summary: "DCC testnet block production stalled (>5 min since last block)"
+          description: "dcc_blockchain_height_age_seconds > 300. Chain may be halted or main node offline."
 
       # ── T2 HotStuff finality ───────────────────────────────────────────────
       - alert: T2FinalizationStalled
         expr: |
-          (dcc_blockchain_height - dcc_hotstuff_finalized_height) > 50
+          dcc_t2_finality_lag > 50
         for: 10m
         labels:
           severity: high
           network: testnet
         annotations:
           summary: "T2 HotStuff finalization lagging >50 blocks"
-          description: "hotStuffFinalizedHeight is >50 blocks behind chain tip. Generators may not be committed or quorum lost."
+          description: "dcc_t2_finality_lag > 50 for 10 min. Generators may not be committed or quorum lost."
 
       - alert: T2GeneratorsNotCommitted
         expr: |
-          dcc_next_generators_count < 2
+          dcc_next_generators < 2
         for: 15m
         labels:
           severity: high
           network: testnet
         annotations:
           summary: "T2 NextGenerators < 2 for >15 min"
-          description: "Less than 2 generators committed for next period. T2 will stop finalizing when current period ends (~50 min)."
+          description: "Less than 2 generators committed for next period. T2 will stop finalizing at end of current period (~50 min)."
 
-      # ── Node health ────────────────────────────────────────────────────────
-      - alert: NodePeersLow
+      # ── Exporter health ────────────────────────────────────────────────────
+      - alert: ExporterScrapeError
         expr: |
-          dcc_peers_connected < 1
+          dcc_scrape_error == 1
         for: 5m
         labels:
           severity: high
           network: testnet
         annotations:
-          summary: "Main node has fewer than 1 connected peer"
-          description: "Node is isolated — gen nodes cannot submit votes. T2 rounds will fail."
+          summary: "DCC exporter cannot reach node endpoints"
+          description: "dcc_scrape_error=1 for 5 min. Node REST API may be unreachable."
 
   - name: dcc-testnet-infra
     interval: 60s
     rules:
-      # ── BPS ───────────────────────────────────────────────────────────────
-      - alert: BPSDown
+      # ── Prometheus exporter reachability ─────────────────────────────────
+      - alert: ExporterDown
         expr: |
           up{job="dcc-chain"} == 0
         for: 5m
         labels:
-          severity: high
+          severity: critical
           network: testnet
         annotations:
           summary: "DCC chain exporter unreachable"
-          description: "Prometheus cannot scrape dcc-exporter. BPS or node may be down."
+          description: "Prometheus cannot scrape dcc-exporter at :9101. Exporter container may be down."
 
       # ── T0 DeterministicFinality ──────────────────────────────────────────
       - alert: T0FinalizationStalled
         expr: |
-          (dcc_blockchain_height - dcc_deterministic_finalized_height) > 200
+          dcc_t0_finality_lag > 200
         for: 30m
         labels:
           severity: medium
           network: testnet
         annotations:
           summary: "T0 DeterministicFinality lagging >200 blocks for 30 min"
-          description: "T0 finalizedHeight is far behind chain tip. Generators may have missed CommitToGeneration transactions."
+          description: "dcc_t0_finality_lag > 200. Generators may have missed CommitToGeneration transactions for one or more periods."
+
+      # ── Current period generators ──────────────────────────────────────────
+      - alert: CurrentGeneratorsExpired
+        expr: |
+          dcc_current_generators < 2
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "Current period generators < 2"
+          description: "Fewer than 2 generators committed for the current period. T2 cannot form quorum. Run auto-commit-generators.yml immediately."

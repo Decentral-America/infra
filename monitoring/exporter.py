@@ -3,13 +3,23 @@
 DCC chain metrics exporter for Newark backend.
 Scrapes the public node REST API over HTTPS — no extra firewall rules needed.
 Exposes Prometheus metrics on :9101/metrics.
+
+Metrics exposed:
+  dcc_block_height                  — current blockchain height
+  dcc_blockchain_height_age_seconds — seconds since last block (staleness)
+  dcc_t2_finalized_height           — T2 HotStuff finalized height
+  dcc_t0_finalized_height           — T0 DeterministicFinality finalized height
+  dcc_t2_finality_lag               — blocks behind tip T2 has not finalized
+  dcc_t0_finality_lag               — blocks behind tip T0 has not finalized
+  dcc_current_generators            — generators committed for current period
+  dcc_next_generators               — generators committed for next period
+  dcc_peers_connected               — connected P2P peers (0 if API key required)
+  dcc_scrape_error                  — 1 if last scrape failed, 0 otherwise
 """
-import http.server, urllib.request, urllib.error, json, time, os, ssl
+import http.server, json, os, ssl, time, urllib.request
 
 PORT = int(os.getenv("EXPORTER_PORT", "9101"))
 
-# Parse NODE_URLS env: "label=https://url,label2=https://url2"
-# Falls back to the local testnet node.
 _raw = os.getenv("NODE_URLS", "main-node=https://testnet-node.decentralchain.io")
 NODES = []
 for entry in _raw.split(","):
@@ -22,7 +32,7 @@ ctx = ssl.create_default_context()
 
 def fetch(url):
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "exporter/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "dcc-exporter/1.0"})
         with urllib.request.urlopen(req, timeout=5, context=ctx) as r:
             return json.loads(r.read())
     except Exception:
@@ -32,17 +42,68 @@ def metrics():
     lines = [
         "# HELP dcc_block_height Current blockchain height",
         "# TYPE dcc_block_height gauge",
-        "# HELP dcc_blockchain_height_age_seconds Seconds since last block timestamp",
+        "# HELP dcc_blockchain_height_age_seconds Seconds since last block timestamp (block production staleness)",
         "# TYPE dcc_blockchain_height_age_seconds gauge",
+        "# HELP dcc_t2_finalized_height T2 HotStuff finalized block height",
+        "# TYPE dcc_t2_finalized_height gauge",
+        "# HELP dcc_t0_finalized_height T0 DeterministicFinality finalized block height",
+        "# TYPE dcc_t0_finalized_height gauge",
+        "# HELP dcc_t2_finality_lag Blocks behind chain tip that T2 has not yet finalized",
+        "# TYPE dcc_t2_finality_lag gauge",
+        "# HELP dcc_t0_finality_lag Blocks behind chain tip that T0 has not yet finalized",
+        "# TYPE dcc_t0_finality_lag gauge",
+        "# HELP dcc_current_generators Number of generators committed for current period",
+        "# TYPE dcc_current_generators gauge",
+        "# HELP dcc_next_generators Number of generators committed for next period",
+        "# TYPE dcc_next_generators gauge",
+        "# HELP dcc_peers_connected Number of currently connected P2P peers",
+        "# TYPE dcc_peers_connected gauge",
+        "# HELP dcc_scrape_error 1 if the last scrape failed for any endpoint, 0 otherwise",
+        "# TYPE dcc_scrape_error gauge",
     ]
+
     for name, base in NODES:
+        lbl = f'node="{name}"'
+        error = 0
+        height = None
+
         h = fetch(f"{base}/blocks/height")
         s = fetch(f"{base}/node/status")
         if h and "height" in h:
-            lines.append(f'dcc_block_height{{node="{name}"}} {h["height"]}')
+            height = h["height"]
+            lines.append(f'dcc_block_height{{{lbl}}} {height}')
+        else:
+            error = 1
+
         if s and "updatedTimestamp" in s:
-            age = max(0, (time.time() * 1000 - s["updatedTimestamp"]) / 1000)
-            lines.append(f'dcc_blockchain_height_age_seconds{{node="{name}"}} {age:.1f}')
+            age = max(0.0, (time.time() * 1000 - s["updatedTimestamp"]) / 1000)
+            lines.append(f'dcc_blockchain_height_age_seconds{{{lbl}}} {age:.1f}')
+        else:
+            error = 1
+
+        fin = fetch(f"{base}/blockchain/finality")
+        if fin:
+            t2  = fin.get("hotStuffFinalizedHeight") or 0
+            t0  = fin.get("finalizedHeight") or 0
+            cur = len(fin.get("currentGenerators", []))
+            nxt = len(fin.get("nextGenerators", []))
+            lines.append(f'dcc_t2_finalized_height{{{lbl}}} {t2}')
+            lines.append(f'dcc_t0_finalized_height{{{lbl}}} {t0}')
+            if height:
+                lines.append(f'dcc_t2_finality_lag{{{lbl}}} {max(0, height - t2)}')
+                lines.append(f'dcc_t0_finality_lag{{{lbl}}} {max(0, height - t0)}')
+            lines.append(f'dcc_current_generators{{{lbl}}} {cur}')
+            lines.append(f'dcc_next_generators{{{lbl}}} {nxt}')
+        else:
+            error = 1
+
+        # /peers/connected may require X-API-Key; silently return 0 without marking error
+        peers = fetch(f"{base}/peers/connected")
+        peer_count = len(peers.get("peers", [])) if peers and "peers" in peers else 0
+        lines.append(f'dcc_peers_connected{{{lbl}}} {peer_count}')
+
+        lines.append(f'dcc_scrape_error{{{lbl}}} {error}')
+
     return "\n".join(lines) + "\n"
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -62,3 +123,4 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 http.server.HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+
