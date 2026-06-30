@@ -28,9 +28,15 @@ jobs:
              sudo -u postgres psql -c 'CREATE DATABASE bps_testnet OWNER dcc;'
              echo '=== Run Diesel migrations with new image ==='
              docker run --rm --network host --env-file /opt/dcc/secrets/testnet.env ${NEW_IMAGE} ./migration up
+             echo '=== Verify DB is empty ==='
+             sudo -u postgres psql -d bps_testnet -c 'SELECT count(*) FROM blocks_microblocks;'
+             echo '=== Check BPS env vars ==='
+             docker run --rm --env-file /opt/dcc/secrets/testnet.env --entrypoint env ${NEW_IMAGE} | grep -E 'POSTGRES__|BPS_' | grep -v PASSWORD
              echo '=== Update container to new image and start ==='
              IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d blockchain-postgres-sync
-             sleep 35
+             sleep 5
+             docker logs blockchain-postgres-sync-testnet 2>&1 | head -20
+             sleep 30
              docker ps --format '{{.Names}}\t{{.Status}}' | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15"
+             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -20"
           rm -f /tmp/id_rsa
