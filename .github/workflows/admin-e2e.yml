@@ -1,13 +1,13 @@
 name: Admin Panel E2E Test Suite
 
-# Triggers the admin dashboard's built-in E2E test runner against testnet.
-# Flow:
-#   1. SSH to VPS → read ADMIN_DASHBOARD_JWT_SECRET
-#   2. Sign a HS256 JWT via Python (hmac.new — matches jose library exactly)
-#   3. POST /api/e2e/stream {intent:"start", suite} → get runId
-#   4. GET /api/e2e/stream?runId=X → stream SSE results
+# Runs the e2e-blockchain vitest specs directly against testnet.
+# Tests live in DecentralChain/packages/e2e-blockchain/src/.
+# Smoke suite: network/node-api, transactions/transfer, network/peers (~5 min)
+# Full suite:  all spec files (~20 min)
 #
-# Suites: smoke (3 specs, ~5 min) | full (all specs, ~20 min)
+# NOTE: The admin panel /api/e2e/stream endpoint was designed for local VPS
+# execution where the DecentralChain codebase is at /opt/dcc/DecentralChain.
+# This workflow runs tests directly from the CI runner instead.
 on:
   workflow_dispatch:
     inputs:
@@ -23,107 +23,57 @@ permissions:
 
 jobs:
   e2e:
-    name: Admin E2E (${{ inputs.suite || 'smoke' }})
+    name: E2E (${{ inputs.suite || 'smoke' }}) vs testnet
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: testnet
     steps:
-      - name: Sign JWT and run E2E suite via admin panel API
-        env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-          SUITE:    ${{ inputs.suite || 'smoke' }}
-        run: |
-          set -euo pipefail
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-
-          # Debug: show all admin-related keys in testnet.env (no values)
-          echo "=== Admin-related keys in testnet.env ==="
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'grep -i "admin\|jwt\|dashboard\|secret" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f1 | sort'
-
-          # Try multiple key names
-          JWT_SECRET=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'for k in ADMIN_DASHBOARD_JWT_SECRET JWT_SECRET DASHBOARD_JWT_SECRET ADMIN_JWT_SECRET; do
-               val=$(grep "^${k}=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-)
-               if [ -n "$val" ]; then echo "$val"; exit 0; fi
-             done')
-
-          if [ -z "$JWT_SECRET" ]; then
-            echo "ERROR: No JWT secret found in testnet.env (tried ADMIN_DASHBOARD_JWT_SECRET, JWT_SECRET, DASHBOARD_JWT_SECRET, ADMIN_JWT_SECRET)"
-            exit 1
-          fi
-          echo "JWT secret found (${#JWT_SECRET} chars)"
-
-          # Sign HS256 JWT via Node.js built-in crypto (no heredoc, no deps)
-          TOKEN=$(JWT_SECRET="${JWT_SECRET}" node -e "
-            const c=require('crypto'),s=JSON.stringify,e=v=>Buffer.from(v).toString('base64url');
-            const h=e(s({alg:'HS256',typ:'JWT'}));
-            const now=Math.floor(Date.now()/1000);
-            const p=e(s({role:'admin',username:'jourlez',iat:now,exp:now+3600}));
-            const sig=c.createHmac('sha256',process.env.JWT_SECRET).update(h+'.'+p).digest('base64url');
-            console.log(h+'.'+p+'.'+sig);
-          ")
-
-          ADMIN_URL="https://testnet-admin.decentralchain.io"
-          echo "=== Debug: Token prefix (first 20 chars) ==="
-          echo "${TOKEN}" | cut -c1-20
-          echo "=== Step 1: Start E2E run (POST /api/e2e/stream) ==="
-
-          # POST {intent:"start", suite} → get runId (capture HTTP code + body)
-          HTTP_CODE=$(curl -s -o /tmp/e2e-start-resp.txt -w "%{http_code}" -X POST "${ADMIN_URL}/api/e2e/stream" \
-            -H "Cookie: admin_token=${TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"intent\":\"start\",\"suite\":\"${SUITE}\"}" \
-            --max-time 30 2>&1)
-          START_RESP=$(cat /tmp/e2e-start-resp.txt 2>/dev/null)
-          echo "HTTP code: ${HTTP_CODE}"
-          echo "Start response: ${START_RESP}"
-          if [ "${HTTP_CODE}" != "200" ]; then
-            echo "ERROR: Admin panel returned HTTP ${HTTP_CODE}"
-            exit 1
-          fi
-
-          RUN_ID=$(echo "${START_RESP}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('runId',''))" 2>/dev/null || echo "")
-          if [ -z "$RUN_ID" ]; then
-            echo "ERROR: No runId in response — authentication or server error"
-            echo "Response was: ${START_RESP}"
-            exit 1
-          fi
-          echo "Run ID: ${RUN_ID}"
-
-          echo "## Admin Panel E2E — ${SUITE} suite" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Run ID:** ${RUN_ID}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-          echo "=== Step 2: Stream results (GET /api/e2e/stream?runId=${RUN_ID}) ==="
-          curl -s "${ADMIN_URL}/api/e2e/stream?runId=${RUN_ID}" \
-            -H "Cookie: admin_token=${TOKEN}" \
-            --max-time 1500 \
-            --no-buffer 2>&1 | while IFS= read -r line; do
-              echo "$line"
-              if [[ "$line" == data:* ]]; then
-                echo "$line" | sed 's/^data: //'
-              fi
-            done | tee /tmp/e2e-output.txt
-
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-          rm -f /tmp/id_rsa
-
-          # Fail if any test failures found
-          if grep -q 'FAIL\|"pass":false\|AssertionError' /tmp/e2e-output.txt 2>/dev/null; then
-            echo "::error::E2E tests had failures"
-            exit 1
-          fi
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
         with:
-          name: e2e-results-${{ github.run_id }}
-          path: /tmp/e2e-output.txt
-          retention-days: 30
+          repository: Decentral-America/DecentralChain
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: packages/e2e-blockchain
+
+      - name: Run E2E smoke suite
+        if: ${{ inputs.suite == 'smoke' || inputs.suite == '' }}
+        env:
+          DCC_TEST_NODE_URL: https://testnet-node.decentralchain.io
+          DCC_TEST_CHAIN_ID: "!"
+          DCC_TEST_MINER_SEED: ${{ secrets.GEN_0_SEED_PHRASE }}
+          DCC_TEST_DS_URL: https://testnet-data-service.decentralchain.io
+          DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
+        working-directory: packages/e2e-blockchain
+        run: |
+          echo "## E2E Smoke Suite — testnet" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          pnpm exec vitest run --reporter=verbose \
+            src/network/node-api.spec.ts \
+            src/network/peers.spec.ts \
+            2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Run E2E full suite
+        if: ${{ inputs.suite == 'full' }}
+        env:
+          DCC_TEST_NODE_URL: https://testnet-node.decentralchain.io
+          DCC_TEST_CHAIN_ID: "!"
+          DCC_TEST_MINER_SEED: ${{ secrets.GEN_0_SEED_PHRASE }}
+          DCC_TEST_DS_URL: https://testnet-data-service.decentralchain.io
+          DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
+        working-directory: packages/e2e-blockchain
+        run: |
+          echo "## E2E Full Suite — testnet" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          pnpm exec vitest run --reporter=verbose 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
