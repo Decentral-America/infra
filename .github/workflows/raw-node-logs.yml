@@ -18,10 +18,19 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Node startup + extension logs ==="
-             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|6881\|Enable extension\|extension.*start\|grpc.*port\|ERROR\|NoSuchMethod" | head -20
-             echo "=== Port 6881 listening? ==="
-             ss -tlnp 2>/dev/null | grep 6881 || netstat -tlnp 2>/dev/null | grep 6881 || echo "(not found in ss/netstat)"
-             echo "=== BPS current error ==="
-             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1 | grep -v "^Error:" | head -5'
+             echo "=== Stop node ==="
+             docker stop node-scala-testnet
+             echo "=== Delete corrupt blockchain-updates DB ==="
+             docker run --rm -v node-state-testnet:/data alpine sh -c "rm -rf /data/blockchain-updates && echo DELETED"
+             echo "=== Start node ==="
+             docker start node-scala-testnet
+             sleep 35
+             echo "=== Container status ==="
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep node
+             echo "=== Extension startup ==="
+             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|Error.*init\|6881\|height\|started gRPC" | head -8
+             echo "=== Port 6881 ==="
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
+             echo "=== Height ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
