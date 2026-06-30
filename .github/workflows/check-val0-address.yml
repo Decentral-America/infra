@@ -2,7 +2,7 @@ name: Check Val-0 Node Address
 # One-shot: port-forward to val-0 and query its wallet address.
 # Run to verify the address used in auto-commit-generators.yml is correct.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
