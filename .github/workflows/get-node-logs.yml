@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Delete corrupt extension DB and restart
+      - name: Restore working dcc-grpc.jar from backup and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,19 +18,31 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Stop node ==="
-             docker stop node-scala-testnet
-             echo "=== Delete corrupt blockchain-updates DB ==="
-             docker run --rm -v node-state-testnet:/data alpine sh -c "rm -rf /data/blockchain-updates && echo DELETED"
-             echo "=== Start node ==="
-             docker start node-scala-testnet
-             sleep 35
-             echo "=== Container status ==="
+             echo "=== Plugin dir ==="
+             ls -lh /opt/dcc/plugins/testnet/
+             echo "=== Check: does thin JAR have DccBlockchainApiGrpc? ==="
+             python3 -c "
+import zipfile
+z=zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\")
+dex=[n for n in z.namelist() if \"DccBlockchainApiGrpc\" in n]
+print(\"DccBlockchainApiGrpc in current JAR:\",len(dex),\"entries\")
+bh=[n for n in z.namelist() if \"Block\" in n and \"Header\" in n and \"protobuf\" in n]
+print(\"Stale Block headers:\",bh if bh else \"NONE\")
+"
+             echo "=== Restoring dcc-grpc.jar from dcc-grpc.jar.bak (has DEX stubs + no stale proto) ==="
+             if [ -f /opt/dcc/plugins/testnet/dcc-grpc.jar.bak ]; then
+               sudo cp /opt/dcc/plugins/testnet/dcc-grpc.jar.bak /opt/dcc/plugins/testnet/dcc-grpc.jar
+               echo "Restored from backup"
+             else
+               echo "No backup found - checking disabled"
+               ls /opt/dcc/plugins/testnet/
+             fi
+             ls -lh /opt/dcc/plugins/testnet/
+             echo "=== Restart node ==="
+             docker restart node-scala-testnet
+             sleep 30
              docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
-             echo "=== Extension startup ==="
-             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|Error\|height\|started gRPC\|6881" | head -10
-             echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
-             echo "=== Height ==="
+             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|ERROR\|6881\|started gRPC\|DEXExtension" | head -8
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 check"
              curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
