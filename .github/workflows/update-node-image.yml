@@ -33,16 +33,23 @@ jobs:
              fi
              docker pull \"\$IMG\" 2>&1 | tail -3
 
-             echo '=== Extract fresh plugin JARs from new image ==='
+             echo '=== Extract fresh plugin JARs from new image (docker create+cp) ==='
              TMP_CONTAINER=\$(docker create \"\$IMG\")
-             GRPC_JAR=\$(docker run --rm \"\$IMG\" find /usr/share/dcc/lib -name 'io.decentralchain.dcc-grpc-server-*.jar' 2>/dev/null | head -1)
-             echo \"Extracting: \$GRPC_JAR\"
-             docker cp \"\$TMP_CONTAINER:\$GRPC_JAR\" /tmp/fresh-grpc-server.jar
+             mkdir -p /tmp/dcc-lib-new
+             docker cp \"\$TMP_CONTAINER:/usr/share/dcc/lib/\" /tmp/dcc-lib-new/ 2>/dev/null
              docker rm \"\$TMP_CONTAINER\"
-             sudo cp /tmp/fresh-grpc-server.jar /opt/dcc/plugins/testnet/dcc-grpc.jar
-             sudo rm -f /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled /opt/dcc/plugins/testnet/dcc-grpc.jar.bak
+             GRPC_JAR=\$(ls /tmp/dcc-lib-new/lib/io.decentralchain.dcc-grpc-server-*.jar 2>/dev/null | head -1)
+             echo \"Found JAR: \$GRPC_JAR\"
+             if [ -n \"\$GRPC_JAR\" ]; then
+               sudo cp \"\$GRPC_JAR\" /opt/dcc/plugins/testnet/dcc-grpc.jar
+               sudo rm -f /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled /opt/dcc/plugins/testnet/dcc-grpc.jar.bak
+               echo \"Plugin JAR refreshed: \$(ls -lh /opt/dcc/plugins/testnet/dcc-grpc.jar)\"
+             else
+               echo \"WARNING: Could not find grpc-server JAR in image - keeping existing plugin JAR\"
+             fi
              ls -lh /opt/dcc/plugins/testnet/
-             echo '=== Plugin JAR refreshed from new image ==='
+             rm -rf /tmp/dcc-lib-new
+             echo '=== Plugin JARs up to date ==='
 
              echo '=== Stop node ==='
              docker stop node-scala-testnet
