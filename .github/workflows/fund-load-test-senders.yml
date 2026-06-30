@@ -1,7 +1,7 @@
 name: Fund Load Test Secondary Senders
-# Transfers DCC from main node wallet to the secondary sender accounts
-# derived from the gen-0 load-test seed (nonces 1-4).
-# Run once before high-TPS multi-sender stress tests.
+# Transfers 1M DCC from main node wallet to secondary sender accounts (nonces 1-4).
+# 1M DCC covers ~1,000,000 txs at 0.001 DCC fee — more than enough for any stress test.
+# Main wallet has ~26.7M DCC; transferring 4x1M = 4M DCC leaves adequate buffer.
 on:
   workflow_dispatch: {}
 permissions:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Transfer 100M DCC to secondary senders (nonces 1-4)
+      - name: Transfer 1M DCC each to nonce 1-4 senders + show balances
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -26,16 +26,18 @@ jobs:
             set +e
             KEY=$(cat /tmp/.main_key | tr -d "\n"); rm -f /tmp/.main_key
             SENDER="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
-            # 100M DCC = 10000000000000000 wavelet (1 DCC = 10^8 wavelet, 100M DCC = 10^16 wavelet)
-            AMOUNT=10000000000000000
+            # 1M DCC = 100000000000000 wavelet (1 DCC = 10^8 wavelet)
+            AMOUNT=100000000000000
             FEE=100000
+            echo "=== Main wallet balance ==="
+            curl -s "http://localhost:6869/addresses/balance/$SENDER" | python3 -c "import json,sys; b=json.load(sys.stdin)[\"balance\"]; print(f\"Main: {b//100000000} DCC ({b} wavelet)\")"
 
             for RECIPIENT in \
               "31XMNJbkd7gysUB6fgxpkiVVKrwCQZopwH1" \
               "31XwjYAE1okLBtbV5UN3yPBnXTV4LGtJ45w" \
               "31KZrx9ftS9TJKaAbdFXpPiRsYsyvFiwsgv" \
               "31g8pNyGr7GGMFQAMHfyrBFxC6DnjvywpDb"; do
-              echo "=== Funding ${RECIPIENT} with 100M DCC ==="
+              echo "=== Funding ${RECIPIENT} with 1M DCC ==="
               BODY=$(python3 -c "import json; print(json.dumps({\"type\":4,\"sender\":\"${SENDER}\",\"recipient\":\"${RECIPIENT}\",\"amount\":${AMOUNT},\"fee\":${FEE},\"attachment\":\"\"}))")
               SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
                 -H "Content-Type: application/json" -H "X-API-Key: $KEY" \
@@ -43,20 +45,20 @@ jobs:
               if echo "$SIGNED" | grep -q "\"id\""; then
                 RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
                   -H "Content-Type: application/json" -d "$SIGNED")
-                echo "TX: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:40])" 2>/dev/null)"
+                echo "TX: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"error\"))[:50])" 2>/dev/null)"
               else
-                echo "Sign failed: $(echo $SIGNED | head -c 100)"
+                echo "Sign failed: $(echo $SIGNED | head -c 150)"
               fi
-              sleep 2
+              sleep 3
             done
-
-            echo "=== Balances after funding ==="
+            sleep 10
+            echo "=== Final balances ==="
             for ADDR in \
               "31XMNJbkd7gysUB6fgxpkiVVKrwCQZopwH1" \
               "31XwjYAE1okLBtbV5UN3yPBnXTV4LGtJ45w" \
               "31KZrx9ftS9TJKaAbdFXpPiRsYsyvFiwsgv" \
               "31g8pNyGr7GGMFQAMHfyrBFxC6DnjvywpDb"; do
               BAL=$(curl -s "http://localhost:6869/addresses/balance/$ADDR" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"balance\"]//100000000)" 2>/dev/null)
-              echo "$ADDR: ${BAL}M DCC"
+              echo "$ADDR: ${BAL} DCC"
             done'
           rm -f /tmp/id_rsa
