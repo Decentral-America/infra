@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Drop-recreate BPS database and restart
+      - name: Reset BPS database, migrate schema, restart consumer
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -16,13 +16,19 @@ jobs:
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             echo "=== Stop BPS ==="
+            'set -e
+             echo "=== Stop BPS consumer ==="
              docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1
-             echo "=== Drop and recreate bps_testnet database ==="
-             sudo -u postgres psql -c "DROP DATABASE IF EXISTS bps_testnet;" 2>&1
-             sudo -u postgres psql -c "CREATE DATABASE bps_testnet OWNER dcc;" 2>&1
-             echo "=== Start BPS (Diesel will recreate schema) ==="
+             echo "=== Drop and recreate bps_testnet ==="
+             sudo -u postgres psql -c "DROP DATABASE IF EXISTS bps_testnet;"
+             sudo -u postgres psql -c "CREATE DATABASE bps_testnet OWNER dcc;"
+             echo "=== Run Diesel migrations ==="
+             IMAGE=$(docker inspect blockchain-postgres-sync-testnet --format "{{.Config.Image}}")
+             echo "Image: $IMAGE"
+             docker run --rm --network host \
+               --env-file /opt/dcc/secrets/testnet.env \
+               "$IMAGE" ./migration up
+             echo "=== Start BPS consumer ==="
              docker start blockchain-postgres-sync-testnet 2>&1 | tail -1
              sleep 30
              docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
