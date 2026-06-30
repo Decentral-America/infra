@@ -67,14 +67,25 @@ groups:
       # ── T0 DeterministicFinality ──────────────────────────────────────────
       - alert: T0FinalizationStalled
         expr: |
-          dcc_t0_finality_lag > 200
-        for: 30m
+          dcc_t0_finality_lag > 150
+        for: 60m
         labels:
           severity: medium
           network: testnet
         annotations:
-          summary: "T0 DeterministicFinality lagging >200 blocks for 30 min"
-          description: "dcc_t0_finality_lag > 200. Generators may have missed CommitToGeneration transactions for one or more periods."
+          summary: "T0 DeterministicFinality lagging >150 blocks for 1 hour"
+          description: "dcc_t0_finality_lag > 150 for 60 min. T0 should self-heal via auto-commit-generators. If persisting, check generator commitment history."
+
+      - alert: T0NotAdvancing
+        expr: |
+          increase(dcc_t0_finalized_height[30m]) == 0
+        for: 30m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "T0 finalizedHeight not advancing for 30 min"
+          description: "T0 finalizedHeight has been completely static for 30 min. Generators are not committing or endorsements are not flowing."
 
       # ── Current period generators ──────────────────────────────────────────
       - alert: CurrentGeneratorsExpired
