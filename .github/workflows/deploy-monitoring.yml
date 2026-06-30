@@ -4,7 +4,7 @@ name: Deploy Monitoring Config
 #   - loki-config.yaml + promtail-config.yaml → (re)start Loki/Promtail stack
 #   - datasources/*.yaml → copied for Grafana provisioning
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
