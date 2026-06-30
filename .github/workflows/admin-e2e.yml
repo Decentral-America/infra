@@ -1,12 +1,13 @@
 name: Admin Panel E2E Test Suite
 
 # Triggers the admin dashboard's built-in E2E test runner against testnet.
-# Authenticates via JWT signed with ADMIN_DASHBOARD_JWT_SECRET (read from VPS),
-# then POSTs to /api/e2e/stream and streams results.
+# Flow:
+#   1. SSH to VPS → read ADMIN_DASHBOARD_JWT_SECRET
+#   2. Sign a HS256 JWT via Python (hmac.new — matches jose library exactly)
+#   3. POST /api/e2e/stream {intent:"start", suite} → get runId
+#   4. GET /api/e2e/stream?runId=X → stream SSE results
 #
-# Suites:
-#   smoke — fast subset (transfer, invoke-script, node-api)
-#   full  — all available spec files
+# Suites: smoke (3 specs, ~5 min) | full (all specs, ~20 min)
 on:
   workflow_dispatch:
     inputs:
@@ -34,51 +35,77 @@ jobs:
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
           SUITE:    ${{ inputs.suite || 'smoke' }}
         run: |
+          set -euo pipefail
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
 
-          # Read JWT secret from VPS secrets file and sign a token locally
+          # Read JWT secret from VPS secrets file
           JWT_SECRET=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-            'grep ADMIN_DASHBOARD_JWT_SECRET /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-')
+            'grep "^ADMIN_DASHBOARD_JWT_SECRET=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-')
 
           if [ -z "$JWT_SECRET" ]; then
             echo "ERROR: ADMIN_DASHBOARD_JWT_SECRET not found in testnet.env"
             exit 1
           fi
 
-          # Sign a JWT token (HS256, 1h expiry)
-          HEADER=$(echo -n '{"alg":"HS256","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
-          PAYLOAD=$(echo -n "{\"role\":\"admin\",\"username\":\"jourlez\",\"iat\":$(date +%s),\"exp\":$(($(date +%s)+3600))}" | base64 -w0 | tr '+/' '-_' | tr -d '=')
-          SIG=$(echo -n "${HEADER}.${PAYLOAD}" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | base64 -w0 | tr '+/' '-_' | tr -d '=')
-          TOKEN="${HEADER}.${PAYLOAD}.${SIG}"
+          # Sign HS256 JWT via Python — matches jose library exactly
+          TOKEN=$(python3 - <<PYEOF
+import base64, hmac, hashlib, json, time
+
+secret = b"${JWT_SECRET}"
+header  = base64.urlsafe_b64encode(json.dumps({"alg":"HS256","typ":"JWT"}).encode()).rstrip(b"=")
+now     = int(time.time())
+payload = base64.urlsafe_b64encode(json.dumps({"role":"admin","username":"jourlez","iat":now,"exp":now+3600}).encode()).rstrip(b"=")
+msg     = header + b"." + payload
+sig     = base64.urlsafe_b64encode(hmac.new(secret, msg, hashlib.sha256).digest()).rstrip(b"=")
+print((msg + b"." + sig).decode())
+PYEOF
+          )
 
           ADMIN_URL="https://testnet-admin.decentralchain.io"
-          echo "=== Triggering ${SUITE} E2E suite ==="
-          echo "URL: ${ADMIN_URL}/api/e2e/stream"
+          echo "=== Step 1: Start E2E run (POST /api/e2e/stream) ==="
 
-          # Stream E2E results (SSE) — collect for up to 25 min
-          echo "## Admin Panel E2E — ${SUITE} suite" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          curl -sf -X POST "${ADMIN_URL}/api/e2e/stream" \
+          # POST {intent:"start", suite} → get runId
+          START_RESP=$(curl -sf -X POST "${ADMIN_URL}/api/e2e/stream" \
             -H "Cookie: admin_token=${TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"suite\":\"${SUITE}\"}" \
+            -d "{\"intent\":\"start\",\"suite\":\"${SUITE}\"}" \
+            --max-time 30 2>&1)
+          echo "Start response: ${START_RESP}"
+
+          RUN_ID=$(echo "${START_RESP}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('runId',''))" 2>/dev/null || echo "")
+          if [ -z "$RUN_ID" ]; then
+            echo "ERROR: No runId in response — authentication or server error"
+            echo "Response was: ${START_RESP}"
+            exit 1
+          fi
+          echo "Run ID: ${RUN_ID}"
+
+          echo "## Admin Panel E2E — ${SUITE} suite" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${RUN_ID}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "=== Step 2: Stream results (GET /api/e2e/stream?runId=${RUN_ID}) ==="
+          curl -s "${ADMIN_URL}/api/e2e/stream?runId=${RUN_ID}" \
+            -H "Cookie: admin_token=${TOKEN}" \
             --max-time 1500 \
             --no-buffer 2>&1 | while IFS= read -r line; do
               echo "$line"
-              # Parse SSE data lines for summary
               if [[ "$line" == data:* ]]; then
                 echo "$line" | sed 's/^data: //'
               fi
             done | tee /tmp/e2e-output.txt
+
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          # Check for failures
-          if grep -q '"status":"fail"\|FAIL\|failed' /tmp/e2e-output.txt 2>/dev/null; then
-            echo "::error::E2E tests had failures — see output above"
+          rm -f /tmp/id_rsa
+
+          # Fail if any test failures found
+          if grep -q 'FAIL\|"pass":false\|AssertionError' /tmp/e2e-output.txt 2>/dev/null; then
+            echo "::error::E2E tests had failures"
             exit 1
           fi
-          rm -f /tmp/id_rsa
 
       - name: Upload results
         if: always()
