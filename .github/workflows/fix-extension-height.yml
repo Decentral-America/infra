@@ -8,33 +8,24 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Deploy new BPS image, reset DB, migrate, start consumer
+      - name: Swap BPS to correct image (no DB wipe)
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-          NEW_IMAGE: ghcr.io/decentral-america/blockchain-postgres-sync:3af89094fbafe1c622ecf51742246ac61d90dff4
+          NEW_IMAGE: ghcr.io/decentral-america/blockchain-postgres-sync:fbece975a0074868d20dc476324a0fa0587f2e70
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             "set -e
              echo '=== Pull new image ==='
              docker pull ${NEW_IMAGE}
-             echo '=== Stop and remove BPS consumer ==='
+             echo '=== Stop and remove old container ==='
              docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
              docker rm blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
-             echo '=== Drop and recreate bps_testnet ==='
-             sudo -u postgres psql -c 'DROP DATABASE IF EXISTS bps_testnet;'
-             sudo -u postgres psql -c 'CREATE DATABASE bps_testnet OWNER dcc;'
-             echo '=== Run Diesel migrations with new image ==='
-             docker run --rm --network host --env-file /opt/dcc/secrets/testnet.env ${NEW_IMAGE} ./migration up
-             echo '=== Verify DB is empty ==='
-             sudo -u postgres psql -d bps_testnet -c 'SELECT count(*) FROM blocks_microblocks;'
-             echo '=== Check BPS env vars ==='
-             docker run --rm --env-file /opt/dcc/secrets/testnet.env --entrypoint env ${NEW_IMAGE} | grep -E 'POSTGRES__|BPS_' | grep -v PASSWORD
-             echo '=== Update container to new image and start ==='
+             echo '=== Start with correct image (no DB wipe) ==='
              IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d blockchain-postgres-sync
              sleep 35
-             docker ps --format '{{.Names}}\t{{.Status}}' | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -20"
+             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep blockchain-postgres
+             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15"
           rm -f /tmp/id_rsa
