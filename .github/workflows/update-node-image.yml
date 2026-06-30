@@ -23,14 +23,14 @@ jobs:
 
           echo "=== Deploy fresh plugin JARs from repo ==="
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
-            plugins/testnet/dcc-ext.jar plugins/testnet/dcc-grpc.jar \
+            plugins/testnet/ext.jar plugins/testnet/grpc.jar \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'sudo cp /tmp/dcc-ext.jar /tmp/dcc-grpc.jar /opt/dcc/plugins/testnet/
-             sudo rm -f /opt/dcc/plugins/testnet/dcc-ext.jar.disabled /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled
+            'sudo cp /tmp/ext.jar /tmp/grpc.jar /opt/dcc/plugins/testnet/
+             sudo rm -f /opt/dcc/plugins/testnet/ext.jar.disabled /opt/dcc/plugins/testnet/grpc.jar.disabled
              ls -lh /opt/dcc/plugins/testnet/
-             rm -f /tmp/dcc-ext.jar /tmp/dcc-grpc.jar'
+             rm -f /tmp/ext.jar /tmp/grpc.jar'
 
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \

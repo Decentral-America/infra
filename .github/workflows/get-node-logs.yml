@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Remove dcc-ext.jar (DEX extension needs legacy class) and restart
+      - name: Remove ext.jar (DEX extension needs legacy class) and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -20,8 +20,8 @@ jobs:
             'set +e
              echo "=== Current plugins ==="
              ls -lh /opt/dcc/plugins/testnet/
-             echo "=== Disable dcc-ext.jar (DEXExtension needs DccBlockchainApiGrpc not in current repos) ==="
-             sudo mv /opt/dcc/plugins/testnet/dcc-ext.jar /opt/dcc/plugins/testnet/dcc-ext.jar.disabled 2>/dev/null && echo "Disabled dcc-ext.jar"
+             echo "=== Disable ext.jar (DEXExtension needs DccBlockchainApiGrpc not in current repos) ==="
+             sudo mv /opt/dcc/plugins/testnet/ext.jar /opt/dcc/plugins/testnet/ext.jar.disabled 2>/dev/null && echo "Disabled ext.jar"
              echo "=== Plugins after ==="
              ls -lh /opt/dcc/plugins/testnet/
              echo "=== Restart node ==="
