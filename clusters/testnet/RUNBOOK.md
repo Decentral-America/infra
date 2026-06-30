@@ -64,7 +64,7 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 
 2. If the new image is bad, roll back the image in the manifest:
    ```bash
-   # Edit clusters/testnet/apps/dcc-nodes.yaml
+   # Edit clusters/testnet/apps/nodes.yaml
    # Change dcc-val-0 image tag back to the previous known-good tag
    git commit -am "revert: roll back dcc-val-0 to previous image"
    git push

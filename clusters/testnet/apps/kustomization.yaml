@@ -4,4 +4,4 @@ resources:
   - gen-0-wallet.secret.yaml
   - gen-1-wallet.secret.yaml
   - val-0-wallet.secret.yaml
-  - dcc-nodes.yaml
+  - nodes.yaml

@@ -46,9 +46,9 @@ services:
         max-size: "50m"
         max-file: "3"
 
-  dcc-exporter:
+  exporter:
     image: python:3.13-slim
-    container_name: "dcc-exporter-${NETWORK:-testnet}"
+    container_name: "exporter-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
     security_opt:

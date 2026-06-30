@@ -1,0 +1,54 @@
+name: Redeploy BPS with latest image
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Pull new BPS image and restart
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set +e
+             echo '=== Current BPS image ==='
+             docker inspect blockchain-postgres-sync-testnet --format '{{.Config.Image}}' 2>/dev/null
+
+             echo '=== Pull latest BPS image ==='
+             CURRENT_IMG=\$(docker inspect blockchain-postgres-sync-testnet --format '{{.Config.Image}}' 2>/dev/null)
+             IMAGE_BASE=\$(echo \"\$CURRENT_IMG\" | cut -d: -f1)
+             echo \"Image base: \$IMAGE_BASE\"
+
+             if [ -n \"${GHCR_TOKEN}\" ]; then
+               echo '${GHCR_TOKEN}' | docker login ghcr.io -u github-actions --password-stdin 2>/dev/null
+             fi
+
+             docker pull \"\${IMAGE_BASE}:testnet-latest\" 2>&1 | tail -3
+
+             echo '=== Stop BPS ==='
+             docker stop blockchain-postgres-sync-testnet 2>/dev/null
+
+             echo '=== Update container to new image ==='
+             docker rm blockchain-postgres-sync-testnet 2>/dev/null
+
+             echo '=== Recreate container with new image (same settings) ==='
+             cd /opt/dcc
+             docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml \
+               --env-file /opt/dcc/secrets/testnet.env \
+               -p testnet up -d blockchain-postgres-sync 2>&1 | tail -5
+
+             sleep 15
+             echo '=== BPS status ==='
+             docker ps --format '{{.Names}}\t{{.Status}}' | grep bps
+
+             echo '=== BPS logs ==='
+             docker logs blockchain-postgres-sync-testnet --since 2026-06-27T19:00:00Z 2>&1 | grep -v 'at java\|at scala\|DEBUG' | head -15"
+          rm -f /tmp/id_rsa
