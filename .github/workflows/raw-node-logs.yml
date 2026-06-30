@@ -18,19 +18,28 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Stop node ==="
-             docker stop node-scala-testnet
-             echo "=== Delete corrupt blockchain-updates DB ==="
-             docker run --rm -v node-state-testnet:/data alpine sh -c "rm -rf /data/blockchain-updates && echo DELETED"
-             echo "=== Start node ==="
-             docker start node-scala-testnet
+             echo "=== Copy fresh grpc-server JAR from container to plugins ==="
+             GRPC_JAR=$(docker exec node-scala-testnet find /usr/share/dcc/lib -name "io.decentralchain.dcc-grpc-server-*.jar" 2>/dev/null | head -1)
+             echo "Source JAR: $GRPC_JAR"
+             docker cp "node-scala-testnet:${GRPC_JAR}" /tmp/fresh-grpc.jar
+             ls -lh /tmp/fresh-grpc.jar
+             sudo cp /tmp/fresh-grpc.jar /opt/dcc/plugins/testnet/dcc-grpc.jar
+             sudo rm -f /opt/dcc/plugins/testnet/dcc-grpc.jar.disabled /opt/dcc/plugins/testnet/dcc-grpc.jar.bak
+             echo "=== Verify: plugin dir and no stale Block\$Header ==="
+             ls -lh /opt/dcc/plugins/testnet/
+             python3 -c "
+import zipfile
+z=zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\")
+bh=[n for n in z.namelist() if \"Block\" in n and \"Header\" in n and \"protobuf\" in n]
+ext=[n for n in z.namelist() if \"BlockchainUpdate\" in n or \"GRPCServer\" in n or \"application.conf\" in n]
+print(\"Stale Block headers:\",bh if bh else \"NONE (clean)\")
+print(\"Extension classes:\",ext)
+"
+             echo "=== Restart node ==="
+             docker restart node-scala-testnet
              sleep 35
-             echo "=== Container status ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node
-             echo "=== Extension startup ==="
-             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|Error.*init\|6881\|height\|started gRPC" | head -8
-             echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
-             echo "=== Height ==="
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
+             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 check"
+             docker logs node-scala-testnet --since 1m 2>&1 | grep -i "BlockchainUpdates\|Enable extension\|ERROR\|6881\|started gRPC" | head -8
              curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
