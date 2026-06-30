@@ -33,16 +33,14 @@ jobs:
              echo '=== Check BPS env vars ==='
              docker run --rm --env-file /opt/dcc/secrets/testnet.env --entrypoint env ${NEW_IMAGE} | grep -E 'POSTGRES__|BPS_' | grep -v PASSWORD
              echo '=== Run BPS with RUST_LOG=info for diagnostic ==='
-             set +e
-             docker run --rm --name bps-debug --network host \
+             docker rm -f bps-debug 2>/dev/null || true
+             docker run --detach --name bps-debug --network host \
                --env-file /opt/dcc/secrets/testnet.env \
                -e RUST_LOG=info \
                -e BPS_STARTING_HEIGHT=1 \
-               ${NEW_IMAGE} ./consumer &
-             BPS_PID=\$!
+               ${NEW_IMAGE} ./consumer
              sleep 4
-             docker logs bps-debug 2>&1 | head -40
-             docker stop bps-debug 2>/dev/null || true
-             wait \$BPS_PID 2>/dev/null || true
-             set -e"
+             echo '--- BPS logs ---'
+             docker logs bps-debug 2>&1 | head -50
+             docker rm -f bps-debug 2>/dev/null || true"
           rm -f /tmp/id_rsa
