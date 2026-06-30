@@ -20,8 +20,9 @@ jobs:
             "set -e
              echo '=== Pull new image ==='
              docker pull ${NEW_IMAGE}
-             echo '=== Stop BPS consumer ==='
+             echo '=== Stop and remove BPS consumer ==='
              docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
+             docker rm blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
              echo '=== Drop and recreate bps_testnet ==='
              sudo -u postgres psql -c 'DROP DATABASE IF EXISTS bps_testnet;'
              sudo -u postgres psql -c 'CREATE DATABASE bps_testnet OWNER dcc;'
