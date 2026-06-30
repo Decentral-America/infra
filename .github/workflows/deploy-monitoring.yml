@@ -23,10 +23,10 @@ jobs:
 
           # Copy all monitoring config files in one scp call
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
-            monitoring/prometheus.yml \
-            monitoring/alerts.yml \
-            monitoring/loki-config.yaml \
-            monitoring/promtail-config.yaml \
+            monitoring/prometheus.yml monitoring/alerts.yml \
+            monitoring/loki-config.yaml monitoring/promtail-config.yaml \
+            "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
             monitoring/datasources/loki.yaml \
             monitoring/datasources/prometheus.yaml \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
@@ -50,10 +50,9 @@ jobs:
              curl -s http://127.0.0.1:9091/api/v1/rules 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-groups = d.get(\"data\",{}).get(\"groups\",[])
-print(f\"Rule groups: {len(groups)}\")
-for g in groups:
-    print(f\"  {g[\"name\"]}: {len(g[\"rules\"])} rules\")
+groups=d.get(\"data\",{}).get(\"groups\",[])
+print(\"Rule groups:\",len(groups))
+for g in groups: print(\" \",g.get(\"name\"),\":\",len(g.get(\"rules\",[])),\"rules\")
 " 2>/dev/null || echo "(prometheus not reachable yet)"
 
              echo "=== (Re)start Loki + Promtail ==="
