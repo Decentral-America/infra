@@ -27,18 +27,22 @@ jobs:
 
       - name: Transfer 6.67M DCC from main to gen-0
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
              MAIN="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
              GEN0="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
              GEN1="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
-             MAIN_KEY="***REDACTED_MAIN_API_KEY***="
+             MAIN_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
              echo "=== Current balances ==="
              curl -s "http://localhost:6869/addresses/balance/$MAIN" | python3 -c "import json,sys; print(\"Main:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"
              curl -s "http://localhost:6869/addresses/balance/$GEN0" | python3 -c "import json,sys; print(\"Gen-0:\", json.load(sys.stdin)[\"balance\"]//100000000, \"DCC\")"

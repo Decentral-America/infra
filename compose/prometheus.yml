@@ -21,6 +21,7 @@ services:
       - /tmp:size=32m,mode=1777
     volumes:
       - /opt/dcc/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/dcc/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'

@@ -9,6 +9,10 @@ on:
         default: 'testnet'
         type: choice
         options: [testnet, stagenet]
+      confirm:
+        description: 'Type WIPE-CONFIRMED to proceed (irreversible — destroys all chain data)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,6 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.network }}
     steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "WIPE-CONFIRMED" ]; then
+            echo "ERROR: confirm input must be exactly 'WIPE-CONFIRMED'. Got: '${{ inputs.confirm }}'"
+            echo "This workflow permanently destroys all chain data and cannot be undone."
+            exit 1
+          fi
+
       - name: Setup SSH key
         run: |
           install -dm 700 ~/.ssh

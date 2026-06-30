@@ -1,0 +1,77 @@
+groups:
+  - name: dcc-testnet-critical
+    interval: 60s
+    rules:
+      # ── Chain liveness ─────────────────────────────────────────────────────
+      - alert: BlockProductionStalled
+        expr: |
+          (time() - dcc_blockchain_height_timestamp_seconds) > 300
+        for: 5m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "DCC testnet block production stalled"
+          description: "No new block in >5 min. Chain may be halted or main node offline."
+
+      # ── T2 HotStuff finality ───────────────────────────────────────────────
+      - alert: T2FinalizationStalled
+        expr: |
+          (dcc_blockchain_height - dcc_hotstuff_finalized_height) > 50
+        for: 10m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "T2 HotStuff finalization lagging >50 blocks"
+          description: "hotStuffFinalizedHeight is >50 blocks behind chain tip. Generators may not be committed or quorum lost."
+
+      - alert: T2GeneratorsNotCommitted
+        expr: |
+          dcc_next_generators_count < 2
+        for: 15m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "T2 NextGenerators < 2 for >15 min"
+          description: "Less than 2 generators committed for next period. T2 will stop finalizing when current period ends (~50 min)."
+
+      # ── Node health ────────────────────────────────────────────────────────
+      - alert: NodePeersLow
+        expr: |
+          dcc_peers_connected < 1
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "Main node has fewer than 1 connected peer"
+          description: "Node is isolated — gen nodes cannot submit votes. T2 rounds will fail."
+
+  - name: dcc-testnet-infra
+    interval: 60s
+    rules:
+      # ── BPS ───────────────────────────────────────────────────────────────
+      - alert: BPSDown
+        expr: |
+          up{job="dcc-chain"} == 0
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "DCC chain exporter unreachable"
+          description: "Prometheus cannot scrape dcc-exporter. BPS or node may be down."
+
+      # ── T0 DeterministicFinality ──────────────────────────────────────────
+      - alert: T0FinalizationStalled
+        expr: |
+          (dcc_blockchain_height - dcc_deterministic_finalized_height) > 200
+        for: 30m
+        labels:
+          severity: medium
+          network: testnet
+        annotations:
+          summary: "T0 DeterministicFinality lagging >200 blocks for 30 min"
+          description: "T0 finalizedHeight is far behind chain tip. Generators may have missed CommitToGeneration transactions."

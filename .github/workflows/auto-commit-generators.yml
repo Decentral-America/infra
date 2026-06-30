@@ -4,7 +4,8 @@ name: Auto-Commit Generators (T2 HotStuff)
 # generators are always committed before the current period expires.
 on:
   schedule:
-    - cron: '*/35 * * * *'  # every 35 minutes
+    - cron: '*/35 * * * *'   # every 35 min (primary)
+    - cron: '17 * * * *'     # at :17 past every hour (redundant offset — if primary misses, catches within ~17 min)
   workflow_dispatch: {}
 permissions:
   contents: read
