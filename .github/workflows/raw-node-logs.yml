@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Get node status and recent logs
+      - name: Truncate BPS tables and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,12 +18,16 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Container status ==="
-             docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -E "node-scala|blockchain-postgres|matcher"
-             echo "=== Port 6881 ==="
-             ss -tlnp 2>/dev/null | grep 6881 || echo "port 6881 not open"
-             echo "=== Node ERROR logs (startup + extension) ==="
-             docker logs node-scala-testnet 2>&1 | grep -i "BlockchainUpdates\|6881\|Enable extension\|ERROR\|NoSuchMethod" | grep -v "HTTP 200" | tail -10
-             echo "=== Chain height ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null'
+             echo "=== Truncate BPS tables ==="
+             docker exec postgres-testnet psql -U postgres -d bps_testnet -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>/dev/null || echo "Direct psql failed - trying via container"
+             PGPASS=$(grep POSTGRES_PASSWORD /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"'"'"')
+             PGHOST=$(grep PGHOST /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
+             PGUSER=$(grep PGUSER /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
+             PGDB=$(grep PGDATABASE /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
+             PGPASSWORD="$PGPASS" psql -h "$PGHOST" -U "$PGUSER" -d "$PGDB" -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>&1 | head -3
+             echo "=== Restart BPS ==="
+             docker restart blockchain-postgres-sync-testnet
+             sleep 15
+             docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
+             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1 | grep -v "^Error:" | head -5'
           rm -f /tmp/id_rsa
