@@ -41,6 +41,6 @@ jobs:
                ${NEW_IMAGE} ./consumer
              sleep 4
              echo '--- BPS logs ---'
-             docker logs bps-debug 2>&1 | head -50
+             docker logs bps-debug 2>&1 | tail -60
              docker rm -f bps-debug 2>/dev/null || true"
           rm -f /tmp/id_rsa
