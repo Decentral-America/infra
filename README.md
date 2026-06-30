@@ -24,6 +24,7 @@
 - [One-time setup checklist](#one-time-setup-checklist)
 - [Activation](#activation)
 - [How to deploy](#how-to-deploy)
+- [Operations](#operations)
 
 ---
 
@@ -1282,4 +1283,57 @@ ssh deploy@<DEPLOY_HOST> \
    docker stop scanner && \
    docker run -d --name scanner --env-file /opt/dcc/secrets/mainnet.env \
      ghcr.io/decentral-america/scanner:<PREVIOUS_SHA>"
+```
+
+---
+
+## Operations
+
+Recurring operational workflows for the LKE testnet cluster.
+
+---
+
+### `auto-commit-generators.yml` — T2 HotStuff generator commitment
+
+**File:** `.github/workflows/auto-commit-generators.yml`
+**Schedule:** Every 35 minutes (plus an offset run at :17 past each hour as a safety net).
+**Trigger:** Also available via `workflow_dispatch` for manual runs.
+**Environment:** `testnet`
+
+**What it does:** DCC HotStuff consensus requires each generator wallet to re-commit to the
+next generation period every 100 blocks (~50 minutes). Without this, a generator falls out
+of the active set and block production degrades. This workflow automates three commitment
+transactions per cycle:
+
+| Generator | Address | REST port | Secret |
+|-----------|---------|-----------|--------|
+| Main node | `31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6` | `6869` (SSH to server) | `MAIN_NODE_REST_API_KEY` |
+| gen-0 (LKE) | `31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD` | `6869` (kubectl port-forward) | `GEN_0_NODE_REST_API_KEY` |
+| gen-1 (LKE) | `31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV` | `6870` (kubectl port-forward) | `GEN_1_NODE_REST_API_KEY` |
+
+**Mechanism:** Signs and broadcasts a type-19 (GeneratorCommitment) transaction to each
+node's REST API. For the main node, the workflow SSHs in and calls `localhost`. For gen-0
+and gen-1 (running on LKE), it fetches the cluster kubeconfig via the Linode API and uses
+`kubectl port-forward` to reach the pod's REST port.
+
+**Secrets required in the `testnet` environment:**
+
+| Secret | Purpose |
+|--------|---------|
+| `LINODE_TOKEN` | Fetch LKE kubeconfig via Linode API |
+| `TESTNET_DEPLOY_SSH_KEY` | SSH key for main-node commitment + finality report |
+| `TESTNET_DEPLOY_HOST` | IP of the main testnet node |
+| `TESTNET_DEPLOY_USER` | SSH username on the main testnet node |
+| `MAIN_NODE_REST_API_KEY` | API key hash for the main node's REST API |
+| `GEN_0_NODE_REST_API_KEY` | API key hash for dcc-gen-0's REST API |
+| `GEN_1_NODE_REST_API_KEY` | API key hash for dcc-gen-1's REST API |
+
+**Final step:** After committing all generators, the workflow SSHs to the main node and
+calls `/blockchain/finality` to log current height, finalized height, T2 finalized height,
+and active generator counts. This serves as a lightweight health check after each commitment
+cycle.
+
+**Manual run:**
+```bash
+gh workflow run auto-commit-generators.yml --repo Decentral-America/infra
 ```

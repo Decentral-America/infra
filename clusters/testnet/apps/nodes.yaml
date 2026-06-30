@@ -351,6 +351,24 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
+        # seccomp: RuntimeDefault filters ~300+ high-risk syscalls (ptrace, mount,
+        # kexec_load, etc.) with zero application impact. runAsNonRoot is left unset
+        # because node-scala writes chain data as root inside the container; flip to
+        # true once the image switches to a non-root uid.
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          # preferred (not required) — single-node testnet still schedules fine;
+          # on mainnet with 2+ nodes the scheduler will spread gen-0 and gen-1
+          # across separate hosts, eliminating a single point of failure.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    role: generator
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - name: ghcr-pull-secret
       containers:
@@ -454,6 +472,18 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
+        # seccomp: RuntimeDefault — same as gen-0. runAsNonRoot left unset (root needed).
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    role: generator
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - name: ghcr-pull-secret
       containers:
