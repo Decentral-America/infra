@@ -25,6 +25,10 @@
 services:
   caddy:
     # Pinned to a specific release. Renovate keeps this current.
+    # NOTE: rate limiting (caddy-ratelimit module) requires a custom xcaddy build.
+    # See the TODO comments in terraform/scripts/bootstrap.sh NODE_DOMAIN block for
+    # the exact rate_limit directive syntax and Dockerfile recipe.
+    # Until a custom image is built, rate limiting is documented-only (not active).
     image: caddy:2.11.4-alpine
     container_name: "caddy-${NETWORK:-mainnet}"
     # host network mode: Caddy binds directly to the host's port 80 and 443.

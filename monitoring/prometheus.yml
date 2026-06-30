@@ -23,3 +23,20 @@ scrape_configs:
   # BPS (:9090) does not expose Prometheus-format metrics — only /health and /readiness.
   # BPS liveness is inferred from dcc_scrape_error via the dcc-chain exporter.
   # TODO (mainnet): add a /metrics handler to BPS exposing bps_last_synced_height.
+
+  # Loki metrics — ingestion rate, chunk/index store ops, compaction lag.
+  # Loki exposes Prometheus-format metrics at :3100/metrics.
+  - job_name: loki
+    static_configs:
+      - targets: ['127.0.0.1:3100']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
+  # Promtail metrics — scrape lag, pipeline stage errors, batch send stats.
+  - job_name: promtail
+    static_configs:
+      - targets: ['127.0.0.1:9080']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet

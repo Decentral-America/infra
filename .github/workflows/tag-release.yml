@@ -1,0 +1,161 @@
+name: Tag node-scala Release
+# Creates a node-scala/vX.Y.Z tag on the node-scala repo, which in turn
+# triggers ci.yml release-image to build semver-tagged Docker images for
+# all networks.
+#
+# After tagging, optionally deploys a specific semver image to testnet.
+#
+# Usage:
+#   1. workflow_dispatch → version: "1.2.3", network: "testnet"
+#   2. This workflow pushes tag node-scala/v1.2.3 to Decentral-America/node-scala
+#   3. node-scala ci.yml release-image builds:
+#        ghcr.io/decentral-america/node-scala:1.2.3-testnet
+#        ghcr.io/decentral-america/node-scala:1.2.3-mainnet
+#        ghcr.io/decentral-america/node-scala:1.2.3-stagenet
+#   4. (Optional) deploy that specific image to the chosen network
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver version to tag (e.g. 1.2.3 — no leading v)'
+        required: true
+        type: string
+      network:
+        description: 'Network to deploy after tagging'
+        required: true
+        type: choice
+        options:
+          - testnet
+          - mainnet
+          - stagenet
+      deploy:
+        description: 'Deploy the tagged image after build completes?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check semver format
+        run: |
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: version '${{ inputs.version }}' is not a valid semver (expected X.Y.Z)"
+            exit 1
+          fi
+          echo "Version ${{ inputs.version }} is valid semver"
+
+  tag:
+    name: Push tag to node-scala
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    steps:
+      - name: Checkout node-scala
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: Decentral-America/node-scala
+          token: ${{ secrets.NODE_SCALA_PAT }}
+          persist-credentials: true
+
+      - name: Create and push semver tag
+        run: |
+          TAG="node-scala/v${{ inputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fail if tag already exists
+          if git ls-remote --tags origin "${TAG}" | grep -q "${TAG}"; then
+            echo "ERROR: tag ${TAG} already exists on node-scala. Bump the version."
+            exit 1
+          fi
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          echo "Pushed tag ${TAG} to Decentral-America/node-scala"
+          echo "Images will be built by node-scala ci.yml release-image job:"
+          echo "  ghcr.io/decentral-america/node-scala:${{ inputs.version }}-${{ inputs.network }}"
+
+  deploy:
+    name: Deploy ${{ inputs.version }}-${{ inputs.network }}
+    needs: tag
+    if: inputs.deploy == true
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    # Wait for the image build to land in GHCR before deploying.
+    # node-scala ci.yml release-image typically takes ~25 minutes (Rust + sbt).
+    # This job polls GHCR until the semver image is available, up to 40 minutes.
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Wait for semver image to appear in GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          NETWORK:    ${{ inputs.network }}
+          VERSION:    ${{ inputs.version }}
+        run: |
+          IMAGE="ghcr.io/decentral-america/node-scala:${VERSION}-${NETWORK}"
+          echo "Waiting for ${IMAGE} to be available in GHCR..."
+          for i in $(seq 1 48); do
+            if docker manifest inspect "${IMAGE}" >/dev/null 2>&1; then
+              echo "Image ${IMAGE} is available after $((i * 50))s"
+              break
+            fi
+            if [ "$i" -eq 48 ]; then
+              echo "ERROR: image not available after 40 minutes — did release-image succeed?"
+              exit 1
+            fi
+            echo "  attempt ${i}/48 — waiting 50s..."
+            sleep 50
+          done
+
+      - name: Deploy semver image to ${{ inputs.network }}
+        env:
+          SSH_KEY:    ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:   ${{ secrets.TESTNET_DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          NETWORK:    ${{ inputs.network }}
+          VERSION:    ${{ inputs.version }}
+        run: |
+          IMG="ghcr.io/decentral-america/node-scala:${VERSION}-${NETWORK}"
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set +e
+             echo '=== Deploying semver image: ${IMG} ==='
+             if [ -n '${GHCR_TOKEN}' ]; then
+               echo '${GHCR_TOKEN}' | docker login ghcr.io -u github-actions --password-stdin 2>/dev/null || true
+             fi
+             docker pull '${IMG}' 2>&1 | tail -3
+             docker stop  node-scala-${NETWORK} || true
+             docker rm    node-scala-${NETWORK} || true
+             docker run -d \
+               --name node-scala-${NETWORK} \
+               --network host \
+               --restart unless-stopped \
+               --memory 4g \
+               --memory-reservation 1g \
+               --security-opt no-new-privileges:true \
+               --cap-drop ALL \
+               --read-only \
+               --tmpfs /tmp:size=256m,mode=1777,exec \
+               -v node-state-${NETWORK}:/var/lib/dcc \
+               -v /opt/dcc/config/node-${NETWORK}/dcc.conf:/etc/dcc/dcc.conf:ro \
+               -v /opt/dcc/plugins/${NETWORK}:/usr/share/dcc/lib/plugins:ro \
+               --env-file /opt/dcc/secrets/${NETWORK}.env \
+               -e DCC_NETWORK=${NETWORK} \
+               -e DCC_HEAP_SIZE=2g \
+               -e DCC_REST_API_BIND=0.0.0.0 \
+               '${IMG}'
+             sleep 15
+             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
+             curl -s http://localhost:6869/node/version 2>/dev/null || echo '(node starting up)'"
+          rm -f /tmp/id_rsa

@@ -101,6 +101,31 @@ jobs:
           fi
           kill $PF_PID 2>/dev/null || true
 
+      - name: Commit val-0 generator (T2 upgrade)
+        # val-0 is now a T2 validator with miner enabled (upgraded in nodes.yaml).
+        # Address 31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq is the genesis allocation
+        # for the val-0 wallet seed (1B DCC — first unassigned genesis recipient).
+        # Port 6871 is val-0's REST API port.
+        continue-on-error: true
+        env:
+          API_KEY: ${{ secrets.VAL_0_NODE_REST_API_KEY }}
+        run: |
+          ADDR="31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq"
+          kubectl port-forward pod/dcc-val-0-0 -n dcc 16871:6871 &
+          PF_PID=$!
+          sleep 5
+          SIGNED=$(curl -s -X POST http://localhost:16871/transactions/sign \
+            -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+            -d "{\"type\":19,\"sender\":\"$ADDR\"}")
+          if echo "$SIGNED" | grep -q '"id"'; then
+            RESULT=$(curl -s -X POST http://localhost:16871/transactions/broadcast \
+              -H "Content-Type: application/json" -d "$SIGNED")
+            echo "Val-0: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+          else
+            echo "Val-0: already committed or sign failed"
+          fi
+          kill $PF_PID 2>/dev/null || true
+
       - name: Report finality
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
