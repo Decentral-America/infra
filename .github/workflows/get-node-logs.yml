@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Restore working dcc-grpc.jar from backup and restart
+      - name: Remove dcc-ext.jar (DEX extension needs legacy class) and restart
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,25 +18,11 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Plugin dir ==="
+             echo "=== Current plugins ==="
              ls -lh /opt/dcc/plugins/testnet/
-             echo "=== Check: does thin JAR have DccBlockchainApiGrpc? ==="
-             python3 -c "
-import zipfile
-z=zipfile.ZipFile(\"/opt/dcc/plugins/testnet/dcc-grpc.jar\")
-dex=[n for n in z.namelist() if \"DccBlockchainApiGrpc\" in n]
-print(\"DccBlockchainApiGrpc in current JAR:\",len(dex),\"entries\")
-bh=[n for n in z.namelist() if \"Block\" in n and \"Header\" in n and \"protobuf\" in n]
-print(\"Stale Block headers:\",bh if bh else \"NONE\")
-"
-             echo "=== Restoring dcc-grpc.jar from dcc-grpc.jar.bak (has DEX stubs + no stale proto) ==="
-             if [ -f /opt/dcc/plugins/testnet/dcc-grpc.jar.bak ]; then
-               sudo cp /opt/dcc/plugins/testnet/dcc-grpc.jar.bak /opt/dcc/plugins/testnet/dcc-grpc.jar
-               echo "Restored from backup"
-             else
-               echo "No backup found - checking disabled"
-               ls /opt/dcc/plugins/testnet/
-             fi
+             echo "=== Disable dcc-ext.jar (DEXExtension needs DccBlockchainApiGrpc not in current repos) ==="
+             sudo mv /opt/dcc/plugins/testnet/dcc-ext.jar /opt/dcc/plugins/testnet/dcc-ext.jar.disabled 2>/dev/null && echo "Disabled dcc-ext.jar"
+             echo "=== Plugins after ==="
              ls -lh /opt/dcc/plugins/testnet/
              echo "=== Restart node ==="
              docker restart node-scala-testnet
