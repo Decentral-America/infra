@@ -18,16 +18,14 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
-             echo "=== Truncate BPS tables ==="
-             docker exec postgres-testnet psql -U postgres -d bps_testnet -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>/dev/null || echo "Direct psql failed - trying via container"
-             PGPASS=$(grep POSTGRES_PASSWORD /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"'"'"')
-             PGHOST=$(grep PGHOST /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
-             PGUSER=$(grep PGUSER /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
-             PGDB=$(grep PGDATABASE /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2)
-             PGPASSWORD="$PGPASS" psql -h "$PGHOST" -U "$PGUSER" -d "$PGDB" -c "DO \$\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \$\$;" 2>&1 | head -3
-             echo "=== Restart BPS ==="
-             docker restart blockchain-postgres-sync-testnet
-             sleep 15
+             echo "=== Stop BPS ==="
+             docker stop blockchain-postgres-sync-testnet
+             echo "=== Truncate via docker with env-file ==="
+             docker run --rm --network host --env-file /opt/dcc/secrets/testnet.env \
+               postgres:16-alpine sh -c "PGPASSWORD=\"\$POSTGRES_PASSWORD\" psql -h \"\${PGHOST:-localhost}\" -U \"\${PGUSER:-dcc}\" -d \"\${PGDATABASE:-bps_testnet}\" -c \"DO \\\$\\\$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='"'"'public'"'"' LOOP EXECUTE '"'"'TRUNCATE '"'"'||r.tablename||'"'"' CASCADE'"'"'; END LOOP; END; \\\$\\\$;\" " 2>&1 | tail -3
+             echo "=== Start BPS ==="
+             docker start blockchain-postgres-sync-testnet
+             sleep 20
              docker ps --format "{{.Names}}\t{{.Status}}" | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --tail=5 2>&1 | grep -v "^Error:" | head -5'
+             docker logs blockchain-postgres-sync-testnet --since 25s 2>&1 | grep -v "^Error:" | head -6'
           rm -f /tmp/id_rsa
