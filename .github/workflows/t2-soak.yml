@@ -69,7 +69,7 @@ jobs:
           echo "Sleeping 180s..."
           sleep 180
           echo "=== Phase A (gen-0 down) ==="
-          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen
+          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
              F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
@@ -107,7 +107,7 @@ jobs:
         run: |
           sleep 180
           echo "=== Phase B (gen-1 down) ==="
-          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen
+          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
              F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
@@ -146,7 +146,7 @@ jobs:
         run: |
           sleep 180
           echo "=== Phase C (both gen nodes down) ==="
-          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen
+          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
              F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
@@ -168,7 +168,7 @@ jobs:
         run: |
           sleep 180
           echo "=== Phase D: T2 after full restore ==="
-          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen
+          kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
              F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
