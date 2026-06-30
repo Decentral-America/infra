@@ -136,6 +136,75 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 
 ---
 
+## Scenario E — T2 HotStuff Soak Results (2026-06-30)
+
+**Status: PASSED.** All 4 failure scenarios verified at `round-timeout-ms = 1200` (tuned from 5000ms; p99 ~1000ms + 20% margin).
+
+| Scenario | Result |
+|----------|--------|
+| gen-0 down | T2 maintained lag=0 (main + gen-1 quorum) |
+| gen-1 down | T2 maintained lag=0 (main + gen-0 quorum) |
+| both gen nodes down | FairPoS continued (+3 blocks), T2 paused (no quorum) — no halt |
+| both gen nodes restored | T2 self-healed to lag=0 within 3 min |
+
+**Deployed config** (main node and all gen nodes via Flux):
+```hocon
+hotstuff {
+  enabled = true
+  round-timeout-ms = 1200
+}
+```
+
+**Check T2 health:**
+```bash
+curl http://localhost:6869/blockchain/finality
+# Healthy: hotStuffFinalizedHeight lag < 10 blocks
+# Alert:   hotStuffFinalizedHeight lag > 50 blocks for 10 min → check generators committed
+```
+
+**Prometheus alerts active** (deployed via `deploy-monitoring.yml`):
+- `T2FinalizationStalled` — lag >50 blocks for 10 min (HIGH)
+- `T2GeneratorsNotCommitted` — NextGens <2 for 15 min (HIGH)
+- `BlockProductionStalled` — no block in 5 min (CRITICAL)
+
+---
+
+## Scenario F — Generator Commitment (CommitToGenerationTransaction)
+
+**Auto-commit:** `auto-commit-generators.yml` runs on dual cron schedule (every 35 min) to keep all 3 generators committed for the next generation period. Each generation period is 100 blocks ≈ 50 min. **T2 HotStuff stops after the current period ends if NextGens < 2.**
+
+**Check commitment status:**
+```bash
+gh workflow run peer-check.yml --repo Decentral-America/infra
+# Look for: CurGens >= 2 AND NextGens >= 2
+```
+
+**Manual emergency commit:**
+```bash
+gh workflow run auto-commit-generators.yml --repo Decentral-America/infra
+# OR the manual workflow:
+gh workflow run commit-generators-hotstuff.yml --repo Decentral-America/infra
+```
+
+**CommitToGeneration via node REST API (manual):**
+```bash
+# Each node signs for itself — BLS auto-derived, period start auto-filled
+# gen-0:
+kubectl port-forward dcc-gen-0-0 -n dcc 16869:6869
+curl -X POST http://localhost:16869/transactions/sign \
+  -H "X-API-Key: KEY" -H "Content-Type: application/json" \
+  -d '{"type":19,"sender":"ADDRESS"}'
+# Then broadcast: curl -X POST http://localhost:16869/transactions/broadcast -d '<signed_tx>'
+
+# gen-1 (uses port 6870 internally):
+kubectl port-forward dcc-gen-1-0 -n dcc 16870:6870
+curl -X POST http://localhost:16870/transactions/sign ...
+```
+
+**Quorum math:** Main ~26.7M DCC, gen-0 ~26.7M DCC, gen-1 ~26.7M DCC (total ~80M). Any 2-of-3 = ~53.4M > 53.3M threshold. T2 requires any majority of committed generators.
+
+---
+
 ## Quick Reference
 
 | Situation | Command |
