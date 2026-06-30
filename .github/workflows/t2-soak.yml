@@ -174,8 +174,8 @@ jobs:
              F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
              echo "height=$H"
              echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null
-             echo "=== Kamon HotStuff round latency ==="
-             curl -s http://localhost:6869/node/status 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d)" 2>/dev/null || true'
+             echo "=== Kamon HotStuff round latency (p50/p95/p99) ==="
+             curl -s http://localhost:6870/metrics 2>/dev/null | grep "hotstuff_round_latency" | grep -v "^#" | head -20 || echo "metrics not available at :6870"'
 
       - name: Cleanup
         if: always()
