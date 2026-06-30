@@ -13,7 +13,7 @@ jobs:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-          NEW_IMAGE: ghcr.io/decentral-america/blockchain-postgres-sync:81184af0797f04506bae4cc59949cf39b2e7febf
+          NEW_IMAGE: ghcr.io/decentral-america/blockchain-postgres-sync:3af89094fbafe1c622ecf51742246ac61d90dff4
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
@@ -32,15 +32,9 @@ jobs:
              sudo -u postgres psql -d bps_testnet -c 'SELECT count(*) FROM blocks_microblocks;'
              echo '=== Check BPS env vars ==='
              docker run --rm --env-file /opt/dcc/secrets/testnet.env --entrypoint env ${NEW_IMAGE} | grep -E 'POSTGRES__|BPS_' | grep -v PASSWORD
-             echo '=== Run BPS with RUST_LOG=info for diagnostic ==='
-             docker rm -f bps-debug 2>/dev/null || true
-             docker run --detach --name bps-debug --network host \
-               --env-file /opt/dcc/secrets/testnet.env \
-               -e RUST_LOG=info \
-               -e BPS_STARTING_HEIGHT=1 \
-               ${NEW_IMAGE} ./consumer
-             sleep 4
-             echo '--- BPS logs ---'
-             docker logs bps-debug 2>&1 | tail -60
-             docker rm -f bps-debug 2>/dev/null || true"
+             echo '=== Update container to new image and start ==='
+             IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d blockchain-postgres-sync
+             sleep 35
+             docker ps --format '{{.Names}}\t{{.Status}}' | grep blockchain-postgres
+             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -20"
           rm -f /tmp/id_rsa
