@@ -24,6 +24,7 @@ NAME="${REPO##*/}"
 # ── Wait for completion via GraphQL (zero REST cost) ────────────────────────
 echo "Waiting for run $RUN_ID on $REPO (GraphQL polling, 0 REST cost)..."
 while true; do
+  # shellcheck disable=SC2034  # RESULT captured for side-effects; STATUS used for polling
   RESULT=$(gh api graphql -f query="
     {
       repository(owner:\"$OWNER\", name:\"$NAME\") {
