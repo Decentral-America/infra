@@ -67,15 +67,23 @@ jobs:
           ")
 
           ADMIN_URL="https://testnet-admin.decentralchain.io"
+          echo "=== Debug: Token prefix (first 20 chars) ==="
+          echo "${TOKEN}" | cut -c1-20
           echo "=== Step 1: Start E2E run (POST /api/e2e/stream) ==="
 
-          # POST {intent:"start", suite} → get runId
-          START_RESP=$(curl -sf -X POST "${ADMIN_URL}/api/e2e/stream" \
+          # POST {intent:"start", suite} → get runId (capture HTTP code + body)
+          HTTP_CODE=$(curl -s -o /tmp/e2e-start-resp.txt -w "%{http_code}" -X POST "${ADMIN_URL}/api/e2e/stream" \
             -H "Cookie: admin_token=${TOKEN}" \
             -H "Content-Type: application/json" \
             -d "{\"intent\":\"start\",\"suite\":\"${SUITE}\"}" \
             --max-time 30 2>&1)
+          START_RESP=$(cat /tmp/e2e-start-resp.txt 2>/dev/null)
+          echo "HTTP code: ${HTTP_CODE}"
           echo "Start response: ${START_RESP}"
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "ERROR: Admin panel returned HTTP ${HTTP_CODE}"
+            exit 1
+          fi
 
           RUN_ID=$(echo "${START_RESP}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('runId',''))" 2>/dev/null || echo "")
           if [ -z "$RUN_ID" ]; then
