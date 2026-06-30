@@ -1,5 +1,9 @@
 name: Commit generators to generation period
 
+# DEPRECATED — use auto-commit-generators.yml (dual-cron) or commit-generators-hotstuff.yml (manual).
+# This workflow used a hardcoded weak API key ("dcc-testnet-commit") which no longer matches
+# deployed nodes. It will fail silently. Left for historical reference only.
+#
 # Submits CommitToGenerationTransaction for gen-0, gen-1, and main node.
 # Triggered by workflow_dispatch OR by touching trigger/commit-to-generation
 # (the push trigger bypasses the GitHub REST API rate limit).
