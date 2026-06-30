@@ -32,11 +32,17 @@ jobs:
              sudo -u postgres psql -d bps_testnet -c 'SELECT count(*) FROM blocks_microblocks;'
              echo '=== Check BPS env vars ==='
              docker run --rm --env-file /opt/dcc/secrets/testnet.env --entrypoint env ${NEW_IMAGE} | grep -E 'POSTGRES__|BPS_' | grep -v PASSWORD
-             echo '=== Update container to new image and start ==='
-             IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d blockchain-postgres-sync
-             sleep 5
-             docker logs blockchain-postgres-sync-testnet 2>&1 | head -20
-             sleep 30
-             docker ps --format '{{.Names}}\t{{.Status}}' | grep blockchain-postgres
-             docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -20"
+             echo '=== Run BPS with RUST_LOG=info for diagnostic ==='
+             set +e
+             docker run --rm --name bps-debug --network host \
+               --env-file /opt/dcc/secrets/testnet.env \
+               -e RUST_LOG=info \
+               -e BPS_STARTING_HEIGHT=1 \
+               ${NEW_IMAGE} ./consumer &
+             BPS_PID=\$!
+             sleep 4
+             docker logs bps-debug 2>&1 | head -40
+             docker stop bps-debug 2>/dev/null || true
+             wait \$BPS_PID 2>/dev/null || true
+             set -e"
           rm -f /tmp/id_rsa
