@@ -6,28 +6,12 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
-  actions: read
 jobs:
   update:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - name: Download latest plugin JARs from matcher CI
-        uses: dawidd6/action-download-artifact@v9
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          repo: Decentral-America/matcher
-          workflow: ci.yml
-          branch: main
-          name: plugin-jars
-          path: /tmp/plugin-jars/
-
-      - name: Rename JARs to canonical names
-        run: |
-          ls /tmp/plugin-jars/
-          cp /tmp/plugin-jars/io.decentralchain.dex-ext-*.jar /tmp/ext.jar
-          cp /tmp/plugin-jars/io.decentralchain.dex-grpc-*.jar /tmp/grpc.jar
-          ls -lh /tmp/ext.jar /tmp/grpc.jar
+      - uses: actions/checkout@v4
 
       - name: Deploy plugin JARs and update node image
         env:
@@ -38,9 +22,9 @@ jobs:
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
 
-          echo "=== Deploy plugin JARs from latest matcher CI ==="
+          echo "=== Deploy plugin JARs from repo (infra/plugins/testnet/) ==="
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
-            /tmp/ext.jar /tmp/grpc.jar \
+            plugins/testnet/ext.jar plugins/testnet/grpc.jar \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
@@ -97,3 +81,8 @@ jobs:
              echo '=== Version ==='
              curl -s http://localhost:6869/node/version 2>/dev/null || echo '(starting up)'"
           rm -f /tmp/id_rsa
+
+# NOTE: Plugin JARs (plugins/testnet/ext.jar, grpc.jar) are committed to this repo.
+# They are built from Ecosystem/matcher @ main and should be updated when matcher changes.
+# Future improvement: add MATCHER_PAT secret with actions:read to auto-download
+# from the latest matcher CI artifact (dawidd6/action-download-artifact).
