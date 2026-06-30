@@ -7,7 +7,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: dcc-exporter-script
+  name: exporter-script
   namespace: dcc
 data:
   exporter.py: |
@@ -124,7 +124,7 @@ spec:
       volumes:
         - name: script
           configMap:
-            name: dcc-exporter-script
+            name: exporter-script
             defaultMode: 0555
 
 ---

@@ -7,5 +7,5 @@ kind: Kustomization
 # own Kustomizations (dcc-apps, dcc-monitoring) which have decryption configured.
 resources:
   - flux-system/
-  - dcc-apps.yaml
+  - apps.yaml
   - dcc-monitoring.yaml

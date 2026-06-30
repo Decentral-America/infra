@@ -22,7 +22,7 @@ ctx = ssl.create_default_context()
 
 def fetch(url):
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "dcc-exporter/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "exporter/1.0"})
         with urllib.request.urlopen(req, timeout=5, context=ctx) as r:
             return json.loads(r.read())
     except Exception:
