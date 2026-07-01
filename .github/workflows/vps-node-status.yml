@@ -32,6 +32,12 @@ jobs:
              sudo -u postgres psql -d bps_testnet -t -c "SELECT count(*) FROM blocks_microblocks;" 2>/dev/null
              echo "=== Service health ==="
              docker ps | grep -E "blockchain-postgres|admin-dashboard|matcher" || echo "(none running)"
-             echo "=== Matcher last 20 log lines ==="
-             docker logs matcher-testnet --tail 20 2>&1 || echo "(no matcher logs)"'
+             echo "=== Matcher error/warn log lines ==="
+             docker logs matcher-testnet 2>&1 | grep -E "ERROR|WARN|Exception|refused|Failed|unavailable|Cannot|startup" | tail -30 || echo "(no matcher logs)"
+             echo "=== Matcher last 10 log lines ==="
+             docker logs matcher-testnet --tail 10 2>&1 || echo "(no matcher logs)"
+             echo "=== Redis port 1932 ==="
+             nc -zv localhost 1932 2>&1 | head -3 || echo "UNREACHABLE"
+             echo "=== Postgres port 5435 ==="
+             nc -zv localhost 5435 2>&1 | head -3 || echo "UNREACHABLE"'
           rm -f /tmp/id_rsa
