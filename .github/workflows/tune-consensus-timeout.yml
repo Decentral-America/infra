@@ -1,21 +1,12 @@
-# -----------------------------------------------------------------------------------------
-# Tune HotStuff round-timeout-ms
-#
-# Queries the Kamon histogram `hotstuff_round_latency_ms` from the node's
-# Prometheus metrics endpoint (port 6870), computes p99 + 20% margin,
-# then updates round-timeout-ms in dcc.conf on the VPS (main node) and
-# commits the updated value to nodes.yaml for Flux to deploy to gen nodes.
-#
-# Manual override: set INPUT_TIMEOUT_MS to skip the Kamon query and use
-# a fixed value.
-# -----------------------------------------------------------------------------------------
 name: Tune HotStuff Round Timeout
-
+# Queries hotstuff_round_latency_ms histogram from Kamon (port 6870),
+# computes p99 + 20% margin, updates dcc.conf and nodes.yaml, commits,
+# and restarts the main node. Manual override via timeout_ms input.
 on:
   workflow_dispatch:
     inputs:
       timeout_ms:
-        description: 'Manual timeout override (0 = auto from Kamon p99)'
+        description: 'Manual timeout override in ms (0 = auto from Kamon p99+20%)'
         required: false
         default: '0'
         type: string
@@ -43,8 +34,8 @@ jobs:
           MANUAL="${{ inputs.timeout_ms }}"
           if [ "${MANUAL}" != "0" ] && [ -n "${MANUAL}" ]; then
             echo "Using manual timeout: ${MANUAL}ms"
-            echo "NEW_TIMEOUT=${MANUAL}" >> $GITHUB_OUTPUT
-            echo "SOURCE=manual" >> $GITHUB_OUTPUT
+            echo "NEW_TIMEOUT=${MANUAL}" >> "$GITHUB_OUTPUT"
+            echo "SOURCE=manual" >> "$GITHUB_OUTPUT"
             rm -f /tmp/id_rsa
             exit 0
           fi
@@ -56,70 +47,59 @@ jobs:
           echo "Raw metrics:"
           echo "$METRICS"
 
-          NEW_TIMEOUT=$(echo "$METRICS" | python3 - << 'PYEOF'
+          # Compute p99+20% using $'...' quoting so no heredoc terminator appears at column 0.
+          # Falls back to 1200ms if histogram is absent or empty.
+          NEW_TIMEOUT=$(echo "$METRICS" | python3 -c $'
 import sys, re, math
-
 lines = sys.stdin.read().strip().splitlines()
-# Parse Prometheus histogram buckets: hotstuff_round_latency_ms_bucket{le="500.0"} 42
 buckets = {}
 total_count = 0
 for line in lines:
-    m = re.match(r'hotstuff_round_latency_ms_bucket\{le="([^"]+)"\}\s+(\d+)', line)
+    m = re.match(r\'hotstuff_round_latency_ms_bucket\\{le="([^"]+)"\\}\\s+(\\d+)\', line)
     if m:
-        le = float(m.group(1))
-        count = int(m.group(2))
-        buckets[le] = count
-    m2 = re.match(r'hotstuff_round_latency_ms_count\s+(\d+)', line)
+        buckets[float(m.group(1))] = int(m.group(2))
+    m2 = re.match(r\'hotstuff_round_latency_ms_count\\s+(\\d+)\', line)
     if m2:
         total_count = int(m2.group(1))
-
 if not buckets or total_count == 0:
-    print(1200)  # fallback: 1000ms p99 estimate + 20%
+    print(1200)
     sys.exit(0)
-
-# Compute p99 via linear interpolation
 target = 0.99 * total_count
 sorted_buckets = sorted(buckets.items())
-p99 = sorted_buckets[-1][0]  # default to max
+p99 = sorted_buckets[-1][0]
 prev_count = 0
 prev_le = 0
 for le, count in sorted_buckets:
-    if le == float('inf'):
+    if le == float("inf"):
         continue
     if count >= target:
-        # Interpolate
         frac = (target - prev_count) / max(count - prev_count, 1)
         p99 = prev_le + frac * (le - prev_le)
         break
     prev_count = count
     prev_le = le
-
-# p99 + 20%, rounded up to nearest 50ms, minimum 400ms
 new_timeout = max(400, int(math.ceil((p99 * 1.20) / 50) * 50))
 print(new_timeout)
-PYEOF
-          )
+')
 
           echo "=== Computed new round-timeout-ms: ${NEW_TIMEOUT}ms ==="
-          echo "NEW_TIMEOUT=${NEW_TIMEOUT}" >> $GITHUB_OUTPUT
-          echo "SOURCE=kamon-p99" >> $GITHUB_OUTPUT
+          echo "NEW_TIMEOUT=${NEW_TIMEOUT}" >> "$GITHUB_OUTPUT"
+          echo "SOURCE=kamon-p99" >> "$GITHUB_OUTPUT"
           rm -f /tmp/id_rsa
 
-      - name: Update dcc.conf in repo (main node + gen nodes)
+      - name: Update dcc.conf and nodes.yaml in repo
         run: |
           NEW_TIMEOUT="${{ steps.compute.outputs.NEW_TIMEOUT }}"
           echo "Setting round-timeout-ms = ${NEW_TIMEOUT}ms (source: ${{ steps.compute.outputs.SOURCE }})"
 
-          # Update main node dcc.conf
           sed -i "s/round-timeout-ms = [0-9]*/round-timeout-ms = ${NEW_TIMEOUT}/" \
             node-config/testnet/dcc.conf
           echo "node-config/testnet/dcc.conf:"
           grep "round-timeout" node-config/testnet/dcc.conf
 
-          # Update gen nodes in nodes.yaml
           sed -i "s/round-timeout-ms = [0-9]*/round-timeout-ms = ${NEW_TIMEOUT}/g" \
             clusters/testnet/apps/nodes.yaml
-          echo "clusters/testnet/apps/nodes.yaml (hotstuff lines):"
+          echo "clusters/testnet/apps/nodes.yaml:"
           grep "round-timeout" clusters/testnet/apps/nodes.yaml
 
       - name: Commit and push updated configs
@@ -129,7 +109,7 @@ PYEOF
           git config user.email "josuecr.288@gmail.com"
           git add node-config/testnet/dcc.conf clusters/testnet/apps/nodes.yaml
           git diff --cached --stat
-          git commit -m "ops(testnet): tune round-timeout-ms 5000 -> ${NEW_TIMEOUT}ms (HotStuff p99+20%)"
+          git commit -m "ops(testnet): tune round-timeout-ms -> ${NEW_TIMEOUT}ms (HotStuff p99+20%)"
           git push
 
       - name: Deploy to main node (VPS) and restart
@@ -157,4 +137,4 @@ PYEOF
              docker logs node-scala-testnet --since 50s 2>&1 | grep -i "round-timeout\|hotstuff\|started" | head -5
              curl -s http://localhost:6869/blocks/height 2>/dev/null'
           rm -f /tmp/id_rsa
-          echo "Gen nodes will pick up new timeout via Flux GitOps within ~1 min (nodes.yaml committed above)"
+          echo "Gen nodes pick up new timeout via Flux GitOps within ~1 min (nodes.yaml committed above)"
