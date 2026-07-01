@@ -52,5 +52,5 @@ jobs:
                -e DCC_REST_API_BIND=0.0.0.0 \
                \$IMG
              sleep 20
-             docker ps --format '{{.Names}}\t{{.Status}}' | grep node-scala"
+             docker ps | grep node-scala"
           rm -f /tmp/id_rsa

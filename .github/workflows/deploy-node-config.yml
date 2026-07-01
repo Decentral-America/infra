@@ -54,7 +54,7 @@ jobs:
                ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
              sleep 20
              echo "=== Node status ==="
-             docker ps --format "{{.Names}}\t{{.Status}}" | grep node-scala
+             docker ps | grep node-scala
              echo "=== HotStuff in config ==="
              grep -A3 hotstuff /opt/dcc/config/node-testnet/dcc.conf
              echo "=== Node version ==="

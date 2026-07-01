@@ -156,6 +156,6 @@ jobs:
                -e DCC_REST_API_BIND=0.0.0.0 \
                '${IMG}'
              sleep 15
-             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
+             docker ps | grep node-scala
              curl -s http://localhost:6869/node/version 2>/dev/null || echo '(node starting up)'"
           rm -f /tmp/id_rsa

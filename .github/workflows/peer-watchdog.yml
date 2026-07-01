@@ -103,7 +103,7 @@ jobs:
           echo "⚠️  REST connect did not restore peers (peers_after=$PEERS_AFTER). Running wipe-peers-and-restart..."
 
           $SSH 'set -e
-            CID=$(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null \
+            CID=$(docker ps 2>/dev/null \
               | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
             if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
             NAME=$(docker inspect "$CID" --format "{{.Name}}" | sed "s|/||")

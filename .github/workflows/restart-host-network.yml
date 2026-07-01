@@ -49,7 +49,7 @@ jobs:
               "$IMG"
             sleep 20
             echo "=== Container state ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+            docker ps
             echo "=== Network mode ==="
             docker inspect node-scala-testnet --format "NetworkMode={{.HostConfig.NetworkMode}}" 2>/dev/null || true
             echo "=== Port check ==="
