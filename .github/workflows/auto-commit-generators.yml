@@ -1,12 +1,14 @@
 name: Auto-Commit Generators (T2 HotStuff)
 # Commits all 3 generators to the next generation period automatically.
-# Generation periods are 100 blocks (~50 min). Running every 35 min ensures
-# generators are always committed before the current period expires.
+# Generation periods are 100 blocks (~50 min). Running every 10 min on 4
+# staggered offsets — GitHub cron can miss individual fires; this gives 24
+# attempts/hour so a 3.5-hour cron outage cannot stall T2 again.
 on:
   schedule:
-    - cron: '*/35 * * * *'   # every 35 min (primary)
-    - cron: '17 * * * *'     # at :17 past every hour (redundant offset — if primary misses, catches within ~17 min)
+    - cron: '*/10 * * * *'   # every 10 min (primary — high-frequency to survive cron gaps)
+    - cron: '5,15,25,35,45,55 * * * *'  # at :05/:15/:25/:35/:45/:55 (fills any 10-min gaps)
   workflow_dispatch: {}
+  workflow_call:
 permissions:
   contents: read
 jobs:
