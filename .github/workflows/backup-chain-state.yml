@@ -20,17 +20,20 @@ jobs:
           SSH_USER:             ${{ secrets.TESTNET_DEPLOY_USER }}
           R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_SECRET:   ${{ secrets.BACKUP_OBJ_ENDPOINT }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
 
           # Credentials are injected as shell variable assignments on the SSH
-          # command line (R2_KEY=... R2_SECRET=... bash -s). They travel over
-          # the encrypted SSH channel and are never written to disk on the VPS.
+          # command line (R2_KEY=... R2_SECRET=... R2_ENDPOINT_ENV=... bash -s).
+          # They travel over the encrypted SSH channel, never written to disk on VPS.
+          # R2_ENDPOINT_ENV: set via GitHub secret BACKUP_OBJ_ENDPOINT (preferred).
+          # Falls back to /opt/dcc/secrets/testnet.env for legacy compatibility.
           ssh -i /tmp/id_rsa \
             -o StrictHostKeyChecking=no \
             -o ConnectTimeout=30 \
             "${SSH_USER}@${SSH_HOST}" \
-            "R2_KEY='${R2_ACCESS_KEY_ID}' R2_SECRET='${R2_SECRET_ACCESS_KEY}' bash -s" << 'ENDSSH'
+            "R2_KEY='${R2_ACCESS_KEY_ID}' R2_SECRET='${R2_SECRET_ACCESS_KEY}' R2_ENDPOINT_ENV='${R2_ENDPOINT_SECRET}' bash -s" << 'ENDSSH'
           set -euo pipefail
 
           SNAP_NAME="node-state-$(date +%Y%m%d-%H%M%S).tar.gz"
@@ -45,11 +48,19 @@ jobs:
           SNAP_SIZE=$(du -sh "${SNAP_PATH}" | cut -f1)
           echo "Snapshot size: ${SNAP_SIZE}"
 
-          # BACKUP_OBJ_ENDPOINT is pushed to testnet.env by push-secrets.yml.
+          # R2 endpoint resolution (in priority order):
+          #   1. R2_ENDPOINT_ENV — injected from GitHub secret BACKUP_OBJ_ENDPOINT
+          #   2. /opt/dcc/secrets/testnet.env — legacy fallback (written by push-secrets.yml)
           # Format: https://<account_id>.r2.cloudflarestorage.com
-          R2_ENDPOINT=$(grep -oP '(?<=BACKUP_OBJ_ENDPOINT=).+' /opt/dcc/secrets/testnet.env 2>/dev/null | tr -d '\r' || true)
+          if [[ -n "${R2_ENDPOINT_ENV:-}" ]]; then
+            R2_ENDPOINT="${R2_ENDPOINT_ENV}"
+          else
+            R2_ENDPOINT=$(grep -oP '(?<=BACKUP_OBJ_ENDPOINT=).+' /opt/dcc/secrets/testnet.env 2>/dev/null | tr -d '\r' || true)
+          fi
           if [[ -z "${R2_ENDPOINT}" ]]; then
-            echo "ERROR: BACKUP_OBJ_ENDPOINT not set in /opt/dcc/secrets/testnet.env" >&2
+            echo "ERROR: BACKUP_OBJ_ENDPOINT not set." >&2
+            echo "  Set GitHub secret BACKUP_OBJ_ENDPOINT in the testnet environment, or" >&2
+            echo "  run push-secrets.yml with a SOPS file that includes BACKUP_OBJ_ENDPOINT." >&2
             rm -f "${SNAP_PATH}"
             exit 1
           fi
