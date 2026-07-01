@@ -44,8 +44,13 @@ jobs:
             echo "=== BPS last 40 log lines ==="
             docker logs blockchain-postgres-sync-testnet --tail 40 2>&1 || echo "(no BPS container logs)"
             sleep 5
-            echo "=== Restarting matcher ==="
-            docker restart matcher-testnet 2>/dev/null && echo "OK" || echo "FAILED"
+            echo "=== Restarting matcher (only if not healthy) ==="
+            MATCHER_STATE=$(docker inspect --format "{{.State.Health.Status}}" matcher-testnet 2>/dev/null)
+            if [ "${MATCHER_STATE}" = "healthy" ]; then
+              echo "SKIPPED — matcher already healthy"
+            else
+              docker restart matcher-testnet 2>/dev/null && echo "OK" || echo "FAILED"
+            fi
             sleep 10
             echo "=== Service health ==="
             docker ps | grep -E "postgres|matcher|node-scala" | sort'
