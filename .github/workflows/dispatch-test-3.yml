@@ -1,0 +1,14 @@
+name: Check Val-0 Node Address
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'test'
+        required: false
+        default: 'manual'
+  workflow_call:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "seed"
