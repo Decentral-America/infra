@@ -25,12 +25,15 @@ jobs:
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
             monitoring/prometheus.yml monitoring/alerts.yml \
             monitoring/loki-config.yaml monitoring/promtail-config.yaml \
+            monitoring/alertmanager.yml monitoring/alert-webhook.py \
             monitoring/scripts/deploy-monitoring.sh \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
             monitoring/datasources/loki.yaml \
             monitoring/datasources/prometheus.yaml \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
+            compose/loki.yml "${SSH_USER}@${SSH_HOST}:/tmp/loki-compose.yml"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             bash /tmp/deploy-monitoring.sh
           rm -f /tmp/id_rsa
