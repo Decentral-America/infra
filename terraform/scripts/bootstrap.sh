@@ -602,7 +602,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
-      # ── Rate limiting ────────────────────────────────────────────────────────
+      # -- Rate limiting -----------------------------------------------------------------------
       # The standard caddy:alpine image does NOT include the caddy-ratelimit
       # module (github.com/mholt/caddy-ratelimit). Rate limiting requires a
       # custom Caddy build with that module compiled in.
@@ -645,7 +645,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       #           window 1m
       #       }
       #   }
-      # ────────────────────────────────────────────────────────────────────────
+      # -----------------------------------------------------------------------------------------
       printf '    log\n'
       printf '}\n\n'
     fi
@@ -660,7 +660,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
-      # ── Rate limiting (matcher) ───────────────────────────────────────────────
+      # -- Rate limiting (matcher) -------------------------------------------------------------
       # Same caddy-ratelimit module requirement as NODE_DOMAIN above.
       # Once the custom caddy image is deployed, add to ${MATCHER_DOMAIN} block:
       #
@@ -671,7 +671,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       #           window 1m
       #       }
       #   }
-      # ─────────────────────────────────────────────────────────────────────────
+      # -----------------------------------------------------------------------------------------
       printf '    log\n'
       printf '}\n'
     fi
