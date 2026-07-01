@@ -37,6 +37,9 @@ jobs:
                 echo "FAILED — no local image found; run the BPS deploy workflow from the BPS repo"
               fi
             fi
+            sleep 8
+            echo "=== BPS last 40 log lines ==="
+            docker logs blockchain-postgres-sync-testnet --tail 40 2>&1 || echo "(no BPS container logs)"
             sleep 5
             echo "=== Restarting matcher ==="
             docker restart matcher-testnet 2>/dev/null && echo "OK" || echo "FAILED"
