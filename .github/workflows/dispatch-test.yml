@@ -7,9 +7,22 @@ on:
         required: false
         default: 'manual'
   workflow_call:
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
-      - run: echo "dispatch works"
+      - uses: actions/checkout@v4
+      - name: Test heredoc
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -s <<'ENDSSH'
+          echo "heredoc works"
+          ENDSSH
+          rm -f /tmp/id_rsa
