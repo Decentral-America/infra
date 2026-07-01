@@ -39,5 +39,10 @@ jobs:
              echo "=== Redis port 1932 ==="
              nc -zv localhost 1932 2>&1 | head -3 || echo "UNREACHABLE"
              echo "=== Postgres port 5435 ==="
-             nc -zv localhost 5435 2>&1 | head -3 || echo "UNREACHABLE"'
+             nc -zv localhost 5435 2>&1 | head -3 || echo "UNREACHABLE"
+             echo "=== Matcher volume / account.dat check ==="
+             ls -la /opt/dcc/data/matcher-testnet/ 2>/dev/null || echo "dir missing"
+             echo "=== Matcher bin contents ==="
+             MIMG=$(docker inspect matcher-testnet --format "{{.Config.Image}}" 2>/dev/null)
+             docker run --rm --network none --entrypoint /bin/sh "${MIMG}" -c "ls /usr/share/decentralchain-dex/bin/" 2>/dev/null || echo "n/a"'
           rm -f /tmp/id_rsa
