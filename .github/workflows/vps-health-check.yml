@@ -1,4 +1,4 @@
-name: Raw Node Logs
+name: VPS Health Check
 on:
   workflow_call:
   workflow_dispatch: {}
