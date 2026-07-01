@@ -1,0 +1,36 @@
+name: Deploy Monitoring Stack
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deploy'
+        required: false
+        default: 'manual'
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy monitoring config to VPS
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
+            monitoring/prometheus.yml monitoring/alerts.yml \
+            monitoring/loki-config.yaml monitoring/promtail-config.yaml \
+            monitoring/scripts/deploy-monitoring.sh \
+            "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
+            monitoring/datasources/loki.yaml \
+            monitoring/datasources/prometheus.yaml \
+            "${SSH_USER}@${SSH_HOST}:/tmp/"
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+            bash /tmp/deploy-monitoring.sh
+          rm -f /tmp/id_rsa
