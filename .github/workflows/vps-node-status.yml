@@ -30,19 +30,14 @@ jobs:
              curl -s http://localhost:6870/metrics 2>/dev/null | grep -E "^hotstuff_round_latency" | grep -v "_bucket\|_sum\|_count" | head -5
              echo "=== BPS block count ==="
              sudo -u postgres psql -d bps_testnet -t -c "SELECT count(*) FROM blocks_microblocks;" 2>/dev/null
-             echo "=== Service health ==="
-             docker ps | grep -E "blockchain-postgres|admin-dashboard|matcher" || echo "(none running)"
-             echo "=== Matcher error/warn log lines ==="
-             docker logs matcher-testnet 2>&1 | grep -E "ERROR|WARN|Exception|refused|Failed|unavailable|Cannot|startup" | tail -30 || echo "(no matcher logs)"
-             echo "=== Matcher last 10 log lines ==="
-             docker logs matcher-testnet --tail 10 2>&1 || echo "(no matcher logs)"
-             echo "=== Redis port 1932 ==="
-             nc -zv localhost 1932 2>&1 | head -3 || echo "UNREACHABLE"
-             echo "=== Postgres port 5435 ==="
-             nc -zv localhost 5435 2>&1 | head -3 || echo "UNREACHABLE"
+             echo "=== All running containers ==="
+             docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.CreatedAt}}" 2>/dev/null || echo "(docker error)"
+             echo "=== Matcher last 20 log lines ==="
+             docker logs matcher-testnet --tail 20 2>&1 | grep -v "^$" || echo "(no matcher logs)"
+             echo "=== Listening ports (ss) ==="
+             ss -tlnp 2>/dev/null | grep -E "LISTEN|Local Address" | head -20 || echo "UNREACHABLE"
              echo "=== Matcher volume / account.dat check ==="
              ls -la /opt/dcc/data/matcher-testnet/ 2>/dev/null || echo "dir missing"
-             echo "=== Matcher bin contents ==="
-             MIMG=$(docker inspect matcher-testnet --format "{{.Config.Image}}" 2>/dev/null)
-             docker run --rm --network none --entrypoint /bin/sh "${MIMG}" -c "ls /usr/share/decentralchain-dex/bin/" 2>/dev/null || echo "n/a"'
+             echo "=== Matcher local.conf ==="
+             cat /opt/dcc/config/matcher-testnet/local.conf 2>/dev/null || echo "(no config)"'
           rm -f /tmp/id_rsa
