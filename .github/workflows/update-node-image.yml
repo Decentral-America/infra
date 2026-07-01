@@ -40,7 +40,7 @@ jobs:
              IMG=ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
 
              echo '=== Current node state ==='
-             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
+             docker ps | grep node-scala
 
              echo '=== Pull new image ==='
              if [ -n '${GHCR_TOKEN}' ]; then
@@ -76,7 +76,7 @@ jobs:
 
              sleep 15
              echo '=== New node state ==='
-             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep node-scala
+             docker ps | grep node-scala
              echo '=== Height check ==='
              curl -s http://localhost:6869/blocks/height 2>/dev/null || echo '(starting up)'
              echo '=== Version ==='

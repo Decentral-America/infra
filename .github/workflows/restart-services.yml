@@ -25,5 +25,5 @@ jobs:
             docker restart matcher-testnet 2>/dev/null && echo "OK" || echo "FAILED"
             sleep 10
             echo "=== Service health ==="
-            docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "postgres|matcher|node-scala" | sort'
+            docker ps | grep -E "postgres|matcher|node-scala" | sort'
           rm -f /tmp/id_rsa

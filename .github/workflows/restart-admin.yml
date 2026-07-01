@@ -27,7 +27,7 @@ jobs:
               NETWORK=testnet docker compose -f /opt/dcc/compose/admin-dashboard.yml up -d 2>&1 || \
               echo "Cannot restart — container may need redeploy"
             sleep 15
-            docker ps --format "{{.Names}}\t{{.Status}}" | grep -i admin
+            docker ps | grep -i admin
             echo "=== Health check ==="
             curl -sf http://localhost:3001/healthz 2>/dev/null && echo "HEALTHY" || echo "UNHEALTHY"'
           rm -f /tmp/id_rsa

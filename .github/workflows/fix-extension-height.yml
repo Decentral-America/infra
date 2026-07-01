@@ -27,7 +27,7 @@ jobs:
              echo '=== Start with correct image (no DB wipe) ==='
              IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
              sleep 35
-             docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | grep blockchain-postgres
+             docker ps | grep blockchain-postgres
              docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15
              echo '=== Verify migrations ran (txs_19 table must exist) ==='
              sudo -u postgres psql -d bps_testnet -c '\dt txs_19' 2>&1 | grep -q 'txs_19' && echo 'txs_19 table: OK' || echo 'WARN: txs_19 table missing — migrations may not have run'

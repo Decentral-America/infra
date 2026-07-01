@@ -57,7 +57,7 @@ for g in groups: print(' ',g.get('name'),':',len(g.get('rules',[])))
 
           echo "=== Restart Loki + Promtail ==="
           NETWORK=testnet docker compose -f /opt/dcc/compose/loki.yml up -d --remove-orphans
-          docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "(loki|promtail)" || echo "(not running)"
+          docker ps | grep -E "(loki|promtail)" || echo "(not running)"
           sleep 5
           curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki starting)"
           ENDSSH
