@@ -1,5 +1,6 @@
 name: Fix BlockchainUpdates Height
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

@@ -1,5 +1,6 @@
 name: Restart Main Node with Host Networking
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

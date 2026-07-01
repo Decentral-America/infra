@@ -13,6 +13,7 @@
 name: Resync Gen Nodes
 
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       network:

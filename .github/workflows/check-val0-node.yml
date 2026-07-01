@@ -1,5 +1,6 @@
 name: Check Val-0 Node Address
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       reason:

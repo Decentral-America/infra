@@ -1,5 +1,6 @@
 name: Check Peers and HotStuff
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

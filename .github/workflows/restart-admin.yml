@@ -1,5 +1,6 @@
 name: Restart Admin Dashboard
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

@@ -3,6 +3,7 @@ name: Fund Load Test Secondary Senders
 # 1M DCC covers ~1,000,000 txs at 0.001 DCC fee — more than enough for any stress test.
 # Main wallet has ~26.7M DCC; transferring 4x1M = 4M DCC leaves adequate buffer.
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

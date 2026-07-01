@@ -2,6 +2,7 @@ name: Verify API Key Rotation
 # Run after rotating API keys to confirm all 4 nodes accept the new keys.
 # Fails with a clear error if any node still rejects the key (wrong hash in config).
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

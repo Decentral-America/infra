@@ -3,6 +3,7 @@ name: Update Main Node Image (NO DATA WIPE)
 # Downloads fresh plugin JARs from the latest matcher CI build (plugin-jars artifact).
 # Use restart-host-network.yml ONLY when a clean chain reset is needed.
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read
