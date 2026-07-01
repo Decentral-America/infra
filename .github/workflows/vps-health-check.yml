@@ -1,7 +1,12 @@
 name: VPS Health Check
 on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run'
+        required: false
+        default: 'manual'
   workflow_call:
-  workflow_dispatch: {}
 permissions:
   contents: read
 jobs:
