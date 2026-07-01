@@ -71,19 +71,19 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dcc-metrics-exporter
+  name: metrics-exporter
   namespace: dcc
   labels:
-    app: dcc-metrics-exporter
+    app: metrics-exporter
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dcc-metrics-exporter
+      app: metrics-exporter
   template:
     metadata:
       labels:
-        app: dcc-metrics-exporter
+        app: metrics-exporter
         network: testnet
       annotations:
         prometheus.io/scrape: "true"
@@ -131,13 +131,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dcc-metrics-exporter
+  name: metrics-exporter
   namespace: dcc
   labels:
-    app: dcc-metrics-exporter
+    app: metrics-exporter
 spec:
   selector:
-    app: dcc-metrics-exporter
+    app: metrics-exporter
   ports:
     - name: metrics
       port: 9200
@@ -147,14 +147,14 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: dcc-chain-metrics
+  name: chain-metrics
   namespace: dcc
   labels:
     release: kube-prometheus-stack
 spec:
   selector:
     matchLabels:
-      app: dcc-metrics-exporter
+      app: metrics-exporter
   endpoints:
     - port: metrics
       interval: 30s

@@ -165,16 +165,16 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: dcc-alerts
+  name: alerts
   namespace: dcc
   labels:
     release: kube-prometheus-stack
 spec:
   groups:
-    - name: dcc.blockchain
+    - name: blockchain
       interval: 60s
       rules:
-        # Uses dcc-metrics-exporter (REST API → Prometheus bridge)
+        # Uses metrics-exporter (REST API → Prometheus bridge)
         - alert: DCCBlockHeightStalled
           expr: |
             increase(dcc_block_height[5m]) == 0
