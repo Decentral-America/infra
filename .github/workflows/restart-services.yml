@@ -37,9 +37,28 @@ jobs:
                 docker rm -f "$cid" 2>/dev/null || true
               fi
             done
-            echo "=== Prune stopped containers and dangling images ==="
+            echo "=== Stop and remove known stray long-running containers ==="
+            for c in intelligent_merkle bold_clarke; do
+              if docker inspect "$c" >/dev/null 2>&1; then
+                echo "Removing stray container: $c"
+                docker rm -f "$c" 2>/dev/null || true
+              fi
+            done
+            echo "=== Prune stopped containers and ALL unused images ==="
             docker container prune -f 2>/dev/null || true
-            docker image prune -f 2>/dev/null || true
+            docker image prune -a -f 2>/dev/null || true
+            echo "=== Truncate large docker container log files (>50MB) ==="
+            find /var/lib/docker/containers/ -name "*.log" -size +50M 2>/dev/null | while read f; do
+              echo "Truncating: $f ($(du -sh "$f" 2>/dev/null | cut -f1))"
+              sudo truncate -s 0 "$f" 2>/dev/null || true
+            done
+            echo "=== Vacuum journald to 100M ==="
+            sudo journalctl --vacuum-size=100M 2>/dev/null || true
+            echo "=== Clean old /tmp files (>2h) ==="
+            find /tmp -maxdepth 1 -mmin +120 -not -name "." 2>/dev/null | while read f; do
+              echo "Removing old tmp: $f"
+              rm -rf "$f" 2>/dev/null || true
+            done
             echo "=== Disk usage after cleanup ==="
             df -h / 2>/dev/null | head -3
 
