@@ -19,6 +19,30 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" '
             set +e
+            echo "=== Disk usage before cleanup ==="
+            df -h / 2>/dev/null | head -3
+
+            echo "=== Kill stray matcher containers (unnamed/not managed by compose) ==="
+            docker ps --format "{{.Names}}" | grep -v -E "^(matcher-testnet|blockchain-postgres-sync-testnet|admin-dashboard-testnet|node-scala-testnet|redis-testnet|data-service-testnet|scanner-testnet|websocket-api-testnet|alert-webhook-testnet|alertmanager-testnet|loki-testnet|promtail-testnet)$" \
+              | grep -E "dcc-dex|matcher|decentralchain" 2>/dev/null | while read c; do
+              echo "Removing stray container: $c"
+              docker rm -f "$c" 2>/dev/null || true
+            done
+            # Kill stray containers running the matcher image specifically
+            docker ps -q --filter "ancestor=ghcr.io/decentral-america/matcher" \
+              | while read cid; do
+              cname=$(docker inspect --format "{{.Name}}" "$cid" | tr -d /)
+              if [ "$cname" != "matcher-testnet" ]; then
+                echo "Removing stray matcher container: $cname ($cid)"
+                docker rm -f "$cid" 2>/dev/null || true
+              fi
+            done
+            echo "=== Prune stopped containers and dangling images ==="
+            docker container prune -f 2>/dev/null || true
+            docker image prune -f 2>/dev/null || true
+            echo "=== Disk usage after cleanup ==="
+            df -h / 2>/dev/null | head -3
+
             echo "=== Fix txs_19 FK constraint (add ON DELETE CASCADE if missing) ==="
             sudo -u postgres psql -d bps_testnet -c "DO \$fix\$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.referential_constraints WHERE constraint_name = \$\$txs_19_block_uid_fkey\$\$ AND delete_rule != \$\$CASCADE\$\$) THEN ALTER TABLE txs_19 DROP CONSTRAINT txs_19_block_uid_fkey; ALTER TABLE txs_19 ADD CONSTRAINT txs_19_block_uid_fkey FOREIGN KEY (block_uid) REFERENCES blocks_microblocks(uid) ON DELETE CASCADE; RAISE NOTICE \$\$txs_19_block_uid_fkey updated to ON DELETE CASCADE\$\$; ELSE RAISE NOTICE \$\$txs_19_block_uid_fkey already CASCADE or not present\$\$; END IF; END \$fix\$;" 2>&1 || echo "FK fix skipped (postgres unavailable or no txs_19 table)"
 
