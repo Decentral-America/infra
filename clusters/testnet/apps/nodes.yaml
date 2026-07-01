@@ -635,10 +635,10 @@ spec:
           resources:
             requests:
               cpu: "250m"
-              memory: "880Mi"
+              memory: "1024Mi"
             limits:
               cpu: "250m"
-              memory: "880Mi"
+              memory: "1024Mi"
           livenessProbe:
             httpGet:
               path: /node/status
