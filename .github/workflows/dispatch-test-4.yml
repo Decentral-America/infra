@@ -1,0 +1,14 @@
+name: Deploy Monitoring Stack
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'test'
+        required: false
+        default: 'manual'
+  workflow_call:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "seed"
