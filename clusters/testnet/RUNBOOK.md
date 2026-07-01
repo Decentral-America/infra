@@ -126,7 +126,7 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 6. Flux reconciles with the new key. Verify:
    ```bash
    flux get kustomizations
-   # dcc-apps and dcc-monitoring should show Ready=True
+   # apps and monitoring should show Ready=True
    ```
 
 7. Delete the old private key from KeeWeb and shred the local file:
@@ -211,7 +211,7 @@ curl -X POST http://localhost:16870/transactions/sign ...
 |-----------|---------|
 | Check pod status | `kubectl get pods -n dcc` |
 | Tail node logs | `kubectl logs -n dcc dcc-gen-0-0 -f` |
-| Force Flux reconcile | `flux reconcile kustomization dcc-apps` |
+| Force Flux reconcile | `flux reconcile kustomization apps` |
 | Check Flux health | `flux get all` |
 | List PVCs | `kubectl get pvc -n dcc` |
 | Describe stuck pod | `kubectl describe pod <name> -n dcc` |
