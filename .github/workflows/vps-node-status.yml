@@ -1,0 +1,35 @@
+name: VPS Node Status
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run'
+        required: false
+        default: 'manual'
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - name: Query VPS node finality and services
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             echo "=== Finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[])),\"Period:\",d.get(\"currentGenerationPeriod\",{}).get(\"start\",\"?\"),\"->\",d.get(\"currentGenerationPeriod\",{}).get(\"end\",\"?\"))" 2>/dev/null
+             echo "=== HotStuff round latency (Kamon) ==="
+             curl -s http://localhost:6870/metrics 2>/dev/null | grep -E "^hotstuff_round_latency" | grep -v "_bucket\|_sum\|_count" | head -5
+             echo "=== BPS block count ==="
+             sudo -u postgres psql -d bps_testnet -t -c "SELECT count(*) FROM blocks_microblocks;" 2>/dev/null
+             echo "=== Service health ==="
+             docker ps | grep -E "blockchain-postgres|admin-dashboard|matcher" || echo "(none running)"'
+          rm -f /tmp/id_rsa
