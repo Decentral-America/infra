@@ -18,8 +18,25 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" '
+            set +e
             echo "=== Restarting blockchain-postgres-sync ==="
-            docker restart blockchain-postgres-sync-testnet 2>/dev/null && echo "OK" || echo "FAILED"
+            if docker restart blockchain-postgres-sync-testnet 2>/dev/null; then
+              echo "OK (restart)"
+            else
+              echo "Container missing — redeploy via compose"
+              BPS_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
+                | grep "blockchain-postgres-sync" | grep -v "<none>" | head -1)
+              if [ -n "${BPS_IMG}" ]; then
+                echo "Using locally cached image: ${BPS_IMG}"
+                IMAGE_TAG="${BPS_IMG}" NETWORK=testnet \
+                  docker compose --project-name blockchain-postgres-sync-testnet \
+                    -f /opt/dcc/compose/blockchain-postgres-sync.yml \
+                    up -d --wait --wait-timeout 90 blockchain-postgres-sync \
+                  && echo "OK (compose up)" || echo "FAILED (compose up)"
+              else
+                echo "FAILED — no local image found; run the BPS deploy workflow from the BPS repo"
+              fi
+            fi
             sleep 5
             echo "=== Restarting matcher ==="
             docker restart matcher-testnet 2>/dev/null && echo "OK" || echo "FAILED"
