@@ -4,7 +4,7 @@
 # Three node-scala instances on the Frankfurt LKE cluster:
 #   dcc-gen-0   generator  P2P :6863   JVM -Xmx768m
 #   dcc-gen-1   generator  P2P :6864   JVM -Xmx640m
-#   dcc-val-0   validator  P2P :6865   JVM -Xmx512m
+#   dcc-val-0   validator  P2P :6865   JVM -Xmx768m
 #
 # Design decisions:
 #   - hostNetwork: true  — pods bind P2P ports directly to node IP, no NAT
