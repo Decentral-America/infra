@@ -19,6 +19,24 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" '
             set +e
+            echo "=== Fix txs_19 FK constraint (add CASCADE if missing) ==="
+            sudo -u postgres psql -d bps_testnet -c "
+              DO \$\$
+              BEGIN
+                IF EXISTS (
+                  SELECT 1 FROM information_schema.referential_constraints
+                  WHERE constraint_name = 'txs_19_block_uid_fkey'
+                    AND delete_rule != 'CASCADE'
+                ) THEN
+                  ALTER TABLE txs_19 DROP CONSTRAINT txs_19_block_uid_fkey;
+                  ALTER TABLE txs_19 ADD CONSTRAINT txs_19_block_uid_fkey
+                    FOREIGN KEY (block_uid) REFERENCES blocks_microblocks(uid) ON DELETE CASCADE;
+                  RAISE NOTICE 'txs_19_block_uid_fkey updated to ON DELETE CASCADE';
+                ELSE
+                  RAISE NOTICE 'txs_19_block_uid_fkey already CASCADE or not present';
+                END IF;
+              END \$\$;" 2>&1 || echo "FK fix skipped (postgres unavailable or no txs_19 table)"
+
             echo "=== Restarting blockchain-postgres-sync ==="
             if docker restart blockchain-postgres-sync-testnet 2>/dev/null; then
               echo "OK (restart)"
