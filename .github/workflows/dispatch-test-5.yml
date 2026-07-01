@@ -34,6 +34,8 @@ jobs:
             "${SSH_USER}@${SSH_HOST}:/tmp/"
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
             compose/loki.yml "${SSH_USER}@${SSH_HOST}:/tmp/loki-compose.yml"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
+            compose/prometheus.yml "${SSH_USER}@${SSH_HOST}:/tmp/prometheus-compose.yml"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             bash /tmp/deploy-monitoring.sh
           rm -f /tmp/id_rsa

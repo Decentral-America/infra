@@ -12,15 +12,15 @@ sudo cp /tmp/loki.yaml /opt/dcc/monitoring/datasources/loki.yaml
 sudo cp /tmp/prometheus.yaml /opt/dcc/monitoring/datasources/prometheus.yaml
 sudo mkdir -p /opt/dcc/compose
 sudo cp /tmp/loki-compose.yml /opt/dcc/compose/loki.yml
+sudo cp /tmp/prometheus-compose.yml /opt/dcc/compose/prometheus.yml
 rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/promtail-config.yaml /tmp/alertmanager.yml /tmp/alert-webhook.py \
-      /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml
+      /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml
 
-echo "=== Hot-reload Prometheus ==="
-curl -s -X POST http://127.0.0.1:9091/-/reload && echo "Reloaded"
-sleep 3
-RULES=$(curl -s http://127.0.0.1:9091/api/v1/rules 2>/dev/null)
-echo "$RULES" | python3 -c "
+echo "=== Restart Prometheus (picks up volume mounts + new config) ==="
+NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d --remove-orphans prometheus
+sleep 5
+curl -s http://127.0.0.1:9091/api/v1/rules 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 groups=d.get('data',{}).get('groups',[])
@@ -35,5 +35,4 @@ sleep 5
 curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki not ready)"
 
 echo "=== Restart Alertmanager + Alert Webhook ==="
-NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d alertmanager alert-webhook 2>/dev/null || \
-  echo "(alertmanager/webhook restart skipped — may not be in prometheus compose)"
+NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d alertmanager alert-webhook
