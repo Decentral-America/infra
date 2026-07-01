@@ -1,5 +1,6 @@
 name: Rebalance Validators to 26.67M each
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

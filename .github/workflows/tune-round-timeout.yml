@@ -12,6 +12,7 @@
 name: Tune HotStuff Round Timeout
 
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       timeout_ms:

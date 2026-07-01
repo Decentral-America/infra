@@ -4,6 +4,7 @@ name: Commit Generators to HotStuff (T2 Activation)
 # generator's Ed25519 private key and computes the Proof of Possession.
 # Run this once per generation period (every 100 blocks) to keep T2 active.
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read

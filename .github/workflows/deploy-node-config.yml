@@ -1,6 +1,7 @@
 name: Deploy Node Config to VPS
 # Copies dcc.conf from this repo to the VPS and restarts the node (no data wipe)
 on:
+  workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read
