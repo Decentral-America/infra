@@ -3,12 +3,63 @@ on:
   workflow_dispatch:
     inputs:
       reason:
-        description: 'test'
+        description: 'Reason for manual run'
         required: false
         default: 'manual'
   workflow_call:
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
+    environment: testnet
     steps:
-      - run: echo "seed"
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | \
+            jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Query val-0 wallet address
+        run: |
+          kubectl port-forward pod/dcc-val-0-0 -n dcc 16871:6871 &
+          PF_PID=$!
+          sleep 5
+
+          echo "=== Val-0 addresses ==="
+          curl -sf http://localhost:16871/addresses 2>/dev/null | python3 -c "
+import json,sys
+addrs = json.load(sys.stdin)
+for a in addrs: print(a)
+" || echo "(REST API not responding)"
+
+          echo "=== Val-0 balances ==="
+          ADDRS=$(curl -sf http://localhost:16871/addresses 2>/dev/null || echo '[]')
+          echo "$ADDRS" | python3 -c "
+import json,sys,urllib.request
+addrs=json.load(sys.stdin)
+for addr in addrs:
+    try:
+        r=urllib.request.urlopen(f'http://localhost:16871/addresses/balance/{addr}',timeout=5)
+        b=json.load(r)
+        print(f'{addr}: {b[\"balance\"]//100000000} DCC')
+    except Exception as e: print(f'{addr}: error {e}')
+" 2>/dev/null || echo "(balance query failed)"
+
+          echo "=== Val-0 height ==="
+          curl -sf http://localhost:16871/node/status 2>/dev/null | python3 -c "
+import json,sys; d=json.load(sys.stdin); print('height:', d.get('blockchainHeight','?'))
+" || echo "(unavailable)"
+
+          kill $PF_PID 2>/dev/null || true
