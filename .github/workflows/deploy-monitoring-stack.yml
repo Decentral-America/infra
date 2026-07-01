@@ -5,6 +5,11 @@ name: Deploy Monitoring Config
 #   - datasources/*.yaml → copied for Grafana provisioning
 on:
   workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deploy (optional)'
+        required: false
+        default: 'manual'
 permissions:
   contents: read
 jobs:

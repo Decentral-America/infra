@@ -3,6 +3,11 @@ name: Check Val-0 Node Address
 # Run to verify the address used in auto-commit-generators.yml is correct.
 on:
   workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run (optional)'
+        required: false
+        default: 'manual'
 permissions:
   contents: read
 jobs:
