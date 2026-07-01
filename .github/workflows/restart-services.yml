@@ -97,9 +97,23 @@ jobs:
             else
               echo "matcher-testnet container missing — attempting compose up"
               if [ -f /opt/dcc/compose/matcher.yml ]; then
-                docker compose --project-name matcher-testnet \
-                  -f /opt/dcc/compose/matcher.yml up -d \
-                  && echo "OK (compose up)" || echo "FAILED (compose up)"
+                MATCHER_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
+                  | grep "decentral-america/matcher" | grep -v "<none>" | head -1 || true)
+                if [ -z "$MATCHER_IMG" ]; then
+                  echo "No local matcher image — pulling latest"
+                  docker pull "ghcr.io/decentral-america/matcher:matcher-testnet-latest" 2>/dev/null \
+                    && MATCHER_IMG="ghcr.io/decentral-america/matcher:matcher-testnet-latest" \
+                    || echo "Pull failed — check GHCR auth"
+                fi
+                if [ -n "$MATCHER_IMG" ]; then
+                  echo "Using matcher image: $MATCHER_IMG"
+                  IMAGE_TAG="$MATCHER_IMG" NETWORK=testnet \
+                    docker compose --project-name matcher-testnet \
+                      -f /opt/dcc/compose/matcher.yml up -d \
+                    && echo "OK (compose up)" || echo "FAILED (compose up)"
+                else
+                  echo "FAILED — no matcher image available"
+                fi
               else
                 echo "FAILED — /opt/dcc/compose/matcher.yml not found"
                 ls /opt/dcc/compose/ 2>/dev/null || true
