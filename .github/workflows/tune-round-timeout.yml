@@ -1,4 +1,4 @@
-# ──────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------------------
 # Tune HotStuff round-timeout-ms
 #
 # Queries the Kamon histogram `hotstuff_round_latency_ms` from the node's
@@ -8,7 +8,7 @@
 #
 # Manual override: set INPUT_TIMEOUT_MS to skip the Kamon query and use
 # a fixed value.
-# ──────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------------------
 name: Tune HotStuff Round Timeout
 
 on:
@@ -129,7 +129,7 @@ PYEOF
           git config user.email "josuecr.288@gmail.com"
           git add node-config/testnet/dcc.conf clusters/testnet/apps/nodes.yaml
           git diff --cached --stat
-          git commit -m "ops(testnet): tune round-timeout-ms 5000 → ${NEW_TIMEOUT}ms (HotStuff p99+20%)"
+          git commit -m "ops(testnet): tune round-timeout-ms 5000 -> ${NEW_TIMEOUT}ms (HotStuff p99+20%)"
           git push
 
       - name: Deploy to main node (VPS) and restart
