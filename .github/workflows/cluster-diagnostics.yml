@@ -105,7 +105,10 @@ jobs:
             | grep -ivE "utx|observer|REST API|gRPC" | tail -40
           echo "===== val-0 status ====="
           kubectl get pod dcc-val-0-0 -n dcc 2>/dev/null
-          kubectl logs -n dcc dcc-val-0-0 --tail=8 2>/dev/null | grep -iE "wallet|password|peer|Bound|error|started" | tail -8
+          echo "===== val-0 last 30 log lines (current container) ====="
+          kubectl logs -n dcc dcc-val-0-0 --tail=30 2>/dev/null || echo "(no current logs)"
+          echo "===== val-0 PREVIOUS container crash logs (last 40 lines) ====="
+          kubectl logs -n dcc dcc-val-0-0 --previous --tail=40 2>/dev/null || echo "(no previous container logs)"
 
       - name: Pod + PVC + node status
         run: |
