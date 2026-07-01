@@ -31,5 +31,7 @@ jobs:
              echo "=== BPS block count ==="
              sudo -u postgres psql -d bps_testnet -t -c "SELECT count(*) FROM blocks_microblocks;" 2>/dev/null
              echo "=== Service health ==="
-             docker ps | grep -E "blockchain-postgres|admin-dashboard|matcher" || echo "(none running)"'
+             docker ps | grep -E "blockchain-postgres|admin-dashboard|matcher" || echo "(none running)"
+             echo "=== Matcher last 20 log lines ==="
+             docker logs matcher-testnet --tail 20 2>&1 || echo "(no matcher logs)"'
           rm -f /tmp/id_rsa
