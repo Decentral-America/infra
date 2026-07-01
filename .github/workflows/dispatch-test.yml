@@ -6,8 +6,10 @@ on:
         description: 'test'
         required: false
         default: 'manual'
+  workflow_call:
 jobs:
   test:
     runs-on: ubuntu-latest
+    environment: testnet
     steps:
       - run: echo "dispatch works"
