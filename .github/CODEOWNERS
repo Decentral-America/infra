@@ -1,0 +1,9 @@
+# CODEOWNERS
+# ─────────────────────────────────────────────────────────────────────────────
+# Defines who is automatically requested for review when PRs touch these paths.
+# This repo provisions and deploys the live testnet/stagenet/mainnet
+# infrastructure — workflow and Terraform/OpenTofu changes here can directly
+# affect production. Owned by the same team required to approve Maven
+# Central/npm publishes in the sibling repos.
+
+*                       @Decentral-America/release-approvers
