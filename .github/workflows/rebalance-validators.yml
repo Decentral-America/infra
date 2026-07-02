@@ -1,7 +1,11 @@
 name: Rebalance Validators to 26.67M each
 on:
-  workflow_call:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type REBALANCE-CONFIRMED to proceed (moves 6.67M DCC each to gen-0/gen-1; re-running duplicates the transfers)'
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -9,6 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "REBALANCE-CONFIRMED" ]; then
+            echo "ERROR: confirm input must be exactly 'REBALANCE-CONFIRMED'. Got: '${{ inputs.confirm }}'"
+            echo "This workflow transfers 6.67M DCC to gen-0 and 6.67M DCC to gen-1 from main. Re-running duplicates the transfers."
+            exit 1
+          fi
+
       - name: Install kubectl
         uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede  # v4.0.1
 

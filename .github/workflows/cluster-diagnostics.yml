@@ -131,10 +131,11 @@ jobs:
         env:
           GEN_0_API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
           GEN_1_API_KEY: ${{ secrets.GEN_1_NODE_REST_API_KEY }}
+          VAL_0_API_KEY: ${{ secrets.VAL_0_NODE_REST_API_KEY }}
         run: |
           GEN0_KEY="${GEN_0_API_KEY}"
           GEN1_KEY="${GEN_1_API_KEY}"
-          VAL0_KEY="FMb13YEvv9XBgbRcP4SosJVWf5X2i8iTG9H2ZEswaTLE"
+          VAL0_KEY="${VAL_0_API_KEY}"
           declare -A KEYS=(["dcc-gen-0-0:6869"]="$GEN0_KEY" ["dcc-gen-1-0:6870"]="$GEN1_KEY" ["dcc-val-0-0:6871"]="$VAL0_KEY")
           for pod_port in "dcc-gen-0-0:6869" "dcc-gen-1-0:6870" "dcc-val-0-0:6871"; do
             POD="${pod_port%%:*}"; PORT="${pod_port##*:}"
