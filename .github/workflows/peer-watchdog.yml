@@ -7,18 +7,32 @@ name: Peer Reconnection Watchdog
 # This is the automated replacement for the manual "mainnode-ops wipe-peers-and-restart"
 # that was being run every 30-45 minutes. Recovery is now sub-5-minutes automatic.
 
+# Deliberately NOT gated behind a required-reviewer environment: a watchdog
+# that needs a human to click "approve" every 5 minutes at 3am defeats its own
+# purpose. Blast radius is instead bounded by: testnet-only scope, a
+# concurrency lock so overlapping ticks can't double-fire, a timeout under the
+# cron interval, and a 15-minute debounce (via a repo variable) on the
+# destructive kill/wipe/restart path so a flapping node can't be wiped every
+# 5 minutes indefinitely.
+
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
+concurrency:
+  group: peer-watchdog
+  cancel-in-progress: false
+
 permissions:
   contents: read
+  actions: write  # read/write the PEER_WATCHDOG_LAST_WIPE_TS debounce variable
 
 jobs:
   watchdog:
     name: Check peer count and reconnect if needed
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     environment: testnet
     steps:
       - name: Check peers and reconnect if zero
@@ -27,10 +41,13 @@ jobs:
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          GH_TOKEN:     ${{ github.token }}
         run: |
           set -euo pipefail
+          install -d -m 700 ~/.ssh
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          SSH="ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${SSH_USER}@${SSH_HOST}"
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i /tmp/id_rsa -o StrictHostKeyChecking=yes -o ConnectTimeout=15 ${SSH_USER}@${SSH_HOST}"
 
           # ── 1. Get peer count and chain height from local REST API ──────────
           PEER_INFO=$($SSH "
@@ -99,8 +116,23 @@ jobs:
             exit 0
           fi
 
-          # ── 3. REST connect failed — wipe peers.dat and restart ─────────────
-          echo "⚠️  REST connect did not restore peers (peers_after=$PEERS_AFTER). Running wipe-peers-and-restart..."
+          # ── 3. REST connect failed — debounce, then wipe peers.dat and restart ──
+          echo "⚠️  REST connect did not restore peers (peers_after=$PEERS_AFTER)."
+
+          REPO="${GITHUB_REPOSITORY}"
+          NOW=$(date +%s)
+          LAST_WIPE=$(gh api "repos/${REPO}/actions/variables/PEER_WATCHDOG_LAST_WIPE_TS" --jq '.value' 2>/dev/null || echo 0)
+          ELAPSED=$(( NOW - ${LAST_WIPE:-0} ))
+          if [ "$ELAPSED" -lt 900 ]; then
+            echo "⏳ Last destructive wipe was ${ELAPSED}s ago (< 900s debounce) — skipping to avoid flapping. Investigate manually if this persists."
+            rm -f /tmp/id_rsa
+            exit 0
+          fi
+
+          echo "Running wipe-peers-and-restart..."
+          gh api "repos/${REPO}/actions/variables/PEER_WATCHDOG_LAST_WIPE_TS" -X PATCH -f "value=${NOW}" >/dev/null 2>&1 \
+            || gh api "repos/${REPO}/actions/variables" -X POST -f "name=PEER_WATCHDOG_LAST_WIPE_TS" -f "value=${NOW}" >/dev/null 2>&1 \
+            || echo "WARNING: could not persist debounce timestamp — proceeding anyway"
 
           $SSH 'set -e
             CID=$(docker ps 2>/dev/null \

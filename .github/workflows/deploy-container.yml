@@ -13,15 +13,19 @@
 #         compose_dir: /opt/dcc/compose
 #       secrets: inherit
 #
-# The job declares environment: ${{ inputs.network }} at the job level, so GHA
-# reads DEPLOY_* secrets from THIS repo's (infra) environments, not the caller's.
-# This is the key architectural insight that eliminates secret repetition.
+# The deploy job declares environment: ${{ inputs.network }}, so a mainnet or
+# stagenet deploy requires approval from the release-approvers team before it
+# runs (testnet is intentionally left ungated for iteration speed). Secrets
+# themselves are org-level with a network prefix (TESTNET_/STAGENET_/MAINNET_
+# DEPLOY_*), selected via ternary below — not environment-scoped secrets —
+# because workflow_call cannot read the callee's environment secrets across
+# repos. The environment key here is purely for the approval gate.
 #
-# Required infra repo environments (mainnet/stagenet/testnet) with secrets:
-#   DEPLOY_HOST             — Linode server IP
-#   DEPLOY_USER             — SSH user
-#   DEPLOY_SSH_KEY          — Ed25519 private key (base64)
-#   DEPLOY_HOST_FINGERPRINT — Ed25519 host fingerprint
+# Required org secrets, per network prefix (TESTNET_/STAGENET_/MAINNET_):
+#   <PREFIX>_DEPLOY_HOST             — Linode server IP
+#   <PREFIX>_DEPLOY_USER             — SSH user
+#   <PREFIX>_DEPLOY_SSH_KEY          — Ed25519 private key (base64)
+#   <PREFIX>_DEPLOY_HOST_FINGERPRINT — Ed25519 host fingerprint
 #
 # Note: infra repo must be PUBLIC for cross-org reusable workflows to work
 # on GitHub Free plan. No secrets are in the code — all sensitive values are
@@ -135,6 +139,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: scan
+    # Gates mainnet/stagenet deploys behind release-approvers; testnet has no
+    # required reviewers configured (see the header comment above).
+    environment: ${{ inputs.network }}
     # DEPLOY_* secrets are org-level with network prefix (TESTNET_/STAGENET_/MAINNET_).
     # Cross-repo workflow_call cannot access callee environment secrets, so we use
     # org-level secrets accessible to all repos without duplication.
@@ -155,6 +162,14 @@ jobs:
         # Writes the deploy key to a mode-600 file and pre-populates known_hosts
         # so subsequent scp/ssh steps do not need StrictHostKeyChecking=no.
         # All remote operations use native scp/ssh — no third-party actions.
+        #
+        # KNOWN GAP: DEPLOY_HOST_FINGERPRINT is documented above as a required
+        # secret but is never actually compared against ssh-keyscan's result —
+        # this trusts whatever key the host presents at connect time (TOFU on
+        # every ephemeral runner, not just the first-ever connection). Closing
+        # this needs someone who knows the exact stored format (ssh-keygen -lf
+        # SHA256 fingerprint vs raw known_hosts line) to wire up the compare
+        # without risking a false-mismatch that blocks every deploy.
         env:
           DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           DEPLOY_KEY:  ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}

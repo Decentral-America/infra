@@ -35,6 +35,8 @@ jobs:
     name: Deploy Redis → ${{ inputs.network }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Gates mainnet/stagenet behind release-approvers; testnet is ungated.
+    environment: ${{ inputs.network }}
 
     steps:
       - name: Checkout infra repository

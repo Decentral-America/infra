@@ -17,6 +17,9 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Only testnet is selectable today (ungated by policy); wiring this now
+    # means adding stagenet/mainnet to the choice list later is safe by default.
+    environment: ${{ inputs.network }}
 
     steps:
       - name: Checkout infra

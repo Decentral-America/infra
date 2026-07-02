@@ -117,9 +117,9 @@ jobs:
 
       - name: Deploy semver image to ${{ inputs.network }}
         env:
-          SSH_KEY:    ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:   ${{ secrets.TESTNET_DEPLOY_USER }}
+          SSH_KEY:    ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:   ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
+          SSH_USER:   ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           NETWORK:    ${{ inputs.network }}
           VERSION:    ${{ inputs.version }}
