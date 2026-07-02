@@ -1,7 +1,12 @@
 name: Restart Main Node with Host Networking
 on:
   workflow_call:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'This wipes chain data. Type WIPE-CONFIRMED to proceed.'
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -9,14 +14,27 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     steps:
+      - name: Require explicit confirmation
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != "WIPE-CONFIRMED" ]; then
+            echo "::error::This restarts the node with --network host AND wipes chain data (rm -rf /data/data /data/peers.dat). Re-run with confirm set to exactly WIPE-CONFIRMED."
+            exit 1
+          fi
+
       - name: Stop bridge container, start with host networking + wipe chain
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
+          install -d -m 700 ~/.ssh
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" '
             set -e
             IMG="ghcr.io/decentral-america/node-scala:node-scala-testnet-latest"

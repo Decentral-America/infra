@@ -40,17 +40,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Flux CLI
+        env:
+          FLUX_VERSION: '2.9.0'
+          FLUX_SHA256: '7aa9779fc7ec6d030e609dab7dbed8c6fc9e3a7f4670834ad02369268aaf341f'
         run: |
-          curl -s https://fluxcd.io/install.sh | bash
+          set -euo pipefail
+          curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" -o /tmp/flux.tar.gz
+          echo "${FLUX_SHA256}  /tmp/flux.tar.gz" | sha256sum --check
+          tar -xzf /tmp/flux.tar.gz -C /tmp flux
+          sudo install -m 755 /tmp/flux /usr/local/bin/flux
           flux --version
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede  # v4.0.1
 
       - name: Download kubeconfig from Linode API
         env:

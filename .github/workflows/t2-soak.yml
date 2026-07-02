@@ -22,9 +22,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: t2-soak
+  cancel-in-progress: false
+
 jobs:
   soak:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: testnet
     steps:
       - name: Download kubeconfig
@@ -41,7 +46,7 @@ jobs:
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede  # v4.0.1
 
       - name: Baseline — verify T2 active before soak
         env:

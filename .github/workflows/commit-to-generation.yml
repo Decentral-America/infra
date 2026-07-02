@@ -26,6 +26,10 @@ on:
         required: false
         default: false
         type: boolean
+      confirm_wipe:
+        description: 'Required if wipe_gen_nodes is true: type WIPE to confirm PVC deletion'
+        required: false
+        type: string
   # Schedule REMOVED — superseded by auto-commit-generators.yml (dual staggered cron, every 5 min).
   # push trigger REMOVED — use workflow_dispatch for manual invocation.
   # This file is retained for the wipe_gen_nodes capability only.
@@ -71,8 +75,14 @@ jobs:
 
       # ── 2. Apply latest config (Flux reconcile) ───────────────────────────────
       - name: Flux reconcile — apply latest dcc-nodes.yaml
+        env:
+          FLUX_VERSION: '2.9.0'
+          FLUX_SHA256: '7aa9779fc7ec6d030e609dab7dbed8c6fc9e3a7f4670834ad02369268aaf341f'
         run: |
-          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1 || true
+          curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" -o /tmp/flux.tar.gz 2>/dev/null
+          echo "${FLUX_SHA256}  /tmp/flux.tar.gz" | sha256sum --check --status \
+            && { tar -xzf /tmp/flux.tar.gz -C /tmp flux && sudo install -m 755 /tmp/flux /usr/local/bin/flux; } \
+            || echo "WARNING: flux install failed checksum verification or download — skipping flux reconcile"
           export PATH="$PATH:/usr/local/bin"
           flux reconcile source git flux-system --timeout=2m \
             && echo "source: OK" || echo "source: non-fatal, continuing"
@@ -80,6 +90,17 @@ jobs:
             && echo "kustomization: OK" || echo "kustomization: non-fatal, continuing"
 
       # ── 3. Optional chain data wipe ─────────────────────────────────────────
+      - name: Require explicit confirmation for chain data wipe
+        if: ${{ inputs.wipe_gen_nodes == true }}
+        env:
+          CONFIRM: ${{ inputs.confirm_wipe }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != "WIPE" ]; then
+            echo "::error::wipe_gen_nodes deletes PVCs chain-data-dcc-gen-0-0, chain-data-dcc-gen-1-0, chain-data-dcc-val-0-0. Re-run with confirm_wipe set to exactly WIPE."
+            exit 1
+          fi
+
       - name: Wipe gen node chain data
         if: ${{ inputs.wipe_gen_nodes == true }}
         run: |

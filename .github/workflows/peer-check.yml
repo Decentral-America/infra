@@ -7,6 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: testnet
     steps:
       - name: Check peers and recent blocks

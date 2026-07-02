@@ -26,6 +26,10 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only testnet is selectable today (ungated by policy); wiring this now
+    # means adding stagenet/mainnet to the choice list later is safe by default.
+    environment: ${{ inputs.network }}
     steps:
       - name: Download kubeconfig
         env:
@@ -41,13 +45,19 @@ jobs:
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede  # v4.0.1
 
       - name: Reconcile + roll (optional remediation)
         if: ${{ inputs.roll }}
+        env:
+          FLUX_VERSION: '2.9.0'
+          FLUX_SHA256: '7aa9779fc7ec6d030e609dab7dbed8c6fc9e3a7f4670834ad02369268aaf341f'
         run: |
           set +e
-          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
+          curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" -o /tmp/flux.tar.gz 2>/dev/null
+          echo "${FLUX_SHA256}  /tmp/flux.tar.gz" | sha256sum --check --status \
+            && { tar -xzf /tmp/flux.tar.gz -C /tmp flux && sudo install -m 755 /tmp/flux /usr/local/bin/flux; } \
+            || echo "WARNING: flux install failed checksum verification or download — skipping flux steps"
           export PATH=$PATH:/usr/local/bin
           echo "=== flux reconcile source + apps ==="
           flux reconcile source git flux-system --timeout=2m
@@ -194,8 +204,14 @@ jobs:
           kill $PF 2>/dev/null; true
 
       - name: Flux reconciliation status
+        env:
+          FLUX_VERSION: '2.9.0'
+          FLUX_SHA256: '7aa9779fc7ec6d030e609dab7dbed8c6fc9e3a7f4670834ad02369268aaf341f'
         run: |
-          curl -s https://fluxcd.io/install.sh | bash >/dev/null 2>&1
+          curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" -o /tmp/flux.tar.gz 2>/dev/null
+          echo "${FLUX_SHA256}  /tmp/flux.tar.gz" | sha256sum --check --status \
+            && { tar -xzf /tmp/flux.tar.gz -C /tmp flux && sudo install -m 755 /tmp/flux /usr/local/bin/flux; } \
+            || echo "WARNING: flux install failed checksum verification or download — skipping flux status"
           export PATH=$PATH:/usr/local/bin
           flux get kustomizations -A 2>/dev/null || kubectl get kustomizations -A
 
@@ -258,7 +274,7 @@ jobs:
         env:
           KUBECONFIG: /tmp/kubeconfig
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         if: always()
         with:
           name: diag-results-${{ github.run_id }}
