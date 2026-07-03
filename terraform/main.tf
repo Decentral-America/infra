@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # OpenTofu root configuration for DecentralChain Linode infrastructure
 #
-# Provider: linode/linode ~> 3.13 (security floor: v3.9.0 — CVE-2026-27900)
+# Provider: linode/linode ~> 4.0 (security floor: v3.9.0 — CVE-2026-27900)
 # State:    Linode Object Storage (S3-compatible backend)
 # Workspaces: mainnet | stagenet | testnet
 # ──────────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,11 @@ terraform {
   required_providers {
     linode = {
       source  = "linode/linode"
-      version = "~> 3.13" # floor: 3.9.0 (CVE-2026-27900 sensitive-info-in-logs)
+      version = "~> 4.0" # v4.0.0 (2026-06-30): removed deprecated `group` (linode_instance)
+      # and `dashboard_url` (linode_lke_cluster) fields — neither is used in this repo.
+      # No other breaking changes affect linode_instance/linode_firewall/
+      # linode_stackscript/linode_lke_cluster. See:
+      # https://github.com/linode/terraform-provider-linode/releases/tag/v4.0.0
     }
   }
 
