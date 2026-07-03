@@ -130,11 +130,11 @@ jobs:
           fi
 
           echo "Running wipe-peers-and-restart..."
-          gh api "repos/${REPO}/actions/variables/PEER_WATCHDOG_LAST_WIPE_TS" -X PATCH -f "value=${NOW}" >/dev/null 2>&1 \
-            || gh api "repos/${REPO}/actions/variables" -X POST -f "name=PEER_WATCHDOG_LAST_WIPE_TS" -f "value=${NOW}" >/dev/null 2>&1 \
-            || echo "WARNING: could not persist debounce timestamp — proceeding anyway"
-
-          $SSH 'set -e
+          # Debounce is written only after a confirmed-successful restart (below) —
+          # writing it here would block retries for 15 min if the wipe itself fails
+          # partway (e.g. container killed but restart fails), leaving the node down
+          # with no automatic recovery attempt until the debounce expires.
+          if $SSH 'set -e
             CID=$(docker ps 2>/dev/null \
               | grep -iE "dcc|decentralchain|waves|node-scala" | awk "{print \$1}" | head -1)
             if [ -z "$CID" ]; then echo "ERROR: container not found"; exit 1; fi
@@ -145,10 +145,17 @@ jobs:
             echo "Wiping peers.dat..."
             docker start "$NAME" 2>/dev/null && sleep 3
             docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || true
-            docker restart "$NAME" && echo "OK - node restarted with clean peer state"'
-
-          rm -f /tmp/id_rsa
-          echo "🔄 Node restarted. Peers will reconnect within 60 seconds."
+            docker restart "$NAME" && echo "OK - node restarted with clean peer state"'; then
+            gh api "repos/${REPO}/actions/variables/PEER_WATCHDOG_LAST_WIPE_TS" -X PATCH -f "value=${NOW}" >/dev/null 2>&1 \
+              || gh api "repos/${REPO}/actions/variables" -X POST -f "name=PEER_WATCHDOG_LAST_WIPE_TS" -f "value=${NOW}" >/dev/null 2>&1 \
+              || echo "WARNING: could not persist debounce timestamp"
+            rm -f /tmp/id_rsa
+            echo "🔄 Node restarted. Peers will reconnect within 60 seconds."
+          else
+            rm -f /tmp/id_rsa
+            echo "::error::wipe-peers-and-restart failed — node may be left in a killed/broken state. No debounce recorded; the next tick will retry immediately."
+            exit 1
+          fi
 
       - name: Upload watchdog result
         if: always()
