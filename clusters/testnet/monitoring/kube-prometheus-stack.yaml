@@ -24,7 +24,34 @@ spec:
   chart:
     spec:
       chart: kube-prometheus-stack
-      version: ">=65.0.0 <70.0.0"
+      # Bumped from the 65.x-69.x range to the current latest (87.6.0, verified
+      # 2026-07-03; check https://artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
+      # for newer patch/minor releases before widening further).
+      #
+      # MANUAL STEP REQUIRED BEFORE FLUX RECONCILES THIS BUMP:
+      # This jump crosses ~10 prometheus-operator CRD bumps (op v0.82.0 through
+      # v0.92.0). Flux/Helm will NOT upgrade the CRDs for you (Helm never
+      # upgrades CRDs on `helm upgrade`), so apply the target CRD set manually
+      # first, e.g.:
+      #   kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.92.0/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagerconfigs.yaml
+      #   (repeat for: alertmanagers, podmonitors, probes, prometheusagents,
+      #    prometheuses, prometheusrules, scrapeconfigs, servicemonitors,
+      #    thanosrulers — same base URL, monitoring.coreos.com_<kind>.yaml)
+      # Apply --force-conflicts if server-side-apply reports field ownership
+      # conflicts. Only the final (v0.92.0) CRD set needs applying — CRDs in
+      # this range are additive, no intermediate versions required.
+      #
+      # Other things to double check before/after this jump (see chart's
+      # UPGRADE.md at prometheus-community/helm-charts):
+      #   - 73.x raised min Kubernetes to 1.25+ and dropped PodSecurityPolicy
+      #     support (global.pspEnabled/pspAnnotations) — not used here.
+      #   - 79.x removed the hardcoded default Grafana admin password; we
+      #     already set grafana.adminPassword via valuesFrom, so unaffected.
+      #   - 84.x bumped Grafana to v13 — review dashboards/grafana.ini for
+      #     v13 changes if anything looks off after upgrade.
+      #   - 85.x defaults Prometheus/node-exporter images to distroless
+      #     variants — irrelevant unless mirroring images to a private registry.
+      version: ">=87.0.0 <88.0.0"
       sourceRef:
         kind: HelmRepository
         name: prometheus-community
