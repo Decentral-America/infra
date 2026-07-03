@@ -9,6 +9,9 @@ on:
         type: string
 permissions:
   contents: read
+concurrency:
+  group: restart-host-network
+  cancel-in-progress: false
 jobs:
   restart:
     runs-on: ubuntu-latest

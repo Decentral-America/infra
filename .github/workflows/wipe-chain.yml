@@ -4,11 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       network:
+        # Only testnet has DEPLOY_HOST/USER/SSH_KEY secrets provisioned today
+        # (verified: no STAGENET_DEPLOY_* org secrets exist). The wipe step below
+        # is hardcoded to TESTNET_DEPLOY_* and node-scala-testnet/node-state-testnet —
+        # do not add stagenet back here until both the secrets exist AND the wipe
+        # step is parameterized by ${{ inputs.network }}, or this will silently
+        # wipe testnet while claiming to target stagenet.
         description: 'Network to wipe'
         required: true
         default: 'testnet'
         type: choice
-        options: [testnet, stagenet]
+        options: [testnet]
       confirm:
         description: 'Type WIPE-CONFIRMED to proceed (irreversible — destroys all chain data)'
         required: true

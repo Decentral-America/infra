@@ -1296,7 +1296,7 @@ Recurring operational workflows for the LKE testnet cluster.
 ### `auto-commit-generators.yml` — T2 HotStuff generator commitment
 
 **File:** `.github/workflows/auto-commit-generators.yml`
-**Schedule:** Every 35 minutes (plus an offset run at :17 past each hour as a safety net).
+**Schedule:** Every 5 minutes (dual staggered cron: `*/10` + `5,15,25,35,45,55`, ~12 attempts/hour).
 **Trigger:** Also available via `workflow_dispatch` for manual runs.
 **Environment:** `testnet`
 

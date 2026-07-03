@@ -42,10 +42,15 @@ jobs:
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          # Write key to temp file to avoid SSH quoting issues with Base64 special chars
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            "set +e
-             API_KEY='${MAIN_API_KEY}'
+            'set +e
+             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n")
+             rm -f /tmp/.main_key
              ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
              echo "=== Signing CommitToGeneration for main node ==="
              SIGNED=$(curl -s -X POST http://localhost:6869/transactions/sign \
@@ -54,7 +59,7 @@ jobs:
                -d "{\"type\":19,\"sender\":\"$ADDR\"}")
              echo "Signed response: $SIGNED" | head -c 300
              echo ""
-             if echo "$SIGNED" | grep -q '"id"'; then
+             if echo "$SIGNED" | grep -q "\"id\""; then
                echo "=== Broadcasting ==="
                RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
                  -H "Content-Type: application/json" \

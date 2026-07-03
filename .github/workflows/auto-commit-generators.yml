@@ -1,8 +1,8 @@
 name: Auto-Commit Generators (T2 HotStuff)
 # Commits all 3 generators to the next generation period automatically.
-# Generation periods are 100 blocks (~50 min). Running every 10 min on 4
-# staggered offsets — GitHub cron can miss individual fires; this gives 24
-# attempts/hour so a 3.5-hour cron outage cannot stall T2 again.
+# Generation periods are 100 blocks (~50 min). Two staggered 10-min crons
+# combine to fire every 5 min (12 attempts/hour) — GitHub cron can miss
+# individual fires; this redundancy means a single missed fire can't stall T2.
 on:
   schedule:
     - cron: '*/10 * * * *'   # every 10 min (primary — high-frequency to survive cron gaps)

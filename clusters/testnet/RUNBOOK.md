@@ -162,7 +162,7 @@ curl http://localhost:6869/blockchain/finality
 # Alert:   hotStuffFinalizedHeight lag > 50 blocks for 10 min → check generators committed
 ```
 
-**Prometheus alerts active** (deployed via `deploy-monitoring.yml`):
+**Prometheus alerts active** (deployed via `deploy-monitoring-stack.yml`):
 - `T2FinalizationStalled` — lag >50 blocks for 10 min (HIGH)
 - `T2GeneratorsNotCommitted` — NextGens <2 for 15 min (HIGH)
 - `BlockProductionStalled` — no block in 5 min (CRITICAL)
@@ -171,7 +171,7 @@ curl http://localhost:6869/blockchain/finality
 
 ## Scenario F — Generator Commitment (CommitToGenerationTransaction)
 
-**Auto-commit:** `auto-commit-generators.yml` runs on dual cron schedule (every 35 min) to keep all 3 generators committed for the next generation period. Each generation period is 100 blocks ≈ 50 min. **T2 HotStuff stops after the current period ends if NextGens < 2.**
+**Auto-commit:** `auto-commit-generators.yml` runs on a dual staggered cron (every 5 min, ~12 attempts/hour) to keep all 3 generators committed for the next generation period. Each generation period is 100 blocks ≈ 50 min. **T2 HotStuff stops after the current period ends if NextGens < 2.**
 
 **Check commitment status:**
 ```bash
