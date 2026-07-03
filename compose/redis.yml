@@ -16,7 +16,17 @@ services:
   redis:
     # Redis version is infra — not driven by app CI. Pin to minor for stability;
     # patch upgrades are handled by Renovate in this repo.
-    image: redis:7.2-alpine
+    #
+    # Licensing note (verified 2026-07-03): Redis Inc. moved Redis 7.4+/8.x to a
+    # tri-license (RSALv2 / SSPLv1 / AGPLv3) in 2025, then in May 2025 committed
+    # to AGPLv3 as a durable open-source option going forward — AGPLv3 is
+    # OSI-approved. We only run Redis as internal infra (message bus between
+    # BPS and websocket-api, never exposed to the internet, never resold or
+    # offered as a hosted/managed service to third parties), so none of the
+    # RSALv2/SSPLv1 restrictions (no commercializing, no offering as a managed
+    # service) apply to us regardless of which license option upstream ships
+    # under. No practical impact for this deployment.
+    image: redis:8.8-alpine
     container_name: "redis-${NETWORK:-mainnet}"
     restart: unless-stopped
     # Bind to loopback only — never expose Redis to the public internet.
