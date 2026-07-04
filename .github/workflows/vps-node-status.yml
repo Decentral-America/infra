@@ -46,11 +46,16 @@ jobs:
              if [ -z "$REDIS_PASS" ]; then
                echo "REDIS_PASSWORD not found in secrets file"
              else
-               NOAUTH_RESULT=$(redis-cli -h 127.0.0.1 ping 2>&1)
-               AUTH_RESULT=$(redis-cli -h 127.0.0.1 -a "$REDIS_PASS" ping 2>&1 | tail -1)
+               NOAUTH_RESULT=$(docker exec redis-testnet redis-cli -h 127.0.0.1 ping 2>&1)
+               AUTH_RESULT=$(docker exec redis-testnet redis-cli -h 127.0.0.1 -a "$REDIS_PASS" ping 2>&1 | tail -1)
                echo "ping without password: $NOAUTH_RESULT"
                echo "ping with secrets-file password: $AUTH_RESULT"
              fi
              echo "=== Matcher log grep for Redis auth errors ==="
-             docker logs matcher-testnet --since 24h 2>&1 | grep -i "NOAUTH\|WRONGPASS\|redis" | tail -10 || echo "(no redis-related matcher log lines in last 24h)"'
+             MATCHER_REDIS_LINES=$(docker logs matcher-testnet --since 24h 2>&1 | grep -i "NOAUTH\|WRONGPASS\|redis" | tail -10)
+             if [ -z "$MATCHER_REDIS_LINES" ]; then
+               echo "(no redis-related matcher log lines in last 24h)"
+             else
+               echo "$MATCHER_REDIS_LINES"
+             fi'
           rm -f /tmp/id_rsa
