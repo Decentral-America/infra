@@ -77,7 +77,12 @@ services:
       - promtail-positions:/var/lib/promtail
     command: -config.file=/etc/promtail/config.yaml
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9080/ready || exit 1"]
+      # promtail's image (unlike loki's) ships neither wget nor curl — confirmed
+      # empirically ("wget: not found") rather than assumed. bash's /dev/tcp
+      # pseudo-device needs no extra binary; it only proves the port accepts
+      # connections, not that /ready returns 200, which is an acceptable
+      # trade-off given the image has no HTTP client available at all.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9080' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
