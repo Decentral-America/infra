@@ -18,8 +18,13 @@
 
 services:
   loki:
-    # grafana/loki:3.3.2 — stable release as of 2026-Q1
-    image: grafana/loki:3.3.2
+    # Bumped 3.3.2 -> 3.7.3 (2026-07-04): 3.3.x reached EOL 2025-04-17 and had
+    # stopped receiving security backports over a year before this bump.
+    # Checked for breaking changes between 3.3 and 3.7: the label-limit
+    # default change (30->15) happened at 3.0 (already past) and our config
+    # sets max_label_names_per_series explicitly anyway; bloom-filter
+    # migration notes don't apply since we don't use bloom filters.
+    image: grafana/loki:3.7.3
     container_name: "loki-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

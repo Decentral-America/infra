@@ -88,7 +88,11 @@ services:
         max-file: "3"
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    # Bumped 0.27.0 -> 0.33.0 (2026-07-04): 0.27.0 was ~2 years / 6 minors
+    # stale. alertmanager.yml already uses the modern `matchers:` list syntax
+    # (not the deprecated match:/match_re: maps), so it's already compatible
+    # with 0.33's UTF-8-by-default matcher parser — verified before bumping.
+    image: prom/alertmanager:v0.33.0
     container_name: "alertmanager-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
