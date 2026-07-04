@@ -109,6 +109,8 @@ services:
 
   # Prometheus metrics for Redis — scraped by compose/prometheus.yml at
   # redis-exporter:9121. Bound to loopback only, same perimeter as redis itself.
+  # v1.86.0 — latest as of 2026-07-04; tracks upstream Redis feature additions.
+  # Renovate keeps this SHA current (docker-compose manager, pinDigests).
   redis-exporter:
     image: oliver006/redis_exporter:v1.86.0-alpine@sha256:755a0b4cbcc86c4843b167c830674e52b63f9467c934b8ccb811b4f506e197f0
     container_name: "redis-exporter-${NETWORK:-mainnet}"
