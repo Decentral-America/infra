@@ -31,7 +31,7 @@ jobs:
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
             monitoring/prometheus.yml monitoring/alerts.yml \
-            monitoring/loki-config.yaml monitoring/promtail-config.yaml \
+            monitoring/loki-config.yaml monitoring/config.alloy \
             monitoring/alertmanager.yml monitoring/alert-webhook.py \
             monitoring/scripts/deploy-monitoring.sh \
             "${SSH_USER}@${SSH_HOST}:/tmp/"

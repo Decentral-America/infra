@@ -1,0 +1,133 @@
+// Promtail's server.log_level: warn (alloy convert doesn't translate this
+// automatically — set via the logging config block instead).
+logging {
+	level = "warn"
+}
+
+discovery.docker "docker" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "15s"
+}
+
+loki.process "docker" {
+	forward_to = [loki.write.default.receiver]
+
+	stage.json {
+		expressions = {
+			output    = "log",
+			stream    = "stream",
+			timestamp = "time",
+		}
+	}
+
+	stage.labels {
+		values = {
+			stream = null,
+		}
+	}
+
+	stage.output {
+		source = "output"
+	}
+
+	stage.timestamp {
+		source           = "timestamp"
+		format           = "RFC3339Nano"
+		fallback_formats = ["RFC3339", "2006-01-02T15:04:05.999999999Z"]
+	}
+
+	stage.match {
+		selector = "{container=~\"node-scala-.*\"}"
+
+		stage.json {
+			expressions = {
+				level  = "level",
+				logger = "logger",
+			}
+		}
+
+		stage.labels {
+			values = {
+				level  = "level",
+				logger = "logger",
+			}
+		}
+	}
+
+	stage.match {
+		selector = "{container=~\"blockchain-postgres-sync-.*\"}"
+
+		stage.json {
+			expressions = {
+				level = "level",
+			}
+		}
+
+		stage.labels {
+			values = {
+				level = "level",
+			}
+		}
+	}
+
+	stage.match {
+		selector = "{container=~\"matcher-.*\"}"
+
+		stage.json {
+			expressions = {
+				level = "level",
+			}
+		}
+
+		stage.labels {
+			values = {
+				level = "level",
+			}
+		}
+	}
+}
+
+discovery.relabel "docker" {
+	targets = []
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_image_name"]
+		target_label  = "image"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "compose_project"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_env_NETWORK"]
+		target_label  = "network"
+	}
+}
+
+loki.source.docker "docker" {
+	host             = "unix:///var/run/docker.sock"
+	targets          = discovery.docker.docker.targets
+	forward_to       = [loki.process.docker.receiver]
+	relabel_rules    = discovery.relabel.docker.rules
+	refresh_interval = "15s"
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://127.0.0.1:3100/loki/api/v1/push"
+	}
+	external_labels = {}
+}

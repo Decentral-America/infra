@@ -1,19 +1,20 @@
-# docker-compose for Loki + Promtail — centralised log aggregation
+# docker-compose for Loki + Alloy — centralised log aggregation
 # Location on server: /opt/dcc/compose/loki.yml
 #
 # Architecture:
-#   Promtail scrapes container logs from /var/lib/docker/containers/**/*.log
-#   (Docker json-file format — no Docker logging plugin needed, no restart required)
-#   and ships them to Loki. Grafana queries Loki via the datasource provisioned in
-#   monitoring/datasources/loki.yaml.
+#   Alloy (Promtail's successor — see the alloy service comment below) tails
+#   container logs via the Docker API and ships them to Loki. Grafana queries
+#   Loki via the datasource provisioned in monitoring/datasources/loki.yaml.
 #
 # Start: NETWORK=testnet docker compose -f /opt/dcc/compose/loki.yml up -d
 #
 # Ports (all localhost-only):
-#   3100 — Loki HTTP API (push + query)
+#   3100  — Loki HTTP API (push + query)
+#   12345 — Alloy HTTP server (debug UI + /metrics)
 #
 # Grafana datasource: provisioned from monitoring/datasources/loki.yaml
-# Prometheus scrape:  Loki exposes /metrics at :3100/metrics — add to prometheus.yml
+# Prometheus scrape:  Loki exposes /metrics at :3100/metrics, Alloy at
+#                      :12345/metrics — see monitoring/prometheus.yml
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -63,37 +64,41 @@ services:
         max-size: "20m"
         max-file: "3"
 
-  promtail:
-    # grafana/promtail:3.3.2 — must match Loki version
-    image: grafana/promtail:3.3.2
-    container_name: "promtail-${NETWORK:-testnet}"
+  # Promtail was deprecated at Loki 3.0 and fully removed/EOL'd March 2026 —
+  # no further patches, ever. Migrated to Grafana Alloy, the official
+  # successor. config.alloy was generated from the old promtail-config.yaml
+  # via `alloy convert -f promtail` (grafana/alloy's own conversion tool),
+  # verified with `alloy validate` before use, and hand-reviewed line-by-line
+  # against the original — all 3 per-service JSON log parsing stages and all
+  # 5 Docker relabel rules carried over unchanged. Alloy tails container logs
+  # via the Docker API (loki.source.docker) rather than reading log files
+  # directly, so it no longer needs /var/lib/docker/containers mounted.
+  alloy:
+    image: grafana/alloy:v1.17.1
+    container_name: "alloy-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Promtail needs read access to Docker log files and the Docker socket
-    # (to resolve container labels for log metadata). Root filesystem read-only.
-    read_only: true
-    tmpfs:
-      - /tmp:size=32m,mode=1777
     volumes:
-      - /opt/dcc/monitoring/promtail-config.yaml:/etc/promtail/config.yaml:ro
-      # Docker container logs — json-file driver writes here by default.
-      # Promtail reads these files directly; no Docker plugin install required.
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      # Docker socket — read-only for service discovery (container label metadata).
+      - /opt/dcc/monitoring/config.alloy:/etc/alloy/config.alloy:ro
+      # Docker socket — Alloy streams container logs via the Docker API
+      # (not by reading /var/lib/docker/containers files like Promtail did).
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - promtail-positions:/var/lib/promtail
-    command: -config.file=/etc/promtail/config.yaml
+      - alloy-data:/var/lib/alloy/data
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
     healthcheck:
-      # promtail's image (unlike loki's) ships neither wget nor curl — confirmed
-      # empirically ("wget: not found") rather than assumed. bash's /dev/tcp
-      # pseudo-device needs no extra binary; it only proves the port accepts
-      # connections, not that /ready returns 200, which is an acceptable
-      # trade-off given the image has no HTTP client available at all.
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9080' || exit 1"]
+      # Unlike Loki/Promtail's minimal images, Alloy's is full Debian with
+      # bash — but no curl/wget/python3 (confirmed empirically). Same
+      # /dev/tcp port-open trade-off as Promtail's old healthcheck: proves
+      # the HTTP server (default 127.0.0.1:12345) is listening, not that
+      # /-/ready returns 200.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/12345' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -101,9 +106,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128m
+          memory: 256m
         reservations:
-          memory: 32m
+          memory: 64m
     logging:
       driver: "json-file"
       options:
@@ -113,5 +118,5 @@ services:
 volumes:
   loki-data:
     name: "loki-data-${NETWORK:-testnet}"
-  promtail-positions:
-    name: "promtail-positions-${NETWORK:-testnet}"
+  alloy-data:
+    name: "alloy-data-${NETWORK:-testnet}"

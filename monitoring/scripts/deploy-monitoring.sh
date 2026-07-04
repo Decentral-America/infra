@@ -4,7 +4,7 @@ set -e
 sudo cp /tmp/prometheus.yml /opt/dcc/monitoring/prometheus.yml
 sudo cp /tmp/alerts.yml /opt/dcc/monitoring/alerts.yml
 sudo cp /tmp/loki-config.yaml /opt/dcc/monitoring/loki-config.yaml
-sudo cp /tmp/promtail-config.yaml /opt/dcc/monitoring/promtail-config.yaml
+sudo cp /tmp/config.alloy /opt/dcc/monitoring/config.alloy
 sudo cp /tmp/alertmanager.yml /opt/dcc/monitoring/alertmanager.yml
 sudo cp /tmp/alert-webhook.py /opt/dcc/monitoring/alert-webhook.py
 sudo mkdir -p /opt/dcc/monitoring/datasources
@@ -14,7 +14,7 @@ sudo mkdir -p /opt/dcc/compose
 sudo cp /tmp/loki-compose.yml /opt/dcc/compose/loki.yml
 sudo cp /tmp/prometheus-compose.yml /opt/dcc/compose/prometheus.yml
 rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
-      /tmp/promtail-config.yaml /tmp/alertmanager.yml /tmp/alert-webhook.py \
+      /tmp/config.alloy /tmp/alertmanager.yml /tmp/alert-webhook.py \
       /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml
 
 # Every compose file in /opt/dcc/compose otherwise shares the same default
@@ -31,7 +31,11 @@ LOKI_PROJECT="loki-testnet"
 # recognize them as belonging to $PROMETHEUS_PROJECT/$LOKI_PROJECT and tries
 # to create a same-named container from scratch). Remove only if the
 # existing container's project label doesn't already match the target.
-for c in prometheus-testnet:$PROMETHEUS_PROJECT alertmanager-testnet:$PROMETHEUS_PROJECT alert-webhook-testnet:$PROMETHEUS_PROJECT loki-testnet:$LOKI_PROJECT promtail-testnet:$LOKI_PROJECT; do
+# (promtail-testnet is intentionally absent here: it already carries the
+# correct loki-testnet project label from the prior deploy, so
+# --remove-orphans below will correctly remove it as a decommissioned
+# service now that the alloy migration has replaced it in loki.yml.)
+for c in prometheus-testnet:$PROMETHEUS_PROJECT alertmanager-testnet:$PROMETHEUS_PROJECT alert-webhook-testnet:$PROMETHEUS_PROJECT loki-testnet:$LOKI_PROJECT; do
   name="${c%%:*}"; want="${c##*:}"
   have=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$name" 2>/dev/null || true)
   if [ -n "$have" ] && [ "$have" != "$want" ]; then
@@ -51,9 +55,9 @@ print('Rule groups:',len(groups))
 for g in groups: print(' ',g.get('name'),':',len(g.get('rules',[])))
 " || echo "(prometheus not reachable)"
 
-echo "=== (Re)start Loki + Promtail ==="
+echo "=== (Re)start Loki + Alloy (removes decommissioned promtail-testnet) ==="
 NETWORK=testnet docker compose -p "$LOKI_PROJECT" -f /opt/dcc/compose/loki.yml up -d --remove-orphans
-docker ps | grep -E "loki|promtail" || echo "(not running)"
+docker ps | grep -E "loki|alloy" || echo "(not running)"
 sleep 5
 curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki not ready)"
 
