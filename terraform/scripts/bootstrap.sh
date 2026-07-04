@@ -257,9 +257,6 @@ printf '# Placeholder -- deploy-container.yml will overwrite this before docker 
 chmod 644 "/opt/dcc/config/node-${NETWORK}/dcc.conf"
 echo "[bootstrap] Node config placeholder written: /opt/dcc/config/node-${NETWORK}/dcc.conf"
 
-# Backup directory: postgres-owned (pg_dump writes here via cron).
-install -d -m 750 -o postgres -g postgres /opt/dcc/backups
-
 # Scripts directory: root-owned, executable by the system cron subsystem.
 install -d -m 755 /opt/dcc/scripts
 
