@@ -42,6 +42,7 @@ jobs:
   validate:
     name: Validate inputs
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check semver format
         run: |
@@ -55,6 +56,7 @@ jobs:
     name: Push tag to node-scala
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: ${{ inputs.network }}
     steps:
       - name: Checkout node-scala
@@ -87,10 +89,12 @@ jobs:
     needs: tag
     if: inputs.deploy == true
     runs-on: ubuntu-latest
-    environment: ${{ inputs.network }}
     # Wait for the image build to land in GHCR before deploying.
     # node-scala ci.yml release-image typically takes ~25 minutes (Rust + sbt).
-    # This job polls GHCR until the semver image is available, up to 40 minutes.
+    # This job polls GHCR until the semver image is available, up to 40 minutes,
+    # plus the SSH deploy itself — 50 min covers both with margin.
+    timeout-minutes: 50
+    environment: ${{ inputs.network }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 

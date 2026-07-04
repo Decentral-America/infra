@@ -7,6 +7,7 @@ permissions:
 jobs:
   restart:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: testnet
     steps:
       - name: Restart blockchain-postgres-sync and matcher

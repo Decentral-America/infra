@@ -12,6 +12,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: testnet
     steps:
       - name: Deploy specific SHA image without data wipe

@@ -15,6 +15,7 @@ concurrency:
 jobs:
   restart:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: testnet
     steps:
       - name: Require explicit confirmation

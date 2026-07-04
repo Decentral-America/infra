@@ -10,6 +10,7 @@ permissions:
 jobs:
   fund:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: testnet
     steps:
       - name: Transfer 1M DCC each to nonce 1-4 senders + show balances

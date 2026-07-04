@@ -38,6 +38,7 @@ concurrency:
 jobs:
   resync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: testnet
     steps:
       - name: Validate confirmation
