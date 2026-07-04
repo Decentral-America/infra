@@ -25,6 +25,21 @@ rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
 PROMETHEUS_PROJECT="prometheus-testnet"
 LOKI_PROJECT="loki-testnet"
 
+# One-time migration: containers created before -p was added to this script
+# carry the old directory-based project label ("compose"), which conflicts
+# on container name with the newly-project-scoped `up` below (it doesn't
+# recognize them as belonging to $PROMETHEUS_PROJECT/$LOKI_PROJECT and tries
+# to create a same-named container from scratch). Remove only if the
+# existing container's project label doesn't already match the target.
+for c in prometheus-testnet:$PROMETHEUS_PROJECT alertmanager-testnet:$PROMETHEUS_PROJECT alert-webhook-testnet:$PROMETHEUS_PROJECT loki-testnet:$LOKI_PROJECT promtail-testnet:$LOKI_PROJECT; do
+  name="${c%%:*}"; want="${c##*:}"
+  have=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$name" 2>/dev/null || true)
+  if [ -n "$have" ] && [ "$have" != "$want" ]; then
+    echo "Removing $name (project '$have' != '$want')..."
+    docker rm -f "$name"
+  fi
+done
+
 echo "=== Restart Prometheus (picks up volume mounts + new config) ==="
 NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --remove-orphans prometheus
 sleep 5
