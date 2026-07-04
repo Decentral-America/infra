@@ -1,0 +1,25 @@
+name: Diag Alloy Discovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: testnet
+    steps:
+      - name: Check alloy logs for permission errors and successful discovery
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          timeout 30 ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          echo "=== alloy errors in last 2 min ==="
+          docker logs alloy-testnet --since 2m 2>&1 | grep -i "error\|permission denied" | tail -10 || echo "(none)"
+          echo "=== alloy target count via curl to its own debug API, 5s timeout ==="
+          timeout 5 curl -s "http://127.0.0.1:12345/api/v0/web/components" 2>/dev/null | head -c 800 || echo "(component API not reachable or timed out)"
+          REMOTE
+          rm -f /tmp/id_rsa
