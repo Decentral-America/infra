@@ -40,7 +40,13 @@ services:
       - loki-data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready || exit 1"]
+      # Loki 3.6.0 dropped the shell/wget/busybox from its image entirely
+      # (confirmed empirically: the wget-based CMD-SHELL check below started
+      # failing with "/bin/sh: no such file or directory" the moment we
+      # bumped to 3.7.3) — grafana/loki#20313 added a native -health flag
+      # for exactly this, shipped in 3.7.0. Verified against the actual
+      # 3.7.3 image before using it.
+      test: ["CMD", "/usr/bin/loki", "-health"]
       interval: 30s
       timeout: 5s
       retries: 3
