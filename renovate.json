@@ -12,6 +12,22 @@
   "prHourlyLimit": 5,
   "prCreation": "not-pending",
   "platformAutomerge": true,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the SOPS_VERSION shell variable used for curl+SHA256-verified installs — not covered by any built-in manager since it's a plain string in a run: block, not a uses:/image: field",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/push-secrets\\.yml$/",
+        "/^\\.github/workflows/update-caddy\\.yml$/"
+      ],
+      "matchStrings": [
+        "SOPS_VERSION=\"v(?<currentValue>.*?)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "getsops/sops",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
+  ],
   "packageRules": [
     {
       "description": "Group Linode provider + OpenTofu version — infra-level changes reviewed together",
