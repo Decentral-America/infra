@@ -402,7 +402,7 @@ sudo -u postgres psql -c "ALTER SYSTEM SET log_disconnections = on;" >/dev/null 
 systemctl reload postgresql
 echo "[bootstrap] PostgreSQL hardened: scram-sha-256, connection logging enabled"
 
-# Chain state (Postgres, node-scala, matcher) is not backed up — every node
+# Chain state (Postgres, node-scala, matcher) is not backed up -- every node
 # re-syncs from peers. No local pg_dump, no off-site rclone upload, no
 # backup cron. (Decision: rely on peer sync, not backup/restore.)
 
