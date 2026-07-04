@@ -287,6 +287,18 @@ jobs:
           echo "=== CSP ==="
           grep "Content-Security" "\$CF" | head -1
 
-          docker restart "caddy-\${NETWORK}"
-          echo "Caddy restarted."
+          if docker inspect "caddy-\${NETWORK}" >/dev/null 2>&1; then
+            docker restart "caddy-\${NETWORK}"
+            echo "Caddy restarted."
+          else
+            echo "caddy-\${NETWORK} container missing — attempting compose up"
+            if [ -f /opt/dcc/compose/caddy.yml ]; then
+              NETWORK="\${NETWORK}" docker compose --project-name "caddy-\${NETWORK}" \
+                -f /opt/dcc/compose/caddy.yml up -d \
+              && echo "OK (compose up)" || echo "FAILED (compose up)"
+            else
+              echo "FAILED — /opt/dcc/compose/caddy.yml not found"
+              ls /opt/dcc/compose/ 2>/dev/null || true
+            fi
+          fi
           REMOTE
