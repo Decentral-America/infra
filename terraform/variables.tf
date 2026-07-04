@@ -145,20 +145,6 @@ variable "acme_email" {
   default     = ""
 }
 
-# ── Off-site backup (non-sensitive — credentials injected via SOPS SSH push) ──
-
-variable "backup_obj_bucket" {
-  description = "Object storage bucket name for pg_dump off-site upload. Leave empty to disable."
-  type        = string
-  default     = ""
-}
-
-variable "backup_obj_endpoint" {
-  description = "Object storage endpoint URL for rclone S3 provider. Leave empty to disable."
-  type        = string
-  default     = ""
-}
-
 # ── LKE peer-node cluster ─────────────────────────────────────────────────────
 
 variable "lke_enabled" {

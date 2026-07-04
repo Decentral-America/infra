@@ -145,8 +145,6 @@ resource "linode_instance" "backend" {
     ADMIN_DOMAIN                          = var.admin_domain
     GRAFANA_DOMAIN                        = var.grafana_domain
     ACME_EMAIL                            = var.acme_email
-    BACKUP_OBJ_BUCKET                     = var.backup_obj_bucket
-    BACKUP_OBJ_ENDPOINT                   = var.backup_obj_endpoint
   }
 
   # Prevent accidental destruction of the backend server.

@@ -135,8 +135,6 @@ WALLET_PASS=$(    extract 'MAIN_NODE_WALLET_PASSWORD')
 MATCHER_PASS=$(   extract 'MATCHER_ACCOUNT_PASSWORD')
 MATCHER_HASH=$(   extract 'MATCHER_API_KEY_HASH')
 MATCHER_SEED=$(   extract 'MATCHER_SEED')
-BACKUP_KEY=$(     extract 'BACKUP_OBJ_ACCESS_KEY')
-BACKUP_SECRET=$(  extract 'BACKUP_OBJ_SECRET_KEY')
 REDIS_PASS=$(     extract 'REDIS_PASSWORD')
 NODE_API_KEY=$(   extract 'MAIN_NODE_REST_API_KEY')
 DEFAULT_MATCHER=$(extract 'DEFAULT_MATCHER')
@@ -144,10 +142,6 @@ ADMIN_CLIENT_ID=$(extract 'ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_ID')
 ADMIN_CLIENT_SEC=$(extract 'ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_SECRET')
 ADMIN_JWT=$(      extract 'ADMIN_DASHBOARD_JWT_SECRET')
 GITHUB_PAT=$(     extract 'ADMIN_DASHBOARD_GITHUB_PAT')
-BACKUP_ACCESS=$(  extract 'BACKUP_OBJ_ACCESS_KEY')
-BACKUP_SECRET_K=$(extract 'BACKUP_OBJ_SECRET_KEY')
-BACKUP_BUCKET=$(  extract 'BACKUP_OBJ_BUCKET')
-BACKUP_ENDPOINT=$(extract 'BACKUP_OBJ_ENDPOINT')
 GRAFANA_URL=$(    extract 'GRAFANA_URL')
 SENTRY_TOKEN=$(   extract 'SENTRY_AUTH_TOKEN')
 
@@ -180,12 +174,6 @@ echo "[push-secrets] Uploading secrets patch..."
     printf 'ADMIN_DASHBOARD_JWT_SECRET=%s\n'                 "${ADMIN_JWT}"
   fi
   [[ -n "${GITHUB_PAT:-}" ]] && printf 'ADMIN_DASHBOARD_GITHUB_PAT=%s\n' "${GITHUB_PAT}"
-  if [[ -n "${BACKUP_ACCESS:-}" ]]; then
-    printf 'BACKUP_OBJ_ACCESS_KEY=%s\n'  "${BACKUP_ACCESS}"
-    printf 'BACKUP_OBJ_SECRET_KEY=%s\n'  "${BACKUP_SECRET_K}"
-    printf 'BACKUP_OBJ_BUCKET=%s\n'      "${BACKUP_BUCKET}"
-    printf 'BACKUP_OBJ_ENDPOINT=%s\n'    "${BACKUP_ENDPOINT}"
-  fi
   [[ -n "${GRAFANA_URL:-}" ]]  && printf 'GRAFANA_URL=%s\n'        "${GRAFANA_URL}"
   [[ -n "${SENTRY_TOKEN:-}" ]] && printf 'SENTRY_AUTH_TOKEN=%s\n'  "${SENTRY_TOKEN}"
 } | $SSH "sudo tee /tmp/secrets-patch.env > /dev/null && \
@@ -261,16 +249,6 @@ if [[ -n "${MATCHER_SEED:-}" ]]; then
 fi
 
 # ── 5. Inject backup credentials into postgres crontab ───────────────────────
-if [[ -n "${BACKUP_KEY:-}" && -n "${BACKUP_SECRET:-}" ]]; then
-  EXISTING_CRON=$($SSH "sudo crontab -u postgres -l 2>/dev/null | grep -v '^RCLONE' || true")
-  {
-    printf 'RCLONE_S3_ACCESS_KEY_ID=%s\n'     "${BACKUP_KEY}"
-    printf 'RCLONE_S3_SECRET_ACCESS_KEY=%s\n' "${BACKUP_SECRET}"
-    printf '%s\n' "${EXISTING_CRON}"
-  } | $SSH "sudo crontab -u postgres -"
-  echo "[push-secrets] Backup credentials injected into postgres crontab."
-fi
-
 echo ""
 echo "[push-secrets] Done. All secrets pushed to ${NETWORK} @ ${SERVER_IP}."
 echo "[push-secrets] Restart services to pick up new secrets:"
