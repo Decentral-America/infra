@@ -95,6 +95,16 @@ services:
       alloy-init:
         condition: service_completed_successfully
     user: "473:473"
+    # Confirmed empirically after the first deploy: /var/run/docker.sock on
+    # the testnet host is group-owned by "docker" at GID 997 (`stat -c %g`),
+    # and Alloy running as uid 473 with no other group membership got
+    # "permission denied" connecting to it — the read-only bind mount below
+    # doesn't grant socket I/O access on its own, only matching group
+    # membership does. This GID is host-specific; re-verify with
+    # `stat -c '%G %g' /var/run/docker.sock` if this ever moves to a
+    # different host/network (testnet/stagenet/mainnet may differ).
+    group_add:
+      - "997"
     network_mode: host
     restart: unless-stopped
     security_opt:
@@ -105,12 +115,6 @@ services:
       - /opt/dcc/monitoring/config.alloy:/etc/alloy/config.alloy:ro
       # Docker socket — Alloy streams container logs via the Docker API
       # (not by reading /var/lib/docker/containers files like Promtail did).
-      # Group-owned by "docker" on the host (typically GID 999/998); mounting
-      # read-only doesn't restrict socket I/O, only prevents replacing the
-      # socket file itself. If Alloy (uid 473) can't reach the daemon, the
-      # host's docker.sock group GID needs to be added to this container's
-      # supplementary groups — check group_add: ["<docker-gid-on-host>"] if
-      # loki.source.docker logs 'permission denied' after this fix deploys.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
     command:
