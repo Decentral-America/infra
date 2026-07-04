@@ -1,0 +1,21 @@
+name: Check Promtail Logs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: testnet
+    steps:
+      - name: Check promtail logs
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+            'echo "=== promtail status ==="; docker ps -a --filter name=promtail-testnet --format "{{.Status}}"; echo "=== promtail logs ==="; docker logs promtail-testnet --tail 40 2>&1'
+          rm -f /tmp/id_rsa
