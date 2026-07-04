@@ -85,10 +85,8 @@ scrape_configs:
                   level: level
                   logger: logger
             - labels:
-                level:
-                  source: level
-                logger:
-                  source: logger
+                level: level
+                logger: logger
 
       # ── BPS (blockchain-postgres-sync) log parsing ─────────────────────────
       # BPS emits JSON logs with "level", "message", "timestamp" fields.
@@ -99,8 +97,7 @@ scrape_configs:
                 expressions:
                   level: level
             - labels:
-                level:
-                  source: level
+                level: level
 
       # ── Matcher log parsing ────────────────────────────────────────────────
       - match:
@@ -110,5 +107,4 @@ scrape_configs:
                 expressions:
                   level: level
             - labels:
-                level:
-                  source: level
+                level: level
