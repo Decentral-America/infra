@@ -29,7 +29,7 @@ services:
     # See the TODO comments in terraform/scripts/bootstrap.sh NODE_DOMAIN block for
     # the exact rate_limit directive syntax and Dockerfile recipe.
     # Until a custom image is built, rate limiting is documented-only (not active).
-    image: caddy:2.11.4-alpine
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     container_name: "caddy-${NETWORK:-mainnet}"
     # host network mode: Caddy binds directly to the host's port 80 and 443.
     # This lets it forward to scanner (127.0.0.1:3000) and data-service

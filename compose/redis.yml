@@ -18,7 +18,7 @@ services:
   # `redis` below runs with user: "999:999" from the start — there is no
   # root-then-gosu step left to fix ownership on a fresh named volume.
   redis-init:
-    image: redis:8.8-alpine
+    image: redis:8.8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
     container_name: "redis-init-${NETWORK:-mainnet}"
     entrypoint: ["sh", "-c", "chown -R 999:999 /data"]
     volumes:
@@ -41,7 +41,7 @@ services:
     # RSALv2/SSPLv1 restrictions (no commercializing, no offering as a managed
     # service) apply to us regardless of which license option upstream ships
     # under. No practical impact for this deployment.
-    image: redis:8.8-alpine
+    image: redis:8.8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
     container_name: "redis-${NETWORK:-mainnet}"
     restart: unless-stopped
     # Bind to loopback only — never expose Redis to the public internet.
@@ -110,7 +110,7 @@ services:
   # Prometheus metrics for Redis — scraped by compose/prometheus.yml at
   # redis-exporter:9121. Bound to loopback only, same perimeter as redis itself.
   redis-exporter:
-    image: oliver006/redis_exporter:v1.86.0-alpine
+    image: oliver006/redis_exporter:v1.86.0-alpine@sha256:755a0b4cbcc86c4843b167c830674e52b63f9467c934b8ccb811b4f506e197f0
     container_name: "redis-exporter-${NETWORK:-mainnet}"
     restart: unless-stopped
     depends_on:
