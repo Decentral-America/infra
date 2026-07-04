@@ -73,9 +73,28 @@ services:
   # 5 Docker relabel rules carried over unchanged. Alloy tails container logs
   # via the Docker API (loki.source.docker) rather than reading log files
   # directly, so it no longer needs /var/lib/docker/containers mounted.
+  # One-shot: the image bakes /var/lib/alloy/data as owned by alloy:alloy
+  # (uid/gid 473) with no "other" access. The alloy service below runs as
+  # that same uid/gid from the start (see its user: field) rather than as
+  # root, because root without CAP_DAC_OVERRIDE (dropped via cap_drop: ALL)
+  # can't bypass those permission bits either — confirmed empirically
+  # (`mkdir /var/lib/alloy/data: permission denied` even as uid 0). Same
+  # class of bug as redis-init below in this same file's git history.
+  alloy-init:
+    image: grafana/alloy:v1.17.1
+    container_name: "alloy-init-${NETWORK:-testnet}"
+    entrypoint: ["sh", "-c", "chown -R 473:473 /data"]
+    volumes:
+      - alloy-data:/data
+    restart: "no"
+
   alloy:
     image: grafana/alloy:v1.17.1
     container_name: "alloy-${NETWORK:-testnet}"
+    depends_on:
+      alloy-init:
+        condition: service_completed_successfully
+    user: "473:473"
     network_mode: host
     restart: unless-stopped
     security_opt:
@@ -86,6 +105,12 @@ services:
       - /opt/dcc/monitoring/config.alloy:/etc/alloy/config.alloy:ro
       # Docker socket — Alloy streams container logs via the Docker API
       # (not by reading /var/lib/docker/containers files like Promtail did).
+      # Group-owned by "docker" on the host (typically GID 999/998); mounting
+      # read-only doesn't restrict socket I/O, only prevents replacing the
+      # socket file itself. If Alloy (uid 473) can't reach the daemon, the
+      # host's docker.sock group GID needs to be added to this container's
+      # supplementary groups — check group_add: ["<docker-gid-on-host>"] if
+      # loki.source.docker logs 'permission denied' after this fix deploys.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
     command:
