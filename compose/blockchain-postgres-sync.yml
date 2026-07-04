@@ -1,7 +1,7 @@
 # docker-compose for DCC Blockchain-Postgres-Sync
 # Location on server: /opt/dcc/compose/blockchain-postgres-sync.yml
 #
-# Deploy via: docker compose -f blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
+# Deploy via: docker compose -p blockchain-postgres-sync-testnet -f blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Chain IDs: mainnet=63 ('?'), stagenet=83 ('S'), testnet=33 ('!')

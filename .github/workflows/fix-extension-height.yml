@@ -26,7 +26,12 @@ jobs:
              docker stop blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
              docker rm blockchain-postgres-sync-testnet 2>&1 | tail -1 || true
              echo '=== Start with correct image (no DB wipe) ==='
-             IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
+             # -p pins an isolated project name: every compose file in
+             # /opt/dcc/compose otherwise shares the same default project
+             # ('compose', the directory basename), so --remove-orphans on
+             # one service's compose file can delete unrelated services'
+             # containers it doesn't recognize as its own.
+             IMAGE_TAG=${NEW_IMAGE} NETWORK=testnet docker compose -p blockchain-postgres-sync-testnet -f /opt/dcc/compose/blockchain-postgres-sync.yml up -d --remove-orphans blockchain-postgres-sync
              sleep 35
              docker ps | grep blockchain-postgres
              docker logs blockchain-postgres-sync-testnet --since 40s 2>&1 | grep -v '^Error:' | head -15

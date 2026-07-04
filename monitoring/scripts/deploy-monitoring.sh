@@ -17,8 +17,16 @@ rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/promtail-config.yaml /tmp/alertmanager.yml /tmp/alert-webhook.py \
       /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml
 
+# Every compose file in /opt/dcc/compose otherwise shares the same default
+# Compose project name (the directory basename), so --remove-orphans on one
+# service's file treats every OTHER service's containers as orphans and
+# deletes them (this took down loki/alertmanager/alert-webhook/promtail
+# during the 2026-07-04 redis redeploy incident). Pin isolated project names.
+PROMETHEUS_PROJECT="prometheus-testnet"
+LOKI_PROJECT="loki-testnet"
+
 echo "=== Restart Prometheus (picks up volume mounts + new config) ==="
-NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d --remove-orphans prometheus
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --remove-orphans prometheus
 sleep 5
 curl -s http://127.0.0.1:9091/api/v1/rules 2>/dev/null | python3 -c "
 import json,sys
@@ -29,10 +37,10 @@ for g in groups: print(' ',g.get('name'),':',len(g.get('rules',[])))
 " || echo "(prometheus not reachable)"
 
 echo "=== (Re)start Loki + Promtail ==="
-NETWORK=testnet docker compose -f /opt/dcc/compose/loki.yml up -d --remove-orphans
+NETWORK=testnet docker compose -p "$LOKI_PROJECT" -f /opt/dcc/compose/loki.yml up -d --remove-orphans
 docker ps | grep -E "loki|promtail" || echo "(not running)"
 sleep 5
 curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki not ready)"
 
 echo "=== Restart Alertmanager + Alert Webhook ==="
-NETWORK=testnet docker compose -f /opt/dcc/compose/prometheus.yml up -d alertmanager alert-webhook
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d alertmanager alert-webhook

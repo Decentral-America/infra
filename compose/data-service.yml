@@ -1,7 +1,7 @@
 # docker-compose for DCC Data Service
 # Location on server: /opt/dcc/compose/data-service.yml
 #
-# Deploy via: docker compose -f data-service.yml up -d --remove-orphans data-service
+# Deploy via: docker compose -p data-service-testnet -f data-service.yml up -d --remove-orphans data-service
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:

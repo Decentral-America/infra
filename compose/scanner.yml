@@ -1,7 +1,7 @@
 # docker-compose for DCC Scanner
 # Location on server: /opt/dcc/compose/scanner.yml
 #
-# Deploy via: docker compose -f scanner.yml up -d --remove-orphans scanner
+# Deploy via: docker compose -p scanner-testnet -f scanner.yml up -d --remove-orphans scanner
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
