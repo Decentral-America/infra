@@ -87,15 +87,26 @@ jobs:
           fi
 
           CONTAINER="redis-\${NETWORK}"
+          # Every compose file in /opt/dcc/compose defaults to the same Compose
+          # project name (the directory basename, "compose"), so --remove-orphans
+          # on any one of them treats every OTHER service's containers as orphans
+          # and deletes them. Pin an explicit, isolated project name so orphan
+          # detection only ever considers redis's own services.
+          PROJECT="redis-\${NETWORK}"
+
+          # If redis-<network> exists from before this project name was pinned
+          # (e.g. the old raw `docker run` deploy, or a prior unscoped compose
+          # run), it isn't tracked under \$PROJECT and will collide on the name.
+          docker rm -f "\$CONTAINER" 2>/dev/null || true
 
           # compose/redis.yml is the single source of truth for how Redis runs
           # (version, user, cap_drop, healthcheck, resource limits, exporter).
           # Do not reimplement it here with docker run.
           cd /opt/dcc
           NETWORK="\${NETWORK}" REDIS_PASSWORD="\${REDIS_PASS}" \
-            docker compose -f compose/redis.yml pull
+            docker compose -p "\$PROJECT" -f compose/redis.yml pull
           NETWORK="\${NETWORK}" REDIS_PASSWORD="\${REDIS_PASS}" \
-            docker compose -f compose/redis.yml up -d --remove-orphans
+            docker compose -p "\$PROJECT" -f compose/redis.yml up -d --remove-orphans
 
           echo "Waiting for Redis to become healthy..."
           for i in \$(seq 1 20); do
