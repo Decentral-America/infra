@@ -40,5 +40,17 @@ jobs:
              echo "=== Matcher volume / account.dat check ==="
              ls -la /opt/dcc/data/matcher-testnet/ 2>/dev/null || echo "dir missing"
              echo "=== Matcher local.conf (secrets redacted) ==="
-             sed -E "s/(password[[:space:]]*=[[:space:]]*).*/\1[REDACTED]/I; s/(api-key-hashes[[:space:]]*=[[:space:]]*).*/\1[REDACTED]/I" /opt/dcc/config/matcher-testnet/local.conf 2>/dev/null || echo "(no config)"'
+             sed -E "s/(password[[:space:]]*=[[:space:]]*).*/\1[REDACTED]/I; s/(api-key-hashes[[:space:]]*=[[:space:]]*).*/\1[REDACTED]/I" /opt/dcc/config/matcher-testnet/local.conf 2>/dev/null || echo "(no config)"
+             echo "=== Redis auth status (password never printed) ==="
+             REDIS_PASS=$(grep "^REDIS_PASSWORD=" /opt/dcc/secrets/testnet.env 2>/dev/null | cut -d= -f2-)
+             if [ -z "$REDIS_PASS" ]; then
+               echo "REDIS_PASSWORD not found in secrets file"
+             else
+               NOAUTH_RESULT=$(redis-cli -h 127.0.0.1 ping 2>&1)
+               AUTH_RESULT=$(redis-cli -h 127.0.0.1 -a "$REDIS_PASS" ping 2>&1 | tail -1)
+               echo "ping without password: $NOAUTH_RESULT"
+               echo "ping with secrets-file password: $AUTH_RESULT"
+             fi
+             echo "=== Matcher log grep for Redis auth errors ==="
+             docker logs matcher-testnet --since 24h 2>&1 | grep -i "NOAUTH\|WRONGPASS\|redis" | tail -10 || echo "(no redis-related matcher log lines in last 24h)"'
           rm -f /tmp/id_rsa
