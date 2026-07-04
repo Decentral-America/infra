@@ -1,0 +1,25 @@
+name: Emergency Restore Monitoring
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testnet
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Restore loki + prometheus stack
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no compose/prometheus.yml compose/loki.yml "$SSH_USER@$SSH_HOST:/opt/dcc/compose/"
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+            'cd /opt/dcc && NETWORK=testnet docker compose -f compose/prometheus.yml up -d && NETWORK=testnet docker compose -f compose/loki.yml up -d && docker ps --format "table {{.Names}}\t{{.Status}}"'
+          rm -f /tmp/id_rsa
