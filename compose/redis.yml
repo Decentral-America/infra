@@ -13,7 +13,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
+  # One-shot: ensure the data volume is owned by the redis image's uid/gid
+  # (999:999) before the main service starts as that user. Needed because
+  # `redis` below runs with user: "999:999" from the start — there is no
+  # root-then-gosu step left to fix ownership on a fresh named volume.
+  redis-init:
+    image: redis:8.8-alpine
+    container_name: "redis-init-${NETWORK:-mainnet}"
+    entrypoint: ["sh", "-c", "chown -R 999:999 /data"]
+    volumes:
+      - redis-data:/data
+    restart: "no"
+
   redis:
+    depends_on:
+      redis-init:
+        condition: service_completed_successfully
     # Redis version is infra — not driven by app CI. Pin to minor for stability;
     # patch upgrades are handled by Renovate in this repo.
     #
@@ -67,12 +82,16 @@ services:
       retries: 10
       start_period: 5s
 
+    # Run as the image's built-in redis user (uid/gid 999) from the start.
+    # The official entrypoint's root->redis privilege drop (chown + gosu,
+    # which needs CAP_CHOWN/CAP_SETUID/CAP_SETGID) never runs when the
+    # container is already non-root, so cap_drop: ALL below is safe —
+    # redis-init has already chowned the volume for this uid/gid.
+    user: "999:999"
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Redis does not require any elevated capabilities when running in Docker
-    # with network_mode: host. All fd-limit tuning is done via ulimits if needed.
     read_only: false  # Redis writes AOF and RDB to /data
 
     deploy:
@@ -86,6 +105,43 @@ services:
       driver: "json-file"
       options:
         max-size: "50m"
+        max-file: "3"
+
+  # Prometheus metrics for Redis — scraped by compose/prometheus.yml at
+  # redis-exporter:9121. Bound to loopback only, same perimeter as redis itself.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.86.0-alpine
+    container_name: "redis-exporter-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    network_mode: host
+    environment:
+      REDIS_ADDR: "redis://127.0.0.1:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_EXPORTER_WEB_LISTEN_ADDRESS: "127.0.0.1:9121"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9121/metrics | grep -q redis_up || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+        reservations:
+          memory: 16m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
         max-file: "3"
 
 volumes:

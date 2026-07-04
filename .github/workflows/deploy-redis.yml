@@ -87,46 +87,24 @@ jobs:
           fi
 
           CONTAINER="redis-\${NETWORK}"
-          VOLUME="redis-data-\${NETWORK}"
 
-          # Stop and remove any existing container so we start clean.
-          docker stop "\$CONTAINER" 2>/dev/null || true
-          docker rm   "\$CONTAINER" 2>/dev/null || true
-
-          # Ensure the data volume exists (idempotent).
-          docker volume create "\$VOLUME" > /dev/null
-
-          docker pull redis:8.8-alpine
-
-          # Use docker run directly — fully explicit, no compose variable expansion.
-          # no-new-privileges and cap-drop ALL are intentionally omitted:
-          # the Redis Alpine entrypoint calls setresuid() to drop from root → redis user,
-          # which requires CAP_SETUID/CAP_SETGID. The redis user (uid 999) is already
-          # unprivileged from the host perspective; localhost-only binding is the perimeter.
-          docker run -d \
-            --name "\$CONTAINER" \
-            --network host \
-            --restart unless-stopped \
-            -v "\${VOLUME}:/data" \
-            --memory 320m \
-            redis:8.8-alpine \
-            redis-server \
-              --bind 127.0.0.1 \
-              --port 6379 \
-              --requirepass "\$REDIS_PASS" \
-              --appendonly yes \
-              --appendfilename "appendonly-\${NETWORK}.aof" \
-              --maxmemory 256mb \
-              --maxmemory-policy volatile-lru \
-              --loglevel notice
+          # compose/redis.yml is the single source of truth for how Redis runs
+          # (version, user, cap_drop, healthcheck, resource limits, exporter).
+          # Do not reimplement it here with docker run.
+          cd /opt/dcc
+          NETWORK="\${NETWORK}" REDIS_PASSWORD="\${REDIS_PASS}" \
+            docker compose -f compose/redis.yml pull
+          NETWORK="\${NETWORK}" REDIS_PASSWORD="\${REDIS_PASS}" \
+            docker compose -f compose/redis.yml up -d --remove-orphans
 
           echo "Waiting for Redis to become healthy..."
           for i in \$(seq 1 20); do
-            if docker exec "\$CONTAINER" redis-cli -h 127.0.0.1 -a "\$REDIS_PASS" ping 2>/dev/null | grep -q PONG; then
+            status=\$(docker inspect --format '{{.State.Health.Status}}' "\$CONTAINER" 2>/dev/null || echo "unknown")
+            if [[ "\$status" == "healthy" ]]; then
               echo "Redis is healthy on \${NETWORK}."
               exit 0
             fi
-            echo "Attempt \$i/20 — waiting 3s..."
+            echo "Attempt \$i/20 — status=\$status — waiting 3s..."
             sleep 3
           done
 
