@@ -39,6 +39,6 @@ jobs:
              ss -tlnp 2>/dev/null | grep -E "LISTEN|Local Address" | head -20 || echo "UNREACHABLE"
              echo "=== Matcher volume / account.dat check ==="
              ls -la /opt/dcc/data/matcher-testnet/ 2>/dev/null || echo "dir missing"
-             echo "=== Matcher local.conf ==="
-             cat /opt/dcc/config/matcher-testnet/local.conf 2>/dev/null || echo "(no config)"'
+             echo "=== Matcher local.conf (secrets redacted) ==="
+             sed -E "s/(password[[:space:]]*=[[:space:]]*).*/\1[REDACTED]/I; s/(api-key-hashes[[:space:]]*=[[:space:]]*).*/\1[REDACTED]/I" /opt/dcc/config/matcher-testnet/local.conf 2>/dev/null || echo "(no config)"'
           rm -f /tmp/id_rsa
