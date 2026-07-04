@@ -1,0 +1,41 @@
+name: Diag Alloy Log Ingestion
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: testnet
+    steps:
+      - name: Verify Alloy is shipping logs into Loki
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+            'echo "=== alloy container status ==="
+             docker inspect alloy-testnet --format "{{.State.Health.Status}}"
+             echo "=== alloy last 20 log lines (errors only) ==="
+             docker logs alloy-testnet --tail 100 2>&1 | grep -i "error\|level=error" | tail -20 || echo "(no errors)"
+             echo "=== query Loki for recent matcher-testnet log lines ==="
+             docker exec loki-testnet /usr/bin/loki -health >/dev/null 2>&1 && echo "loki healthy" || echo "loki NOT healthy"
+             curl -s -G "http://127.0.0.1:3100/loki/api/v1/query_range" \
+               --data-urlencode "query={container=\"matcher-testnet\"}" \
+               --data-urlencode "limit=3" \
+               --data-urlencode "start=$(($(date +%s) - 300))000000000" \
+               --data-urlencode "end=$(date +%s)000000000" \
+               2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+results=d.get(\"data\",{}).get(\"result\",[])
+print(\"streams found:\", len(results))
+for r in results[:2]:
+    print(\"labels:\", r.get(\"stream\"))
+    for v in r.get(\"values\",[])[:2]:
+        print(\"  log:\", v[1][:150])
+" || echo "(loki query failed)"'
+          rm -f /tmp/id_rsa
