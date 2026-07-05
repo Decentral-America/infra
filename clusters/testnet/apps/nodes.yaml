@@ -593,6 +593,10 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
+        # seccomp: RuntimeDefault — same as gen-0/gen-1. runAsNonRoot left unset;
+        # node-scala writes chain data as root inside the container.
+        seccompProfile:
+          type: RuntimeDefault
       imagePullSecrets:
         - name: ghcr-pull-secret
       containers:
