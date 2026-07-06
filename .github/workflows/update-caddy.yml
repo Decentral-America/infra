@@ -38,6 +38,7 @@ jobs:
         env:
           SOPS_AGE_KEY: ${{ secrets.AGE_KEY_TESTNET }}
           NETWORK:      ${{ inputs.network }}
+          E2E_RATE_LIMIT_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
         run: |
           set -euo pipefail
 
@@ -78,6 +79,12 @@ jobs:
           else
             echo "MAIN_NODE_REST_API_KEY found in SOPS"
           fi
+
+          # Rate-limit bypass for our own trusted automated testing (admin-e2e.yml)
+          # -- a secret header, not an IP allowlist (GH Actions runner IPs are
+          # public and shared, so an IP-based bypass would be a real hole).
+          # Anyone without this exact header still gets full rate limiting.
+          E2E_BYPASS_KEY="${E2E_RATE_LIMIT_BYPASS_KEY}"
 
           # ── Generate complete Caddyfile ───────────────────────────────────────
           cat > /tmp/Caddyfile << EOF
@@ -163,7 +170,17 @@ jobs:
               # caddy:*-alpine doesn't ship github.com/mholt/caddy-ratelimit). Verified
               # locally: each zone below is isolated (a burst on one path doesn't
               # consume another path's budget) and correctly returns 429 once exhausted.
-              @blocks_path path /blocks/*
+              #
+              # X-E2E-Bypass exempts our own admin-e2e.yml test traffic: with ~20+
+              # parallel e2e spec files each funding test accounts via one broadcast
+              # apiece, legitimate CI traffic alone exceeds broadcast_per_ip's budget.
+              # A secret header (not an IP allowlist -- GH Actions IPs are public and
+              # shared) -- anyone without the exact header still gets fully rate
+              # limited. See docs/comment in DecentralChain's env.ts for the client side.
+              @blocks_path {
+                  path /blocks/*
+                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
+              }
               rate_limit @blocks_path {
                   zone blocks_per_ip {
                       key    {remote_host}
@@ -171,7 +188,10 @@ jobs:
                       window 1m
                   }
               }
-              @broadcast path /transactions/broadcast
+              @broadcast {
+                  path /transactions/broadcast
+                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
+              }
               rate_limit @broadcast {
                   zone broadcast_per_ip {
                       key    {remote_host}
@@ -179,7 +199,10 @@ jobs:
                       window 1m
                   }
               }
-              @other_api not path /blocks/* /transactions/broadcast
+              @other_api {
+                  not path /blocks/* /transactions/broadcast
+                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
+              }
               rate_limit @other_api {
                   zone api_per_ip {
                       key    {remote_host}
@@ -237,8 +260,10 @@ jobs:
               import cors_allowlist
 
               # -- Rate limiting (matcher) ----------------------------------------------
-              # Same custom image requirement as NODE_DOMAIN above.
-              rate_limit {
+              # Same custom image requirement as NODE_DOMAIN above. Same X-E2E-Bypass
+              # exemption as NODE_DOMAIN -- see the comment there.
+              @rate_limited not header X-E2E-Bypass ${E2E_BYPASS_KEY}
+              rate_limit @rate_limited {
                   zone matcher_per_ip {
                       key    {remote_host}
                       events 300
