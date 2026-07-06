@@ -121,21 +121,31 @@ jobs:
               fi
             fi
             sleep 10
-            echo "=== Ensure DEFAULT_MATCHER present in deployed secrets env ==="
-            # data-service requires DEFAULT_MATCHER (the matcher accounts own
+            echo "=== Ensure DEFAULT_MATCHER has a real value in deployed secrets env ==="
+            # data-service requires DEFAULT_MATCHER (the matcher account's own
             # address, used to identify its exchange transactions) or it
             # refuses to boot: "Missing required environment variable(s):
             # DEFAULT_MATCHER". Not a credential -- it is the address derived
-            # from the matchers own public /matcher API response
+            # from the matcher's own public /matcher API response
             # (2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJuiKfs4sEY on chain id "!"),
-            # same public-data category as NODE_ADDRESS. Idempotent so this
-            # is a no-op once the source-of-truth secrets/testnet.env in the
-            # repo is corrected and re-pushed via push-secrets.yml.
-            if ! grep -q "^DEFAULT_MATCHER=" /opt/dcc/secrets/testnet.env 2>/dev/null; then
+            # same public-data category as NODE_ADDRESS.
+            #
+            # The line was already present but EMPTY (DEFAULT_MATCHER=),
+            # which a plain `grep -q "^DEFAULT_MATCHER="` presence check does
+            # not catch -- confirmed via `docker compose config`, which
+            # resolved it to `DEFAULT_MATCHER: ""`. Use sed to set the value
+            # on the existing line if empty, or append the line if entirely
+            # absent. Idempotent either way -- a no-op once the
+            # source-of-truth secrets/testnet.env in the repo is corrected
+            # and re-pushed via push-secrets.yml.
+            if grep -q "^DEFAULT_MATCHER=$" /opt/dcc/secrets/testnet.env 2>/dev/null; then
+              sudo sed -i "s/^DEFAULT_MATCHER=\$/DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE/" /opt/dcc/secrets/testnet.env
+              echo "Set empty DEFAULT_MATCHER to its real value"
+            elif ! grep -q "^DEFAULT_MATCHER=" /opt/dcc/secrets/testnet.env 2>/dev/null; then
               echo "DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE" | sudo tee -a /opt/dcc/secrets/testnet.env >/dev/null
-              echo "Added DEFAULT_MATCHER to deployed secrets env"
+              echo "Added missing DEFAULT_MATCHER to deployed secrets env"
             else
-              echo "DEFAULT_MATCHER already present"
+              echo "DEFAULT_MATCHER already has a non-empty value"
             fi
             echo "=== Recreating data-service (env_file values are baked into a container at CREATE time -- docker restart reuses the existing container config unchanged, it does not re-read env_file from disk; only a full recreate picks up an edited env_file) ==="
             DS_IMG=$(docker inspect --format "{{.Config.Image}}" data-service-testnet 2>/dev/null || true)
