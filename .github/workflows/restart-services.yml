@@ -121,8 +121,18 @@ jobs:
               fi
             fi
             sleep 10
-            echo "=== Restarting data-service (picks up env_file changes -- container Env is baked in at create time, docker compose up -d does not notice an env_file edited in place) ==="
-            docker restart data-service-testnet 2>/dev/null && echo "OK (restart)" || echo "FAILED — data-service-testnet container missing"
+            echo "=== Recreating data-service (env_file values are baked into a container at CREATE time -- docker restart reuses the existing container config unchanged, it does not re-read env_file from disk; only a full recreate picks up an edited env_file) ==="
+            DS_IMG=$(docker inspect --format "{{.Config.Image}}" data-service-testnet 2>/dev/null || true)
+            if [ -n "${DS_IMG}" ] && [ -f /opt/dcc/compose/data-service.yml ]; then
+              echo "Using image: ${DS_IMG}"
+              IMAGE_TAG="${DS_IMG}" NETWORK=testnet \
+                docker compose --project-name data-service-testnet \
+                  -f /opt/dcc/compose/data-service.yml \
+                  up -d --force-recreate --wait --wait-timeout 60 data-service \
+                && echo "OK (compose recreate)" || echo "FAILED (compose recreate)"
+            else
+              echo "FAILED — data-service-testnet container or compose file missing"
+            fi
             sleep 8
             echo "=== data-service last 20 log lines ==="
             docker logs data-service-testnet --tail 20 2>&1 || echo "(no data-service container logs)"
