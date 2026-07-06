@@ -136,11 +136,11 @@ jobs:
             fi
             sleep 10
             echo "=== Ensure DEFAULT_MATCHER has a real value in deployed secrets env ==="
-            # data-service requires DEFAULT_MATCHER (the matcher account's own
+            # data-service requires DEFAULT_MATCHER (the matcher accounts own
             # address, used to identify its exchange transactions) or it
             # refuses to boot: "Missing required environment variable(s):
             # DEFAULT_MATCHER". Not a credential -- it is the address derived
-            # from the matcher's own public /matcher API response
+            # from the matcher own public /matcher API response
             # (2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJuiKfs4sEY on chain id "!"),
             # same public-data category as NODE_ADDRESS.
             #
@@ -152,39 +152,19 @@ jobs:
             # absent. Idempotent either way -- a no-op once the
             # source-of-truth secrets/testnet.env in the repo is corrected
             # and re-pushed via push-secrets.yml.
-            #
-            # Wrapped in a retry loop: observed intermittent "No such file or
-            # directory" reading this exact path immediately after a `stat`
-            # on the same path succeeded a moment earlier (same script run,
-            # milliseconds apart) -- transient, not a real permissions or
-            # content problem (file content and permissions were verified
-            # correct via direct inspection). Retrying is the robust way to
-            # ride out whatever brief window causes that, without more
-            # invasive changes to an otherwise-working idempotent check.
-            ENV_FIXED=0
-            for i in 1 2 3 4 5; do
-              if [ ! -f /opt/dcc/secrets/testnet.env ]; then
-                echo "attempt $i: file transiently unreadable, retrying in 3s"
-                sleep 3
-                continue
-              fi
-              if grep -q "^DEFAULT_MATCHER=$" /opt/dcc/secrets/testnet.env; then
-                sudo sed -i "s/^DEFAULT_MATCHER=\$/DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE/" /opt/dcc/secrets/testnet.env
-                echo "Set empty DEFAULT_MATCHER to its real value"
-              elif ! grep -q "^DEFAULT_MATCHER=" /opt/dcc/secrets/testnet.env; then
-                echo "DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE" | sudo tee -a /opt/dcc/secrets/testnet.env >/dev/null
-                echo "Added missing DEFAULT_MATCHER to deployed secrets env"
-              else
-                echo "DEFAULT_MATCHER already has a non-empty value"
-              fi
-              ENV_FIXED=1
-              break
-            done
-            [ "${ENV_FIXED}" = "1" ] || echo "WARNING: could not confirm/fix DEFAULT_MATCHER after 5 attempts"
+            if grep -q "^DEFAULT_MATCHER=$" /opt/dcc/secrets/testnet.env; then
+              sudo sed -i "s/^DEFAULT_MATCHER=\$/DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE/" /opt/dcc/secrets/testnet.env
+              echo "Set empty DEFAULT_MATCHER to its real value"
+            elif ! grep -q "^DEFAULT_MATCHER=" /opt/dcc/secrets/testnet.env; then
+              echo "DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE" | sudo tee -a /opt/dcc/secrets/testnet.env >/dev/null
+              echo "Added missing DEFAULT_MATCHER to deployed secrets env"
+            else
+              echo "DEFAULT_MATCHER already has a non-empty value"
+            fi
             echo "=== Recreating data-service (env_file values are baked into a container at CREATE time -- docker restart reuses the existing container config unchanged, it does not re-read env_file from disk; only a full recreate picks up an edited env_file) ==="
             # Do not rely solely on `docker inspect ... data-service-testnet`
             # to find the image -- a crash-looping container can be caught by
-            # this same script's earlier `docker container prune -f` while
+            # this same scripts earlier `docker container prune -f` while
             # transiently in an Exited state between restart attempts,
             # removing the container object entirely (confirmed live: a
             # prior run left "No such container: data-service-testnet").
@@ -195,6 +175,12 @@ jobs:
               echo "data-service-testnet container missing -- falling back to last cached image"
               DS_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
                 | grep "decentral-america/data-service" | grep -v "<none>" | head -1)
+            fi
+            if [ -z "${DS_IMG}" ]; then
+              echo "No local data-service image either -- pulling last known tag from GHCR"
+              docker pull ghcr.io/decentral-america/data-service:16db9075d67e086c9a5c6f71f5ef20788c16a1f6 2>/dev/null \
+                && DS_IMG="ghcr.io/decentral-america/data-service:16db9075d67e086c9a5c6f71f5ef20788c16a1f6" \
+                || echo "Pull failed -- run the data-service deploy workflow from its own repo"
             fi
             if [ -n "${DS_IMG}" ] && [ -f /opt/dcc/compose/data-service.yml ]; then
               echo "Using image: ${DS_IMG}"
