@@ -1,0 +1,95 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Pin node-scala's testnet K8s image to an exact digest
+#
+# clusters/testnet/apps/nodes.yaml previously referenced node-scala's floating
+# `:testnet-latest` tag directly. With `imagePullPolicy: Always`, that isn't
+# just "pulled on explicit deploys" -- Kubernetes re-pulls on ANY pod restart
+# (crash, OOM, node drain, maintenance), so an untested build pushed to that
+# tag could silently reach the gen-0/gen-1/val-0 swarm without anyone
+# deliberately deploying it.
+#
+# This workflow resolves whatever `:testnet-latest` (or another tag/digest you
+# pass) currently points to, pins clusters/testnet/apps/nodes.yaml to that
+# exact digest, and opens a PR -- so promoting a build to the testnet swarm is
+# always a deliberate, reviewed action instead of an implicit background
+# mutation. Run it after a node-scala build you've actually validated.
+# ──────────────────────────────────────────────────────────────────────────────
+name: Pin node-scala Testnet Image Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: 'Tag or digest to resolve and pin (default: testnet-latest)'
+        required: false
+        default: 'testnet-latest'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pin-node-image-digest
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/decentral-america/node-scala
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: true
+
+      - uses: regclient/actions/regctl-installer@1b705e32d40851370799ea5814e83d0a5f6a70dc  # v0.1.0
+
+      - name: Resolve digest
+        id: resolve
+        run: |
+          set -euo pipefail
+          REF="${{ inputs.image_ref }}"
+          DIGEST=$(regctl manifest digest "${{ env.IMAGE_NAME }}:${REF}")
+          echo "Resolved ${{ env.IMAGE_NAME }}:${REF} -> ${DIGEST}"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Update nodes.yaml
+        id: update
+        run: |
+          set -euo pipefail
+          FILE=clusters/testnet/apps/nodes.yaml
+          NEW="${{ env.IMAGE_NAME }}@${{ steps.resolve.outputs.digest }}"
+          if grep -qF "$NEW" "$FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "nodes.yaml already pins this exact digest -- nothing to do."
+            exit 0
+          fi
+          # Match both the floating-tag form and an existing digest pin, so
+          # re-running this workflow to promote a newer build works the same
+          # way as the first pin.
+          sed -i -E "s#${{ env.IMAGE_NAME }}(:[A-Za-z0-9._-]+|@sha256:[0-9a-f]+)#${NEW}#g" "$FILE"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open PR
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+          REF: ${{ steps.resolve.outputs.ref }}
+        run: |
+          set -euo pipefail
+          BRANCH="pin-node-image-$(date -u +%Y%m%d%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add clusters/testnet/apps/nodes.yaml
+          git commit -m "chore: pin node-scala testnet image to ${DIGEST}" \
+            -m "Resolved from ${{ env.IMAGE_NAME }}:${REF} by pin-node-image-digest.yml."
+          git push origin "$BRANCH"
+          BODY="Resolved \`${{ env.IMAGE_NAME }}:${REF}\` -> \`${DIGEST}\` and pinned clusters/testnet/apps/nodes.yaml to it."$'\n\n'"Review the actual node-scala build/commit behind this digest before merging -- merging this PR is what promotes it to the gen-0/gen-1/val-0 swarm on their next restart."
+          gh pr create --title "chore: pin node-scala testnet image to ${DIGEST}" \
+            --body "$BODY" \
+            --base main --head "$BRANCH"
