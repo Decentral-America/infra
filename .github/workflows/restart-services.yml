@@ -40,8 +40,22 @@ jobs:
                 docker rm -f "$cid" 2>/dev/null || true
               fi
             done
-            echo "=== Prune stopped containers and dangling images ==="
-            docker container prune -f 2>/dev/null || true
+            echo "=== Prune stopped containers (excluding critical named services) and dangling images ==="
+            # Plain `docker container prune -f` removes ANY stopped
+            # container, including a critical named service that happens to
+            # be transiently Exited between restart-policy attempts while
+            # crash-looping -- confirmed live: this exact step previously
+            # removed data-service-testnet mid-crash-loop, turning a config
+            # problem into "No such container" for every later step in this
+            # same script run. Skip our known named services explicitly.
+            PROTECTED_CONTAINERS="data-service-testnet|blockchain-postgres-sync-testnet|matcher-testnet|node-scala-testnet|caddy-testnet"
+            docker ps -a --filter "status=exited" --format "{{.ID}} {{.Names}}" | while read -r cid cname; do
+              if echo "${cname}" | grep -qE "^(${PROTECTED_CONTAINERS})$"; then
+                echo "Skipping protected container: ${cname}"
+              else
+                docker rm -f "${cid}" 2>/dev/null || true
+              fi
+            done
             docker image prune -f 2>/dev/null || true
             echo "=== Truncate large docker container log files (>50MB) ==="
             find /var/lib/docker/containers/ -name "*.log" -size +50M 2>/dev/null | while read f; do
@@ -168,7 +182,20 @@ jobs:
             done
             [ "${ENV_FIXED}" = "1" ] || echo "WARNING: could not confirm/fix DEFAULT_MATCHER after 5 attempts"
             echo "=== Recreating data-service (env_file values are baked into a container at CREATE time -- docker restart reuses the existing container config unchanged, it does not re-read env_file from disk; only a full recreate picks up an edited env_file) ==="
+            # Do not rely solely on `docker inspect ... data-service-testnet`
+            # to find the image -- a crash-looping container can be caught by
+            # this same script's earlier `docker container prune -f` while
+            # transiently in an Exited state between restart attempts,
+            # removing the container object entirely (confirmed live: a
+            # prior run left "No such container: data-service-testnet").
+            # Fall back to the last locally cached image, same pattern
+            # already used for BPS/matcher above.
             DS_IMG=$(docker inspect --format "{{.Config.Image}}" data-service-testnet 2>/dev/null || true)
+            if [ -z "${DS_IMG}" ]; then
+              echo "data-service-testnet container missing -- falling back to last cached image"
+              DS_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
+                | grep "decentral-america/data-service" | grep -v "<none>" | head -1)
+            fi
             if [ -n "${DS_IMG}" ] && [ -f /opt/dcc/compose/data-service.yml ]; then
               echo "Using image: ${DS_IMG}"
               IMAGE_TAG="${DS_IMG}" NETWORK=testnet \
@@ -177,7 +204,7 @@ jobs:
                   up -d --force-recreate --wait --wait-timeout 60 data-service \
                 && echo "OK (compose recreate)" || echo "FAILED (compose recreate)"
             else
-              echo "FAILED — data-service-testnet container or compose file missing"
+              echo "FAILED — no data-service image available and compose file missing/unusable"
             fi
             sleep 8
             echo "=== data-service last 20 log lines ==="
