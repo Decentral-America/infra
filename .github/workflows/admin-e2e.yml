@@ -68,6 +68,7 @@ jobs:
           pnpm exec vitest run --reporter=verbose \
             src/network/node-api.spec.ts \
             src/network/peers.spec.ts \
+            src/transactions/transfer.spec.ts \
             2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
