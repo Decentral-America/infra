@@ -39,13 +39,22 @@
 # cluster (LKE supports both Calico and Cilium) before applying; if this
 # cluster runs Cilium instead, this file does not apply and a CiliumNetworkPolicy
 # equivalent would be needed instead.
+#
+# apiVersion note: LKE's Calico install serves these CRDs under
+# crd.projectcalico.org/v1, NOT projectcalico.org/v3 (the group calicoctl
+# and most docs use by convention when a cluster also runs the separate,
+# now-deprecated aggregated Calico API server, which this cluster does not).
+# Confirmed empirically via `kubectl get crd -o custom-columns=...` --
+# stagedglobalnetworkpolicies.crd.projectcalico.org is genuinely installed
+# (present since cluster bootstrap, 2026-06-10), it just wasn't reachable
+# under the v3 alias. Using the real, installed group/version here.
 
 ---
 # Enables Calico to auto-create a wildcard HostEndpoint (all interfaces) for
 # every node, labeled from the node's own Kubernetes labels plus
 # `projectcalico.org/created-by: calico-kube-controllers`. Without this,
 # HostEndpoints would need to be created and maintained manually per node.
-apiVersion: projectcalico.org/v3
+apiVersion: crd.projectcalico.org/v1
 kind: KubeControllersConfiguration
 metadata:
   name: default
@@ -69,7 +78,7 @@ spec:
 # checks) — the broad allow rules below are intentionally permissive on
 # cluster-internal traffic since narrowing them requires the live-traffic
 # review described above, not a guess from a git checkout.
-apiVersion: projectcalico.org/v3
+apiVersion: crd.projectcalico.org/v1
 kind: StagedGlobalNetworkPolicy
 metadata:
   name: dcc-hostendpoint-p2p
