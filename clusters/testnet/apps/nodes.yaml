@@ -13,16 +13,14 @@
 #   - podManagementPolicy: Parallel for generators (independent startup)
 #   - persistentVolumeClaimRetentionPolicy: Retain on all axes
 #
-# Image tag: `:testnet-latest` is a floating tag, accepted here (not pinned to
-# a digest) because the risk is already bounded — only node-scala's reviewed
-# CI (publish-node-scala.yml) can push to this private GHCR path, and
-# imagePullPolicy: Always ties every pull to an explicit rolling restart, not
-# a background mutation. node-scala's other deploy path (deploy-container.yml,
-# VPS/compose) already pins by immutable git-SHA tag; adopting that here too
-# would need either a cross-repo digest-pinning commit workflow or a Flux
-# ImagePolicy (image-reflector/image-automation controllers are installed —
-# see flux-system/gotk-components.yaml) — worth doing before mainnet, not
-# built now since it needs a live cluster to validate the reconciliation.
+# Image tag: pinned to an exact digest, not the floating `:testnet-latest`
+# tag -- with imagePullPolicy: Always, Kubernetes re-pulls on ANY pod
+# restart (crash, OOM, node drain, maintenance), not just explicit deploys,
+# so a floating tag risked an untested build silently reaching the swarm.
+# To promote a new, validated node-scala build: run
+# .github/workflows/pin-node-image-digest.yml (workflow_dispatch, defaults
+# to resolving :testnet-latest) -- it opens a PR with the new digest for
+# review, merging it is what actually promotes the build.
 # ──────────────────────────────────────────────────────────────────────────────
 
 apiVersion: v1
