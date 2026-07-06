@@ -121,6 +121,11 @@ jobs:
               fi
             fi
             sleep 10
+            echo "=== Restarting data-service (picks up env_file changes -- container Env is baked in at create time, docker compose up -d does not notice an env_file edited in place) ==="
+            docker restart data-service-testnet 2>/dev/null && echo "OK (restart)" || echo "FAILED — data-service-testnet container missing"
+            sleep 8
+            echo "=== data-service last 20 log lines ==="
+            docker logs data-service-testnet --tail 20 2>&1 || echo "(no data-service container logs)"
             echo "=== Service health ==="
-            docker ps | grep -E "postgres|matcher|node-scala" | sort'
+            docker ps | grep -E "postgres|matcher|node-scala|data-service" | sort'
           rm -f /tmp/id_rsa
