@@ -350,18 +350,22 @@ jobs:
           echo "=== CSP ==="
           grep "Content-Security" "\$CF" | head -1
 
-          if docker inspect "caddy-\${NETWORK}" >/dev/null 2>&1; then
-            docker restart "caddy-\${NETWORK}"
-            echo "Caddy restarted."
+          # Always go through compose pull+up, not a plain docker restart:
+          # a restart reuses whatever image the existing container was
+          # created from, so it would silently keep running a stale image
+          # (e.g. the pre-caddy-ratelimit stock build) even after
+          # compose/caddy.yml's image: pin changes. compose up -d recreates
+          # the container only when its config (including the resolved
+          # image digest) actually changed -- a no-op restart when only the
+          # Caddyfile changed and the image didn't.
+          if [ -f /opt/dcc/compose/caddy.yml ]; then
+            NETWORK="\${NETWORK}" docker compose --project-name "caddy-\${NETWORK}" \
+              -f /opt/dcc/compose/caddy.yml pull \
+            && NETWORK="\${NETWORK}" docker compose --project-name "caddy-\${NETWORK}" \
+              -f /opt/dcc/compose/caddy.yml up -d \
+            && echo "OK (compose pull + up)" || echo "FAILED (compose pull/up)"
           else
-            echo "caddy-\${NETWORK} container missing — attempting compose up"
-            if [ -f /opt/dcc/compose/caddy.yml ]; then
-              NETWORK="\${NETWORK}" docker compose --project-name "caddy-\${NETWORK}" \
-                -f /opt/dcc/compose/caddy.yml up -d \
-              && echo "OK (compose up)" || echo "FAILED (compose up)"
-            else
-              echo "FAILED — /opt/dcc/compose/caddy.yml not found"
-              ls /opt/dcc/compose/ 2>/dev/null || true
-            fi
+            echo "FAILED — /opt/dcc/compose/caddy.yml not found"
+            ls /opt/dcc/compose/ 2>/dev/null || true
           fi
           REMOTE
