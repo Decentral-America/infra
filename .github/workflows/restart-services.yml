@@ -138,15 +138,35 @@ jobs:
             # absent. Idempotent either way -- a no-op once the
             # source-of-truth secrets/testnet.env in the repo is corrected
             # and re-pushed via push-secrets.yml.
-            if grep -q "^DEFAULT_MATCHER=$" /opt/dcc/secrets/testnet.env 2>/dev/null; then
-              sudo sed -i "s/^DEFAULT_MATCHER=\$/DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE/" /opt/dcc/secrets/testnet.env
-              echo "Set empty DEFAULT_MATCHER to its real value"
-            elif ! grep -q "^DEFAULT_MATCHER=" /opt/dcc/secrets/testnet.env 2>/dev/null; then
-              echo "DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE" | sudo tee -a /opt/dcc/secrets/testnet.env >/dev/null
-              echo "Added missing DEFAULT_MATCHER to deployed secrets env"
-            else
-              echo "DEFAULT_MATCHER already has a non-empty value"
-            fi
+            #
+            # Wrapped in a retry loop: observed intermittent "No such file or
+            # directory" reading this exact path immediately after a `stat`
+            # on the same path succeeded a moment earlier (same script run,
+            # milliseconds apart) -- transient, not a real permissions or
+            # content problem (file content and permissions were verified
+            # correct via direct inspection). Retrying is the robust way to
+            # ride out whatever brief window causes that, without more
+            # invasive changes to an otherwise-working idempotent check.
+            ENV_FIXED=0
+            for i in 1 2 3 4 5; do
+              if [ ! -f /opt/dcc/secrets/testnet.env ]; then
+                echo "attempt $i: file transiently unreadable, retrying in 3s"
+                sleep 3
+                continue
+              fi
+              if grep -q "^DEFAULT_MATCHER=$" /opt/dcc/secrets/testnet.env; then
+                sudo sed -i "s/^DEFAULT_MATCHER=\$/DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE/" /opt/dcc/secrets/testnet.env
+                echo "Set empty DEFAULT_MATCHER to its real value"
+              elif ! grep -q "^DEFAULT_MATCHER=" /opt/dcc/secrets/testnet.env; then
+                echo "DEFAULT_MATCHER=31HrVNJzHXuQuyovn1PccFy7PacdF3ab8EE" | sudo tee -a /opt/dcc/secrets/testnet.env >/dev/null
+                echo "Added missing DEFAULT_MATCHER to deployed secrets env"
+              else
+                echo "DEFAULT_MATCHER already has a non-empty value"
+              fi
+              ENV_FIXED=1
+              break
+            done
+            [ "${ENV_FIXED}" = "1" ] || echo "WARNING: could not confirm/fix DEFAULT_MATCHER after 5 attempts"
             echo "=== Recreating data-service (env_file values are baked into a container at CREATE time -- docker restart reuses the existing container config unchanged, it does not re-read env_file from disk; only a full recreate picks up an edited env_file) ==="
             DS_IMG=$(docker inspect --format "{{.Config.Image}}" data-service-testnet 2>/dev/null || true)
             if [ -n "${DS_IMG}" ] && [ -f /opt/dcc/compose/data-service.yml ]; then
