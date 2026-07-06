@@ -73,6 +73,7 @@ jobs:
           DCC_TEST_MINER_SEED: ${{ secrets.GEN_0_SEED_PHRASE }}
           DCC_TEST_DS_URL: https://testnet-data-service.decentralchain.io
           DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
+          DCC_TEST_E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
         working-directory: packages/e2e-blockchain
         run: |
           echo "## E2E Smoke Suite — testnet" >> $GITHUB_STEP_SUMMARY
@@ -93,6 +94,7 @@ jobs:
           DCC_TEST_MINER_SEED: ${{ secrets.GEN_0_SEED_PHRASE }}
           DCC_TEST_DS_URL: https://testnet-data-service.decentralchain.io
           DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
+          DCC_TEST_E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
         working-directory: packages/e2e-blockchain
         run: |
           echo "## E2E Full Suite — testnet" >> $GITHUB_STEP_SUMMARY
