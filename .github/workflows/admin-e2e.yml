@@ -44,13 +44,21 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build required workspace packages (bypass Nx Cloud)
+        # `...` builds @decentralchain/transactions AND its full dependency
+        # chain (marshall, protobuf-schemas, ts-lib-crypto, types) in one
+        # topologically-ordered pass, instead of listing each package by
+        # hand -- which is exactly what went stale before: transfer.spec.ts
+        # imports @decentralchain/transactions, but only types/ts-lib-crypto/
+        # node-api were ever added here, so the smoke suite's transfer test
+        # was silently dropped (see the "restore transactions/transfer.spec.ts"
+        # commit) rather than the real gap -- a missing build step -- ever
+        # being fixed.
         env:
           NX_NO_CLOUD: 'true'
           NX_SKIP_NX_CACHE: 'true'
         run: |
-          pnpm --filter @decentralchain/types build
-          pnpm --filter @decentralchain/ts-lib-crypto build
-          pnpm --filter @decentralchain/node-api build
+          pnpm --filter "@decentralchain/node-api..." build
+          pnpm --filter "@decentralchain/transactions..." build
 
       - name: Run E2E smoke suite
         if: ${{ inputs.suite == 'smoke' || inputs.suite == '' }}
