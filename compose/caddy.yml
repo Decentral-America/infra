@@ -24,21 +24,13 @@
 
 services:
   caddy:
-    # ⚠ BLOCKER for rate limiting (see update-caddy.yml's `rate_limit` directives):
-    # this still pins the stock upstream image, which does NOT have the
-    # caddy-ratelimit module. Deploying the current update-caddy.yml as-is will
-    # make Caddy fail to start ("unrecognized directive: rate_limit").
-    #
-    # To complete the rollout, in order:
-    #   1. Run .github/workflows/build-caddy-ratelimit.yml (builds
-    #      docker/caddy-ratelimit/Dockerfile: stock Caddy 2.11.4 +
-    #      github.com/mholt/caddy-ratelimit, which the official image lacks).
-    #   2. Copy the `image:` line its job summary prints (a real digest under
-    #      ghcr.io/decentral-america/caddy-ratelimit) and replace the line below.
-    #   3. Only then run update-caddy.yml to push the rate-limited Caddyfile.
-    # Steps 2 and 3 must land together — deploying one without the other either
-    # leaves rate limiting inactive or breaks Caddy startup.
-    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    # Custom build: stock Caddy 2.11.4 + github.com/mholt/caddy-ratelimit
+    # (docker/caddy-ratelimit/Dockerfile, built by build-caddy-ratelimit.yml —
+    # run 28766968674, 2026-07-06). Required for update-caddy.yml's
+    # `rate_limit` directives; the stock upstream image lacks that module.
+    # Rebuild + re-pin whenever the Dockerfile changes (base image bump,
+    # module SHA bump) — see build-caddy-ratelimit.yml's own header comment.
+    image: ghcr.io/decentral-america/caddy-ratelimit@sha256:4d7fa373b5557b238b807c7e0317f53c92edd138a88df2fc48d9429ed5b25b1e
     container_name: "caddy-${NETWORK:-mainnet}"
     # host network mode: Caddy binds directly to the host's port 80 and 443.
     # This lets it forward to scanner (127.0.0.1:3000) and data-service
