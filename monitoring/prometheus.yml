@@ -20,9 +20,15 @@ scrape_configs:
     relabel_configs:
       - target_label: network
         replacement: testnet
-  # BPS (:9090) does not expose Prometheus-format metrics — only /health and /readiness.
-  # BPS liveness is inferred from dcc_scrape_error via the dcc-chain exporter.
-  # TODO (mainnet): add a /metrics handler to BPS exposing bps_last_synced_height.
+  # BPS now exposes bps_up / bps_last_synced_height at :9090/metrics
+  # (blockchain-postgres-sync/src/bin/consumer.rs).
+  - job_name: bps
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
 
   # Loki metrics — ingestion rate, chunk/index store ops, compaction lag.
   # Loki exposes Prometheus-format metrics at :3100/metrics.

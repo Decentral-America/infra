@@ -1,0 +1,65 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Label nodes for the Calico HostEndpoint policy (clusters/testnet/policy/).
+#
+# `dcc-hostendpoint-p2p` (StagedGlobalNetworkPolicy) selects `has(kubernetes-host)`.
+# Calico's auto-create-hostendpoint feature does not itself label nodes — the
+# label is a one-time manual step recommended by Calico's own docs for exactly
+# this selector pattern. Re-running this workflow is a no-op (kubectl label is
+# idempotent) — safe to run again after adding nodes to the cluster.
+#
+# Verifies the cluster actually runs Calico (not Cilium — LKE supports both)
+# before labeling, since the policy this label feeds is Calico-specific.
+# ──────────────────────────────────────────────────────────────────────────────
+name: Label HostEndpoint Nodes
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Target network'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - testnet
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.network }}
+    steps:
+      - name: Download kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+          echo "Cluster ID: $CID"
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -X GET "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+
+      - name: Verify Calico is the CNI in use
+        run: |
+          set -euo pipefail
+          if ! kubectl get daemonset -n kube-system -l k8s-app=calico-node --no-headers 2>/dev/null | grep -q .; then
+            echo "::error::No calico-node DaemonSet found in kube-system — this cluster may run Cilium instead. Refusing to label nodes for a Calico-specific policy. See clusters/testnet/policy/host-endpoints.yaml for the Cilium-equivalent note." >&2
+            exit 1
+          fi
+          echo "Calico confirmed."
+
+      - name: Label all nodes for the HostEndpoint selector
+        run: |
+          set -euo pipefail
+          kubectl label nodes --all kubernetes-host= --overwrite
+          kubectl get nodes --show-labels | grep kubernetes-host

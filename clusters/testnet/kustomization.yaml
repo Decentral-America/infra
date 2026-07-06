@@ -9,3 +9,4 @@ resources:
   - flux-system/
   - apps.yaml
   - monitoring.yaml
+  - policy.yaml

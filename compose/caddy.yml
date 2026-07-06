@@ -24,11 +24,20 @@
 
 services:
   caddy:
-    # Pinned to a specific release. Renovate keeps this current.
-    # NOTE: rate limiting (caddy-ratelimit module) requires a custom xcaddy build.
-    # See the TODO comments in terraform/scripts/bootstrap.sh NODE_DOMAIN block for
-    # the exact rate_limit directive syntax and Dockerfile recipe.
-    # Until a custom image is built, rate limiting is documented-only (not active).
+    # ⚠ BLOCKER for rate limiting (see update-caddy.yml's `rate_limit` directives):
+    # this still pins the stock upstream image, which does NOT have the
+    # caddy-ratelimit module. Deploying the current update-caddy.yml as-is will
+    # make Caddy fail to start ("unrecognized directive: rate_limit").
+    #
+    # To complete the rollout, in order:
+    #   1. Run .github/workflows/build-caddy-ratelimit.yml (builds
+    #      docker/caddy-ratelimit/Dockerfile: stock Caddy 2.11.4 +
+    #      github.com/mholt/caddy-ratelimit, which the official image lacks).
+    #   2. Copy the `image:` line its job summary prints (a real digest under
+    #      ghcr.io/decentral-america/caddy-ratelimit) and replace the line below.
+    #   3. Only then run update-caddy.yml to push the rate-limited Caddyfile.
+    # Steps 2 and 3 must land together — deploying one without the other either
+    # leaves rate limiting inactive or breaks Caddy startup.
     image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     container_name: "caddy-${NETWORK:-mainnet}"
     # host network mode: Caddy binds directly to the host's port 80 and 443.

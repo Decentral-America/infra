@@ -3,6 +3,12 @@ name: Update Caddy
 # generates the complete Caddyfile locally in the runner, SCPs it to the server,
 # then restarts Caddy. No variable passing through SSH env — generates locally,
 # pushes atomically.
+#
+# ⚠ The generated Caddyfile below uses `rate_limit` (NODE/MATCHER domains),
+# which requires the custom image built by build-caddy-ratelimit.yml — the
+# stock Caddy image doesn't ship that module. Do NOT run this workflow until
+# compose/caddy.yml's `image:` has been updated to that custom build's digest
+# (see the comment there), or Caddy will fail to start on restart.
 on:
   workflow_dispatch:
     inputs:
@@ -81,6 +87,16 @@ jobs:
               email ${ACME}
           }
 
+          # Shared CORS origin allowlist for credentialed endpoints (node, matcher).
+          # Reflecting Origin unconditionally alongside Allow-Credentials: true lets
+          # any website make authenticated cross-origin requests on a visitor's
+          # behalf (CWE-942) — @cors_allowed_origin only matches decentralchain.io
+          # and its direct subdomains, the same trust boundary already used in the
+          # scanner app's own CSP connect-src above.
+          (cors_allowlist) {
+              @cors_allowed_origin header_regexp Origin ^https://([a-z0-9-]+\.)?decentralchain\.io$
+          }
+
           ${SCANNER} {
               handle /api/geo/* {
                   uri strip_prefix /api/geo
@@ -140,15 +156,49 @@ jobs:
           }
 
           ${NODE} {
+              import cors_allowlist
+
+              # -- Rate limiting -------------------------------------------------------
+              # Requires the custom image built by build-caddy-ratelimit.yml (stock
+              # caddy:*-alpine doesn't ship github.com/mholt/caddy-ratelimit). Verified
+              # locally: each zone below is isolated (a burst on one path doesn't
+              # consume another path's budget) and correctly returns 429 once exhausted.
+              @blocks_path path /blocks/*
+              rate_limit @blocks_path {
+                  zone blocks_per_ip {
+                      key    {remote_host}
+                      events 1000
+                      window 1m
+                  }
+              }
+              @broadcast path /transactions/broadcast
+              rate_limit @broadcast {
+                  zone broadcast_per_ip {
+                      key    {remote_host}
+                      events 50
+                      window 1m
+                  }
+              }
+              @other_api not path /blocks/* /transactions/broadcast
+              rate_limit @other_api {
+                  zone api_per_ip {
+                      key    {remote_host}
+                      events 300
+                      window 1m
+                  }
+              }
+
               @options method OPTIONS
               handle @options {
-                  # Reflect origin instead of wildcard — required when exchange sends
-                  # credentials (cookies/auth). Vary tells caches this header varies.
-                  header Access-Control-Allow-Origin {http.request.header.Origin}
-                  header Access-Control-Allow-Credentials "true"
-                  header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-                  header Access-Control-Allow-Headers "Content-Type, Authorization, Accept, X-API-Key, timestamp, signature"
-                  header Access-Control-Max-Age "3600"
+                  # Reflect origin only if it's on the allowlist (see @cors_allowed_origin
+                  # above) — required when the exchange sends credentials (cookies/auth).
+                  # Vary tells caches this header varies. No match = no CORS headers at
+                  # all, so the browser correctly refuses to expose the response.
+                  header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
+                  header @cors_allowed_origin Access-Control-Allow-Credentials "true"
+                  header @cors_allowed_origin Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+                  header @cors_allowed_origin Access-Control-Allow-Headers "Content-Type, Authorization, Accept, X-API-Key, timestamp, signature"
+                  header @cors_allowed_origin Access-Control-Max-Age "3600"
                   header Vary "Origin"
                   respond "" 204
               }
@@ -161,11 +211,11 @@ jobs:
                   }
                   header {
                       Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                      Access-Control-Allow-Origin {http.request.header.Origin}
-                      Access-Control-Allow-Credentials "true"
                       Vary "Origin"
                       -Server
                   }
+                  header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
+                  header @cors_allowed_origin Access-Control-Allow-Credentials "true"
               }
               reverse_proxy localhost:6869 {
                   header_up -Origin
@@ -175,23 +225,36 @@ jobs:
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                   X-Content-Type-Options "nosniff"
                   Referrer-Policy "strict-origin-when-cross-origin"
-                  Access-Control-Allow-Origin {http.request.header.Origin}
-                  Access-Control-Allow-Credentials "true"
                   Vary "Origin"
                   -Server
               }
+              header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
+              header @cors_allowed_origin Access-Control-Allow-Credentials "true"
               log
           }
 
           ${MATCHER} {
+              import cors_allowlist
+
+              # -- Rate limiting (matcher) ----------------------------------------------
+              # Same custom image requirement as NODE_DOMAIN above.
+              rate_limit {
+                  zone matcher_per_ip {
+                      key    {remote_host}
+                      events 300
+                      window 1m
+                  }
+              }
+
               @options method OPTIONS
               handle @options {
                   # timestamp and signature are custom headers sent by the exchange DEX client.
-                  header Access-Control-Allow-Origin {http.request.header.Origin}
-                  header Access-Control-Allow-Credentials "true"
-                  header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-                  header Access-Control-Allow-Headers "Content-Type, Authorization, Accept, timestamp, signature, X-API-Key"
-                  header Access-Control-Max-Age "3600"
+                  # Origin reflected only if it's on the allowlist (@cors_allowed_origin above).
+                  header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
+                  header @cors_allowed_origin Access-Control-Allow-Credentials "true"
+                  header @cors_allowed_origin Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+                  header @cors_allowed_origin Access-Control-Allow-Headers "Content-Type, Authorization, Accept, timestamp, signature, X-API-Key"
+                  header @cors_allowed_origin Access-Control-Max-Age "3600"
                   header Vary "Origin"
                   respond "" 204
               }
@@ -203,11 +266,11 @@ jobs:
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                   X-Content-Type-Options "nosniff"
                   Referrer-Policy "strict-origin-when-cross-origin"
-                  Access-Control-Allow-Origin {http.request.header.Origin}
-                  Access-Control-Allow-Credentials "true"
                   Vary "Origin"
                   -Server
               }
+              header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
+              header @cors_allowed_origin Access-Control-Allow-Credentials "true"
               log
           }
 

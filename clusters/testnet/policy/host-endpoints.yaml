@@ -1,0 +1,94 @@
+# ── Calico host-level policy for hostNetwork pods ────────────────────────────
+#
+# WHY THIS FILE EXISTS: dcc-gen-0, dcc-gen-1, dcc-val-0, and metrics-exporter
+# (clusters/testnet/apps/nodes.yaml, monitoring/metrics-exporter.yaml) all run
+# `hostNetwork: true`. Kubernetes NetworkPolicy cannot govern host-networked
+# pods — they share the node's own network namespace instead of getting a
+# pod-level interface for Calico to filter — so the NetworkPolicy objects in
+# nodes.yaml are no-ops for these specific workloads. Real perimeter
+# enforcement today is the Linode Cloud Firewall (terraform/lke.tf). This file
+# adds a second, pod-independent layer that operates at the correct level:
+# the host's network interfaces via Calico HostEndpoints.
+#
+# WHY IT SHIPS IN LOG-ONLY (STAGED) MODE, NOT ENFORCING:
+# A host-level policy applies to ALL traffic on the node, not just the DCC
+# pods — kubelet↔apiserver, DNS, health checks, monitoring scrapes, and
+# anything else Kubernetes needs to keep the node healthy. Getting this wrong
+# doesn't just misconfigure the blockchain pods, it can make the node itself
+# go NotReady. This was authored without access to the live cluster's actual
+# traffic, so it must not be applied as an enforcing policy sight-unseen.
+#
+# ── Safe rollout procedure (do not skip steps) ───────────────────────────────
+#   1. kubectl apply -f host-endpoints.yaml   (installs everything below,
+#      including the StagedGlobalNetworkPolicy — logs matches, blocks nothing)
+#   2. Let it run for a real observation window (Calico recommends this be
+#      long enough to see all legitimate periodic traffic — at minimum
+#      several days, ideally through a full monitoring/backup/rotation cycle).
+#   3. Review Calico's flow logs (`calicoctl` or Kibana/Grafana if wired to
+#      Felix's flow log output) for anything that would have been denied.
+#      Confirm every denied-in-staging flow is either expected-and-needs-an-
+#      allow-rule-added, or genuinely unwanted.
+#   4. Only after step 3 confirms no legitimate traffic would be blocked,
+#      change `kind: StagedGlobalNetworkPolicy` to `kind: GlobalNetworkPolicy`
+#      below and re-apply. That is the actual enforcement switch.
+#   5. Remove the log-only sibling policy at that point (kept in place during
+#      staging can meaningfully affect performance per Calico's own guidance).
+#
+# Requires Calico's "automatic host endpoints" feature — this file's first
+# resource enables it. Verify Calico is actually the CNI in use on this
+# cluster (LKE supports both Calico and Cilium) before applying; if this
+# cluster runs Cilium instead, this file does not apply and a CiliumNetworkPolicy
+# equivalent would be needed instead.
+
+---
+# Enables Calico to auto-create a wildcard HostEndpoint (all interfaces) for
+# every node, labeled from the node's own Kubernetes labels plus
+# `projectcalico.org/created-by: calico-kube-controllers`. Without this,
+# HostEndpoints would need to be created and maintained manually per node.
+apiVersion: projectcalico.org/v3
+kind: KubeControllersConfiguration
+metadata:
+  name: default
+spec:
+  controllers:
+    node:
+      hostEndpoint:
+        autoCreate: Enabled
+
+---
+# Staged (non-enforcing) mirror of the intent behind default-deny-all +
+# allow-p2p-ingress + allow-egress in nodes.yaml, applied at the host level
+# via the auto-created HostEndpoints above. `has(kubernetes-host)` requires
+# nodes to carry that label first: `kubectl label nodes --all kubernetes-host=`
+# (harmless to run on any cluster — it's just a marker label Calico's own
+# docs recommend for exactly this selector pattern).
+#
+# Ingress: allow the same P2P ports the pod-level rule already documents
+# (6863-6865, matching allow-p2p-ingress in nodes.yaml) from anywhere, plus
+# whatever the node itself needs for cluster operation (kubelet, health
+# checks) — the broad allow rules below are intentionally permissive on
+# cluster-internal traffic since narrowing them requires the live-traffic
+# review described above, not a guess from a git checkout.
+apiVersion: projectcalico.org/v3
+kind: StagedGlobalNetworkPolicy
+metadata:
+  name: dcc-hostendpoint-p2p
+spec:
+  selector: has(kubernetes-host)
+  order: 100
+  types:
+    - Ingress
+  ingress:
+    # DCC P2P ports — matches allow-p2p-ingress in nodes.yaml exactly.
+    - action: Log
+      protocol: TCP
+      destination:
+        ports: [6863, 6864, 6865]
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports: [6863, 6864, 6865]
+    # Everything else inbound to the host: log only, never blocks. This is
+    # the observation pass — see the rollout procedure above before adding
+    # any Deny rule here.
+    - action: Log

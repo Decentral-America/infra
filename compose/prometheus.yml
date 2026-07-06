@@ -92,7 +92,10 @@ services:
     # stale. alertmanager.yml already uses the modern `matchers:` list syntax
     # (not the deprecated match:/match_re: maps), so it's already compatible
     # with 0.33's UTF-8-by-default matcher parser — verified before bumping.
-    image: prom/alertmanager:v0.33.0@sha256:af26fbe4dd1886ac0efd7bd55cd9027da262e105b137a376522b7c14c3626e4a
+    # Bumped 0.33.0 -> 0.33.1 (2026-07-05): bugfix-only patch release
+    # (webhook doc fix, silences snapshot/legacy-matchers fix). No config
+    # changes required.
+    image: prom/alertmanager:v0.33.1@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
     container_name: "alertmanager-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

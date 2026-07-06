@@ -5,10 +5,12 @@
 # Start: NETWORK=testnet docker compose -f /opt/dcc/compose/grafana.yml up -d
 services:
   grafana:
-    # grafana/grafana:13.0.2 — security-critical upgrade from 12.0.2
-    # Patches: CVE-2026-27876 (chained RCE), CVE-2026-9029, CVE-2026-33382,
-    # CVE-2026-42127, CVE-2026-42129, CVE-2026-10601, CVE-2026-8609, CVE-2026-8595
-    image: grafana/grafana:13.0.2@sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2
+    # grafana/grafana:13.1.0 — routine version bump from 13.0.2 (latest stable
+    # as of 2026-06-23 per Docker Hub). No CVE fixes noted in the 13.1.0
+    # release notes; carries forward the 12.0.2 -> 13.0.2 security patches
+    # (CVE-2026-27876, CVE-2026-9029, CVE-2026-33382, CVE-2026-42127,
+    # CVE-2026-42129, CVE-2026-10601, CVE-2026-8609, CVE-2026-8595).
+    image: grafana/grafana:13.1.0@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
     container_name: "grafana-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
