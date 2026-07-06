@@ -118,7 +118,7 @@ data:
       }
       synchronization {
         synchronization-timeout = 5m
-        max-rollback = 2000
+        max-rollback = 100  # was 2000 -- exceeded GetBlockIdsSpec wire limit (200 IDs/13004 bytes), see node-config/testnet/dcc.conf comment
         score-ttl = 90s
         invalid-blocks-storage {
           timeout = 1m
@@ -220,7 +220,7 @@ data:
       }
       synchronization {
         synchronization-timeout = 5m
-        max-rollback = 2000
+        max-rollback = 100  # was 2000 -- exceeded GetBlockIdsSpec wire limit (200 IDs/13004 bytes), see node-config/testnet/dcc.conf comment
         score-ttl = 90s
         invalid-blocks-storage {
           timeout = 1m
@@ -323,7 +323,7 @@ data:
       }
       synchronization {
         synchronization-timeout = 5m
-        max-rollback = 2000
+        max-rollback = 100  # was 2000 -- exceeded GetBlockIdsSpec wire limit (200 IDs/13004 bytes), see node-config/testnet/dcc.conf comment
         score-ttl = 90s
         invalid-blocks-storage {
           timeout = 1m
