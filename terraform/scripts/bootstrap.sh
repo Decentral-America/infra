@@ -500,50 +500,13 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
-      # -- Rate limiting -----------------------------------------------------------------------
-      # The standard caddy:alpine image does NOT include the caddy-ratelimit
-      # module (github.com/mholt/caddy-ratelimit). Rate limiting requires a
-      # custom Caddy build with that module compiled in.
-      #
-      # TO ENABLE: replace the caddy image with a custom build that includes
-      # the rate_limit directive, then uncomment the block below.
-      #
-      # Custom image recipe (Dockerfile):
-      #   FROM caddy:2.11.4-builder AS builder
-      #   RUN xcaddy build \
-      #       --with github.com/mholt/caddy-ratelimit
-      #   FROM caddy:2.11.4-alpine
-      #   COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-      #
-      # Once the custom image is deployed, add to ${NODE_DOMAIN} block:
-      #
-      #   @blocks_path path /blocks/*
-      #   rate_limit @blocks_path {
-      #       zone blocks_per_ip {
-      #           key    {remote_host}
-      #           events 1000
-      #           window 1m
-      #       }
-      #   }
-      #
-      #   @broadcast path /transactions/broadcast
-      #   rate_limit @broadcast {
-      #       zone broadcast_per_ip {
-      #           key    {remote_host}
-      #           events 50
-      #           window 1m
-      #       }
-      #   }
-      #
-      #   @other_api not path /blocks/* /transactions/broadcast
-      #   rate_limit @other_api {
-      #       zone api_per_ip {
-      #           key    {remote_host}
-      #           events 300
-      #           window 1m
-      #       }
-      #   }
-      # -----------------------------------------------------------------------------------------
+      # No rate_limit here: this Caddyfile is a temporary bootstrap placeholder,
+      # overwritten within minutes by update-caddy.yml once provision.yml injects
+      # secrets (see the "Ready for SSH secrets push" marker below) — that's the
+      # long-lived, real config, and it's where rate limiting is actually
+      # implemented (verified working: docker/caddy-ratelimit/Dockerfile, built
+      # by build-caddy-ratelimit.yml). Not worth duplicating the same multi-zone
+      # config here for a config that lives for one bootstrap cycle.
       printf '    log\n'
       printf '}\n\n'
     fi
@@ -558,18 +521,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
-      # -- Rate limiting (matcher) -------------------------------------------------------------
-      # Same caddy-ratelimit module requirement as NODE_DOMAIN above.
-      # Once the custom caddy image is deployed, add to ${MATCHER_DOMAIN} block:
-      #
-      #   rate_limit {
-      #       zone matcher_per_ip {
-      #           key    {remote_host}
-      #           events 300
-      #           window 1m
-      #       }
-      #   }
-      # -----------------------------------------------------------------------------------------
+      # No rate_limit here — see the NODE_DOMAIN block's comment above.
       printf '    log\n'
       printf '}\n'
     fi

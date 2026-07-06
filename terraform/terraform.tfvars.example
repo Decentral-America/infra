@@ -19,8 +19,15 @@ root_password = "CHANGE_ME_strong_random_password"
 # Ed25519 public key for the deploy user (contents of ~/.ssh/id_ed25519.pub or similar)
 deploy_ssh_public_key = "ssh-ed25519 AAAA... your-deploy-key-here"
 
-# PostgreSQL password for the dcc database user (generate with: openssl rand -base64 32)
-postgres_password = "CHANGE_ME_strong_db_password"
+# NOTE: there is no `postgres_password` OpenTofu variable (nor
+# `matcher_account_password`, `matcher_api_key_hash`, `node_wallet_seed`, or
+# `node_wallet_password` below). These secrets are NOT OpenTofu inputs — they
+# are delivered post-boot via SOPS SSH push directly to
+# /opt/dcc/secrets/<network>.env (as POSTGRES_PASSWORD,
+# MATCHER_ACCOUNT_PASSWORD, MATCHER_API_KEY_HASH, MAIN_NODE_WALLET_SEED, and
+# MAIN_NODE_WALLET_PASSWORD respectively) and never transit Linode
+# infrastructure or a tfvars file. See terraform/testnet.tfvars header
+# comment and secrets/<network>.env for the actual delivery mechanism.
 
 # DCC matcher blockchain address (per-network — check DCC docs for the correct address)
 DEFAULT_MATCHER = "3PEjHv3JGjcWNpYEEkif2w8NXV4kbybKoZ7"
@@ -38,14 +45,6 @@ rate_threshold_asset_id = "DCC"
 #   stagenet: grpc://stagenet-node.decentralchain.io:6881
 #   testnet:  grpc://testnet-node.decentralchain.io:6881
 blockchain_updates_url = "grpc://mainnet-node.decentralchain.io:6881"
-
-# DEX Matcher account.dat encryption password (generate with: openssl rand -base64 32)
-# Required to start the matcher; protects the encrypted wallet file.
-matcher_account_password = "CHANGE_ME_strong_matcher_password"
-
-# DEX Matcher API key hash (Base58-encoded SHA256 of the API key)
-# Generate: echo -n 'your-api-key' | openssl dgst -sha256 -binary | base58
-matcher_api_key_hash = "CHANGE_ME_base58_sha256_of_api_key"
 
 # ── Caddy TLS reverse proxy ───────────────────────────────────────────────────
 # Public domain names for Caddy to serve via automatic Let's Encrypt TLS.
@@ -70,26 +69,19 @@ acme_email = "ops@decentralchain.io"
 # ── PostgreSQL off-site backup (Linode Object Storage) ────────────────────────
 # rclone copies each pg_dump archive to object storage after the local dump.
 # Backup bucket must already exist before the server is bootstrapped.
-# All four variables must be set to enable off-site backup.
-# Leave them empty ("") to use local rotation only (7-day /opt/dcc/backups/).
+# Leave the access/secret key unset to use local rotation only
+# (7-day /opt/dcc/backups/).
 #
 # Create a Linode Object Storage bucket: linode-cli obj mb dcc-backups-mainnet --cluster us-east-1
 # Create an access key in the Linode dashboard (limited to the backup bucket only).
-
-# Linode Object Storage (or any S3-compatible) access key
-backup_obj_access_key = "CHANGE_ME_access_key"
-
-# Linode Object Storage (or any S3-compatible) secret key
-backup_obj_secret_key = "CHANGE_ME_secret_key"
-
-# Bucket name (must already exist; create per-network for isolation)
-# mainnet: dcc-backups-mainnet  stagenet: dcc-backups-stagenet  testnet: dcc-backups-testnet
-backup_obj_bucket = "dcc-backups-mainnet"
-
-# Endpoint for the Linode Object Storage region (same region as the Linode instance)
-# Available regions: us-east-1, us-central, eu-central-1, ap-south-1, etc.
-# Full list: https://rclone.org/s3/#linode
-backup_obj_endpoint = "us-east-1.linodeobjects.com"
+#
+# There are no `backup_obj_access_key` / `backup_obj_secret_key` OpenTofu
+# variables — set these as BACKUP_OBJ_ACCESS_KEY / BACKUP_OBJ_SECRET_KEY in
+# secrets/<network>.env instead (delivered via SOPS SSH push, see note
+# above). Note: bucket name and endpoint have no corresponding config
+# anywhere in this repo (no OpenTofu variable, no secrets/*.env key, no
+# rclone invocation) — off-site backup is not currently wired up beyond the
+# access/secret key being present in the secrets file.
 
 # ── Node wallet ──────────────────────────────────────────────────────────────
 # The node-scala entrypoint reads these env vars, writes them to a temp config
@@ -103,10 +95,8 @@ backup_obj_endpoint = "us-east-1.linodeobjects.com"
 # IMPORTANT: the seed must be Base58-encoded (not the raw seed text).
 # The raw seed text (e.g. "dcc-testnet-wallet-1") is the human-readable label
 # used in genesis config; the ACTUAL seed is the Base58 encoding of that text.
-
-# Base58-encoded seed for the node wallet (must match a genesis wallet address)
-node_wallet_seed = "CHANGE_ME_base58_encoded_seed"
-
-# Encryption password for the wallet file (generate with: openssl rand -base64 32)
-node_wallet_password = "CHANGE_ME_strong_wallet_password"
+#
+# There are no `node_wallet_seed` / `node_wallet_password` OpenTofu variables
+# — set these as MAIN_NODE_WALLET_SEED / MAIN_NODE_WALLET_PASSWORD in
+# secrets/<network>.env instead (delivered via SOPS SSH push, see note above).
 

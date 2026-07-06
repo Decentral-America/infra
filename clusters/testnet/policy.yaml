@@ -1,0 +1,16 @@
+# Flux Kustomization for clusters/testnet/policy/ (Calico host-level policy).
+# Kept separate from `apps` since it targets cluster-scoped Calico resources
+# (GlobalNetworkPolicy, KubeControllersConfiguration), not namespaced app
+# objects, and has no SOPS-encrypted files so needs no decryption block.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: policy
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/testnet/policy
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

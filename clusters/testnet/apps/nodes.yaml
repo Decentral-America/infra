@@ -12,6 +12,17 @@
 #   - linode-block-storage-retain StorageClass — survives node replacement
 #   - podManagementPolicy: Parallel for generators (independent startup)
 #   - persistentVolumeClaimRetentionPolicy: Retain on all axes
+#
+# Image tag: `:testnet-latest` is a floating tag, accepted here (not pinned to
+# a digest) because the risk is already bounded — only node-scala's reviewed
+# CI (publish-node-scala.yml) can push to this private GHCR path, and
+# imagePullPolicy: Always ties every pull to an explicit rolling restart, not
+# a background mutation. node-scala's other deploy path (deploy-container.yml,
+# VPS/compose) already pins by immutable git-SHA tag; adopting that here too
+# would need either a cross-repo digest-pinning commit workflow or a Flux
+# ImagePolicy (image-reflector/image-automation controllers are installed —
+# see flux-system/gotk-components.yaml) — worth doing before mainnet, not
+# built now since it needs a live cluster to validate the reconciliation.
 # ──────────────────────────────────────────────────────────────────────────────
 
 apiVersion: v1
@@ -358,9 +369,13 @@ spec:
       securityContext:
         fsGroup: 999
         # seccomp: RuntimeDefault filters ~300+ high-risk syscalls (ptrace, mount,
-        # kexec_load, etc.) with zero application impact. runAsNonRoot is left unset
-        # because node-scala writes chain data as root inside the container; flip to
-        # true once the image switches to a non-root uid.
+        # kexec_load, etc.) with zero application impact. The image (docker/Dockerfile)
+        # already sets `USER dcc` (uid/gid 999) and never does root work at runtime —
+        # these pods have always run as uid 999 in practice. runAsNonRoot/runAsUser
+        # below just make the kubelet enforce that existing behavior.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       affinity:
@@ -381,6 +396,10 @@ spec:
         - name: node
           image: ghcr.io/decentral-america/node-scala:testnet-latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           env:
             - name: DCC_NETWORK
               value: testnet
@@ -478,7 +497,11 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
-        # seccomp: RuntimeDefault — same as gen-0. runAsNonRoot left unset (root needed).
+        # seccomp: RuntimeDefault — same as gen-0. runAsNonRoot/runAsUser enforce the
+        # non-root uid 999 the image (docker/Dockerfile `USER dcc`) already runs as.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       affinity:
@@ -496,6 +519,10 @@ spec:
         - name: node
           image: ghcr.io/decentral-america/node-scala:testnet-latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           env:
             - name: DCC_NETWORK
               value: testnet
@@ -593,8 +620,11 @@ spec:
       terminationGracePeriodSeconds: 60
       securityContext:
         fsGroup: 999
-        # seccomp: RuntimeDefault — same as gen-0/gen-1. runAsNonRoot left unset;
-        # node-scala writes chain data as root inside the container.
+        # seccomp: RuntimeDefault — same as gen-0/gen-1. runAsNonRoot/runAsUser enforce
+        # the non-root uid 999 the image (docker/Dockerfile `USER dcc`) already runs as.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
@@ -603,6 +633,10 @@ spec:
         - name: node
           image: ghcr.io/decentral-america/node-scala:testnet-latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           env:
             - name: DCC_NETWORK
               value: testnet
@@ -676,7 +710,25 @@ spec:
 
 ---
 # ── NetworkPolicy: isolate dcc namespace ─────────────────────────────────────
-# Default deny-all, then allowlist only what's needed.
+# ⚠ These three NetworkPolicy objects are NO-OPS for dcc-gen-0, dcc-gen-1,
+# dcc-val-0, and metrics-exporter: all four run `hostNetwork: true`, and per
+# Kubernetes semantics, NetworkPolicy does not apply to host-networked pods —
+# they share the node's network namespace rather than getting a pod-level
+# veth/IP for Calico to filter. This was previously miscommented as "Calico
+# enforces"; it does not, for these specific pods.
+#
+# Real enforcement today is the Linode Cloud Firewall (terraform/lke.tf,
+# `inbound_policy = "DROP"` with explicit per-port allow rules) — that's a
+# genuine, working perimeter, just not the layer these objects imply. These
+# NetworkPolicy objects are kept as documentation of intent and because they
+# DO work correctly for any future non-hostNetwork pod added to this
+# namespace; they should not be read as protecting the current workloads.
+#
+# For real pod-level defense-in-depth on top of the Cloud Firewall, see
+# clusters/testnet/policy/host-endpoints.yaml — a Calico HostEndpoint +
+# StagedGlobalNetworkPolicy pair that mirrors these same rules at the host
+# level, where hostNetwork pods can actually be governed. It ships in
+# non-enforcing (staged/log) mode; see that file for the promotion procedure.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -689,7 +741,9 @@ spec:
     - Egress
 
 ---
-# Allow P2P inbound from anywhere (Calico enforces; Cloud Firewall is the first layer)
+# Allow P2P inbound from anywhere. NOTE: as above, this NetworkPolicy is a
+# no-op for the current hostNetwork pods — real host-level enforcement of
+# this same rule lives in clusters/testnet/policy/host-endpoints.yaml.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

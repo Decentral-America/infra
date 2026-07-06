@@ -1,0 +1,91 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Build & Publish: Caddy + caddy-ratelimit
+#
+# Builds docker/caddy-ratelimit/Dockerfile (stock Caddy 2.11.4 + the
+# caddy-ratelimit module, which the official image doesn't ship) and pushes it
+# to ghcr.io/decentral-america/caddy-ratelimit. Run manually whenever the
+# Dockerfile changes (base image bump, module SHA bump) — this image changes
+# rarely, so it isn't wired to a push trigger.
+#
+# After a new digest is published, update compose/caddy.yml's `image:` pin to
+# match, then restart the caddy service (it is bootstrapped once, not
+# redeployed via deploy-container.yml — see the note in compose/caddy.yml).
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Build Caddy Ratelimit Image
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - docker/caddy-ratelimit/Dockerfile
+      - .github/workflows/build-caddy-ratelimit.yml
+
+env:
+  IMAGE_NAME: ghcr.io/decentral-america/caddy-ratelimit
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-caddy-ratelimit
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build · Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Caddy (with caddy-ratelimit)
+            org.opencontainers.image.description=Stock Caddy 2.11.4 plus github.com/mholt/caddy-ratelimit, for node/matcher REST rate limiting
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: docker/caddy-ratelimit
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+
+      - name: Print digest for compose/caddy.yml
+        run: |
+          {
+            echo "### Update compose/caddy.yml with:"
+            echo '```'
+            echo "image: ${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -36,10 +36,10 @@ grafana_domain      = "grafana.testnet.decentralchain.io"
 acme_email          = "ops@decentralamerica.com"
 
 # ── Off-site backup: disabled for testnet ─────────────────────────────────────
-# Credentials (access key, secret key) are injected via SOPS SSH push.
-# Only bucket/endpoint are needed here — leave empty to disable backup entirely.
-backup_obj_bucket   = ""
-backup_obj_endpoint = ""
+# There is no `backup_obj_*` OpenTofu variable — off-site backup config (bucket,
+# endpoint, access key, secret key) is entirely out-of-band, delivered post-boot
+# via SOPS SSH push alongside the other application secrets (see header above).
+# Leave it unconfigured on the server to disable backup entirely.
 
 # ── LKE peer-node cluster (Frankfurt) ─────────────────────────────────────────
 lke_enabled     = true
