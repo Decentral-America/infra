@@ -61,6 +61,7 @@ jobs:
           - blockchain-postgres-sync
           - node-scala
           - matcher
+          - caddy-ratelimit
 
     steps:
       - name: Clean up ${{ matrix.package }} images
