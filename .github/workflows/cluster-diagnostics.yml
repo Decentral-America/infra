@@ -216,6 +216,24 @@ jobs:
           export PATH=$PATH:/usr/local/bin
           flux get kustomizations -A 2>/dev/null || kubectl get kustomizations -A
 
+      - name: Calico CRD inventory
+        # Diagnoses "no matches for kind X in version projectcalico.org/v3"
+        # style errors from clusters/testnet/policy/ by showing exactly which
+        # Calico CRDs are actually installed and what apiVersion/group they
+        # register, since LKE's managed Calico install may ship a curated
+        # CRD subset rather than the full upstream bundle.
+        run: |
+          echo "=== Installed *.projectcalico.org CRDs ==="
+          kubectl get crd -o custom-columns=NAME:.metadata.name,GROUP:.spec.group,VERSION:.spec.versions[0].name 2>/dev/null \
+            | grep -i calico || echo "(none found)"
+          echo
+          echo "=== GlobalNetworkPolicy CRD detail (known-working reference) ==="
+          kubectl get crd globalnetworkpolicies.crd.projectcalico.org -o jsonpath='{.spec.group}/{.spec.versions[0].name}{"\n"}' 2>/dev/null \
+            || echo "(globalnetworkpolicies.crd.projectcalico.org not found)"
+          echo
+          echo "=== StagedGlobalNetworkPolicy CRD (expected missing per the Flux error) ==="
+          kubectl get crd stagedglobalnetworkpolicies.crd.projectcalico.org 2>&1 || true
+
       - name: Build + upload JSON results artifact
         if: always()
         run: |
