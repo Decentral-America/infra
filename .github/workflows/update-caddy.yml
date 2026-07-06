@@ -408,4 +408,19 @@ jobs:
             echo "FAILED — /opt/dcc/compose/caddy.yml not found"
             ls /opt/dcc/compose/ 2>/dev/null || true
           fi
+
+          # compose up -d above only recreates the container when ITS OWN
+          # config changed (image digest, env, volume list) -- it has no
+          # visibility into the CONTENTS of a bind-mounted file, so editing
+          # only the Caddyfile (e.g. adding a new rate-limit matcher) was
+          # silently never picked up: the running Caddy process kept serving
+          # whatever config it last loaded at its own startup. Confirmed via
+          # a real repro: the container reported "up to date" after a
+          # Caddyfile-only change, and live traffic kept hitting the OLD
+          # rate-limit rules until this reload was added. Caddy supports a
+          # zero-downtime in-place reload for exactly this case, keyed off
+          # the same admin socket compose already mounts (caddy-admin
+          # volume -> /run/caddy/admin.sock).
+          echo "=== Reloading Caddy config (picks up Caddyfile-only changes) ==="
+          docker exec "caddy-\${NETWORK}" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
           REMOTE
