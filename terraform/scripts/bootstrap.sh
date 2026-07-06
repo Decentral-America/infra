@@ -502,7 +502,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '    }\n'
       # No rate_limit here: this Caddyfile is a temporary bootstrap placeholder,
       # overwritten within minutes by update-caddy.yml once provision.yml injects
-      # secrets (see the "Ready for SSH secrets push" marker below) — that's the
+      # secrets (see the "Ready for SSH secrets push" marker below) -- that's the
       # long-lived, real config, and it's where rate limiting is actually
       # implemented (verified working: docker/caddy-ratelimit/Dockerfile, built
       # by build-caddy-ratelimit.yml). Not worth duplicating the same multi-zone
@@ -521,7 +521,7 @@ if [[ -n "${SCANNER_DOMAIN:-}" ]] || [[ -n "${DATA_SERVICE_DOMAIN:-}" ]] || [[ -
       printf '        Access-Control-Allow-Origin "*"\n'
       printf '        -Server\n'
       printf '    }\n'
-      # No rate_limit here — see the NODE_DOMAIN block's comment above.
+      # No rate_limit here -- see the NODE_DOMAIN block's comment above.
       printf '    log\n'
       printf '}\n'
     fi
