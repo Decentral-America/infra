@@ -44,21 +44,26 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build required workspace packages (bypass Nx Cloud)
-        # `...` builds @decentralchain/transactions AND its full dependency
-        # chain (marshall, protobuf-schemas, ts-lib-crypto, types) in one
-        # topologically-ordered pass, instead of listing each package by
-        # hand -- which is exactly what went stale before: transfer.spec.ts
-        # imports @decentralchain/transactions, but only types/ts-lib-crypto/
-        # node-api were ever added here, so the smoke suite's transfer test
-        # was silently dropped (see the "restore transactions/transfer.spec.ts"
-        # commit) rather than the real gap -- a missing build step -- ever
-        # being fixed.
+        # --filter-prod builds @decentralchain/transactions AND its full
+        # RUNTIME dependency chain (bignumber, marshall, protobuf-schemas,
+        # ts-lib-crypto, types) in one topologically-ordered pass, instead
+        # of listing each package by hand -- which is exactly what went
+        # stale before: transfer.spec.ts imports @decentralchain/transactions,
+        # but only types/ts-lib-crypto/node-api were ever added here, so the
+        # smoke suite's transfer test was silently dropped rather than the
+        # real gap -- a missing build step -- ever being fixed.
+        #
+        # Plain --filter (not -prod) also pulls in devDependencies, which
+        # here includes @decentralchain/crypto -- a separate WASM package
+        # needing a Rust toolchain this runner doesn't have, for a package
+        # nothing here actually imports at runtime. Verified locally:
+        # --filter-prod's dependency list includes bignumber (a real
+        # transitive runtime need of node-api) but excludes crypto.
         env:
           NX_NO_CLOUD: 'true'
           NX_SKIP_NX_CACHE: 'true'
         run: |
-          pnpm --filter "@decentralchain/node-api..." build
-          pnpm --filter "@decentralchain/transactions..." build
+          pnpm --filter-prod "@decentralchain/transactions..." build
 
       - name: Run E2E smoke suite
         if: ${{ inputs.suite == 'smoke' || inputs.suite == '' }}
