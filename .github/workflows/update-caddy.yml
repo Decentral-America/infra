@@ -329,6 +329,21 @@ jobs:
             /tmp/Caddyfile \
             "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/caddy/Caddyfile"
 
+      # This workflow previously only synced the Caddyfile, never
+      # compose/caddy.yml itself -- so image: pin changes (e.g. the
+      # caddy-ratelimit rollout) silently never reached the server; the
+      # remote `docker compose pull` kept resolving against a stale on-disk
+      # compose file and re-pulling the old stock image. Sync it for real.
+      - name: Upload compose/caddy.yml to server
+        env:
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy_key \
+            compose/caddy.yml \
+            "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/compose/caddy.yml"
+
       - name: Set permissions and restart Caddy
         env:
           DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
