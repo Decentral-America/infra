@@ -19,5 +19,6 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}} startedAt={{.State.StartedAt}}"
-             docker logs node-scala-testnet 2>&1 | grep -aiE "BlockchainUpdates|resetting|IllegalState" | tail -10'
+             echo "=== first 60 lines of log (startup) ==="
+             docker logs node-scala-testnet 2>&1 | head -60'
           rm -f /tmp/id_rsa
