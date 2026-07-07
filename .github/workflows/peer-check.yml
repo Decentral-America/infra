@@ -7,29 +7,37 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     environment: testnet
     steps:
-      - name: Check peers and recent blocks
+      - name: Remove duplicate plugin jar, restart, verify
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'cd /opt/dcc/plugins/testnet
-             for f in *.jar; do
-               echo "--- $f ---"
-               python3 -c "
-import zipfile
-z = zipfile.ZipFile(\"$f\")
-names = [n for n in z.namelist() if n == \"application.conf\"]
-if names:
-    print(z.read(\"application.conf\").decode())
-else:
-    print(\"(no application.conf in this jar)\")
-"
-             done'
+            'set -e
+             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
+             echo "=== remove older duplicate jar pair ==="
+             sudo mkdir -p /opt/dcc/plugins/disabled
+             sudo mv /opt/dcc/plugins/testnet/dcc-ext.jar /opt/dcc/plugins/disabled/dcc-ext.jar.dup 2>&1 || true
+             sudo mv /opt/dcc/plugins/testnet/dcc-grpc.jar /opt/dcc/plugins/disabled/dcc-grpc.jar.dup 2>&1 || true
+             ls -la /opt/dcc/plugins/testnet/
+             echo "=== restart ==="
+             IMAGE=$(docker inspect node-scala-testnet --format "{{.Config.Image}}" 2>/dev/null)
+             docker rm -f node-scala-testnet 2>&1 | tail -1 || true
+             IMAGE_TAG="$IMAGE" NETWORK=testnet docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
+             sleep 5
+             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}}"
+             echo "=== extension log ==="
+             docker logs node-scala-testnet 2>&1 | grep -aiE "Enable extension|lock hold|Error while initializing" | head -10
+             echo "=== 6887 listening ==="
+             ss -tlnp 2>/dev/null | grep 6887 || echo "nothing on 6887"'
           rm -f /tmp/id_rsa
