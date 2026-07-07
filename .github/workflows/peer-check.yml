@@ -10,29 +10,14 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
-      - name: Check peers and recent blocks
+      - name: main's view of the same window gen-0 activity
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
-          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "${MAIN_API_KEY}" > /tmp/.main_key
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
-          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
-             echo "=== Connected peers ==="
-             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
-             echo "=== Height and finality ==="
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",[g[\"address\"][:8] for g in d.get(\"currentGenerators\",[])])"
-             echo "=== Last 20 block generators ==="
-             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             for h in $(seq $((HEIGHT-19)) $HEIGHT); do
-               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\",\"?\"), d.get(\"generator\",\"?\")[:12])" 2>/dev/null
-             done'
+            'docker logs node-scala-testnet --since 15m 2>&1 | grep -aiE "gen-0-testnet|586753" | tail -30'
           rm -f /tmp/id_rsa
