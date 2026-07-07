@@ -18,11 +18,12 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}} startedAt={{.State.StartedAt}}"
-             echo "=== startup log ==="
-             docker logs node-scala-testnet 2>&1 | grep -aiE "Enable extension|resetting|IllegalState|lock hold|Error while initializing" | head -20
-             echo "=== 6887 listening? ==="
-             ss -tlnp 2>/dev/null | grep 6887 || echo "nothing on 6887"
-             echo "=== matcher log since restart ==="
-             docker logs matcher-testnet --since 90s 2>&1 | grep -aiE "Connected|Connection refused|UTX|error" | tail -15'
+            'cd /opt/dcc/plugins/testnet
+             echo "=== sha256sums ==="
+             sha256sum *.jar
+             echo "=== application.conf inside each jar ==="
+             for f in *.jar; do
+               echo "--- $f ---"
+               unzip -p "$f" application.conf 2>&1 | head -5
+             done'
           rm -f /tmp/id_rsa
