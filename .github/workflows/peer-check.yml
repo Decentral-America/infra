@@ -24,19 +24,19 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: check gen-1 and val-0's own mining attempts
+      - name: gen-1/val-0 actual height vs main, and full recent log
         run: |
-          echo "=== gen-1 mining errors/attempts (last 60 min) ==="
-          kubectl logs dcc-gen-1-0 -n dcc --since=60m | grep -aiE "Error mining|not allowed to generate|generating balance|Started voting|New height" | tail -20
-          echo "=== val-0 mining errors/attempts (last 60 min) ==="
-          kubectl logs dcc-val-0-0 -n dcc --since=60m | grep -aiE "Error mining|not allowed to generate|generating balance|Started voting|New height" | tail -20
-          echo "=== gen-1 image + restart count ==="
-          kubectl get pod dcc-gen-1-0 -n dcc -o jsonpath='{.spec.containers[0].image}{"\n"}{.status.containerStatuses[0].restartCount}'
-      - name: check finality endpoint on gen-1 directly
-        run: |
-          kubectl port-forward -n dcc dcc-gen-1-0 17870:6870 >/dev/null 2>&1 &
-          PF=$!; sleep 3
-          echo "=== gen-1's own /blockchain/finality ==="
-          curl -s http://127.0.0.1:17870/blockchain/finality
+          echo "=== gen-1 height ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/blocks/height
           echo ""
-          kill $PF 2>/dev/null || true
+          echo "=== val-0 height ==="
+          kubectl exec -n dcc dcc-val-0-0 -- wget -qO- http://127.0.0.1:6869/blocks/height
+          echo ""
+          echo "=== gen-0 height ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- wget -qO- http://127.0.0.1:6869/blocks/height
+          echo ""
+          echo "=== gen-1 peers/connected (own view) ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/peers/connected
+          echo ""
+          echo "=== gen-1 last 40 log lines, completely unfiltered ==="
+          kubectl logs dcc-gen-1-0 -n dcc --tail=40
