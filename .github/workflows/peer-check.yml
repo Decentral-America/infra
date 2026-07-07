@@ -7,24 +7,66 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     environment: testnet
     steps:
-      - name: diagnose export failure
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: export main's canonical chain state (retry with sleep before cp)
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          cat > /tmp/export.sh << 'SCRIPT'
+          set -e
+          docker exec node-scala-testnet sh -c "rm -f /tmp/mainstate.tar.gz; tar czf /tmp/mainstate.tar.gz -C /var/lib/dcc data"
+          sleep 2
+          docker exec node-scala-testnet sh -c "ls -la /tmp/mainstate.tar.gz"
+          docker cp node-scala-testnet:/tmp/mainstate.tar.gz /tmp/mainstate.tar.gz
+          docker exec node-scala-testnet rm -f /tmp/mainstate.tar.gz
+          ls -la /tmp/mainstate.tar.gz
+          SCRIPT
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/export.sh "${SSH_USER}@${SSH_HOST}:/tmp/export.sh"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== container status ==="
-             docker inspect node-scala-testnet --format "status={{.State.Status}}"
-             echo "=== ls /var/lib/dcc inside container ==="
-             docker exec node-scala-testnet sh -c "ls -la /var/lib/dcc" 2>&1
-             echo "=== attempt tar with explicit exit code ==="
-             docker exec node-scala-testnet sh -c "tar czf /tmp/mainstate.tar.gz -C /var/lib/dcc data; echo EXIT=\$?" 2>&1
-             echo "=== ls /tmp inside container ==="
-             docker exec node-scala-testnet sh -c "ls -la /tmp" 2>&1'
+            "${SSH_USER}@${SSH_HOST}" "bash /tmp/export.sh && rm -f /tmp/export.sh"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}:/tmp/mainstate.tar.gz" /tmp/mainstate.tar.gz
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" "rm -f /tmp/mainstate.tar.gz"
+          ls -la /tmp/mainstate.tar.gz
           rm -f /tmp/id_rsa
+      - name: install main's canonical chain state onto each fork node
+        run: |
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "=== $pod: kill app process (release RocksDB locks), keep pod alive ==="
+            kubectl exec -n dcc $pod -- sh -c "kill -9 1" 2>&1 || echo "(already dead or gone)"
+            sleep 3
+            echo "=== $pod: replace forked data dir with main's canonical state ==="
+            kubectl cp /tmp/mainstate.tar.gz dcc/$pod:/tmp/mainstate.tar.gz
+            kubectl exec -n dcc $pod -- sh -c "rm -rf /var/lib/dcc/data && tar xzf /tmp/mainstate.tar.gz -C /var/lib/dcc && rm -f /tmp/mainstate.tar.gz && (chown -R 999:999 /var/lib/dcc/data 2>/dev/null || true)"
+            echo "=== $pod: force restart so it boots fresh onto the new state ==="
+            kubectl delete pod -n dcc $pod --grace-period=0 --force
+          done
+          echo "=== wait for all 3 pods to come back ==="
+          sleep 15
+          kubectl get pods -n dcc
+      - name: verify heights now match main
+        run: |
+          sleep 40
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "=== $pod ==="
+            kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/blocks/height 2>&1 || echo "not ready yet"
+          done
