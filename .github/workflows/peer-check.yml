@@ -10,19 +10,37 @@ jobs:
     timeout-minutes: 10
     environment: testnet
     steps:
-      - name: raw TCP state on main toward gen-0/1/val-0
+      - name: tight TCP state polling on the server itself
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          for i in 1 2 3 4 5 6; do
-            ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-              "${SSH_USER}@${SSH_HOST}" \
-              'echo "=== $(date -u +%H:%M:%S) ==="
-               ss -tn state established "( dport = :6863 or dport = :6864 or dport = :6865 or sport = :6863 or sport = :6864 or sport = :6865 )" 2>/dev/null
-               ss -tn "( dst 172.105.64.89 )" 2>/dev/null'
-            sleep 60
-          done
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'nohup bash -c "
+              for i in \$(seq 1 150); do
+                echo \"=== \$(date -u +%H:%M:%S) ===\"
+                ss -tn \"( dst 172.105.64.89 )\" 2>/dev/null
+                sleep 2
+              done
+            " > /tmp/ss-poll.log 2>&1 &
+             echo "started, pid=\$!"'
+          rm -f /tmp/id_rsa
+      - name: wait 5.5 minutes for the poll to run
+        run: sleep 330
+      - name: fetch results
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'grep -B1 -A1 "ESTAB\|CLOSE\|172.105.64.89:686" /tmp/ss-poll.log | grep -v "^--$" | head -150
+             echo "=== total samples with any output ==="
+             grep -c "172.105.64.89" /tmp/ss-poll.log
+             rm -f /tmp/ss-poll.log'
           rm -f /tmp/id_rsa
