@@ -90,13 +90,15 @@ jobs:
           echo ""
           if echo "$SIGNED" | grep -q '"id"'; then
             # gen-0's connection to the main node has been observed to be
-            # genuinely intermittent -- it briefly appears in
-            # peers/connected roughly every 2 minutes and then silently
-            # drops with no logged reason. A single broadcast attempt has
-            # a good chance of landing in a disconnected gap, so retry
-            # across that window instead of accepting the first failure.
-            for attempt in 1 2 3 4 5 6; do
-              echo "=== Broadcasting (attempt ${attempt}/6) ==="
+            # genuinely intermittent (probabilistic, not on a fixed
+            # schedule) -- it briefly appears in peers/connected and then
+            # silently drops with no logged reason. A 6-attempt/2-minute
+            # retry window sometimes still misses every connected gap in a
+            # single run, so widen it: 15 attempts over ~5 minutes gives
+            # meaningfully more chances to land inside a connected window
+            # without materially lengthening the overall workflow.
+            for attempt in $(seq 1 15); do
+              echo "=== Broadcasting (attempt ${attempt}/15) ==="
               RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
                 -H "Content-Type: application/json" \
                 -d "$SIGNED")
@@ -105,7 +107,7 @@ jobs:
               if ! echo "$RESULT" | grep -q "not enough connections"; then
                 break
               fi
-              [ "$attempt" -lt 6 ] && sleep 20
+              [ "$attempt" -lt 15 ] && sleep 20
             done
           else
             echo "Sign failed or already committed"
