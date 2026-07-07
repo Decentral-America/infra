@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 15
     environment: testnet
     steps:
-      - name: set debug level
+      - name: set trace level
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -21,22 +21,29 @@ jobs:
             "${SSH_USER}@${SSH_HOST}" \
             'IMAGE=$(docker inspect node-scala-testnet --format "{{.Config.Image}}")
              docker rm -f node-scala-testnet 2>&1 | tail -1 || true
-             IMAGE_TAG="$IMAGE" NETWORK=testnet DCC_LOG_LEVEL=DEBUG docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
+             IMAGE_TAG="$IMAGE" NETWORK=testnet DCC_LOG_LEVEL=TRACE docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
              docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}}"'
           rm -f /tmp/id_rsa
-      - name: sleep 10 minutes (separate step so no single SSH session needs to survive it)
-        run: sleep 600
-      - name: dump close activity and restore INFO level
+      - name: sleep 8 minutes
+        run: sleep 480
+      - name: dump close activity around a known handshake, restore INFO
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "=== channel-close activity ==="
+          echo "=== gen-0/gen-1/val-0 handshake + close context (20 lines around each) ==="
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=20 \
             "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet --since 10m 2>&1 | grep -aiE "channel was closed|peer.*suspend|Already connected|Replacing dead|Channel closed|havent sent|Malformed|requirement failed|closing it|handleOutgoing|nio-worker" | grep -aviE "peers/suspended" | tail -100'
+            'docker logs node-scala-testnet --since 8m 2>&1 > /tmp/nodelog.txt
+             wc -l /tmp/nodelog.txt
+             grep -n "dcc-gen-0-testnet\|dcc-gen-1-testnet\|dcc-val-0-testnet" /tmp/nodelog.txt | head -20'
+          echo "=== was closed / exceptionCaught / IOException around those channel ids ==="
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=20 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'grep -aiE "was closed|exceptionCaught|IOException|Connection reset|EOF|readTimeout|idle" /tmp/nodelog.txt | tail -60
+             rm -f /tmp/nodelog.txt'
           echo "=== restore INFO ==="
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=20 \
             "${SSH_USER}@${SSH_HOST}" \
