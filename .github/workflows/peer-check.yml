@@ -10,22 +10,32 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
-      - name: read-only status check, no restarts
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
         env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
-          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "${MAIN_API_KEY}" > /tmp/.main_key
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
-          rm -f /tmp/.main_key
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
-             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"])"'
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: gen-0's OWN close-reason logs (never checked before)
+        run: |
+          echo "=== gen-0 restart count (sanity) ==="
+          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.status.containerStatuses[0].restartCount}'
+          echo ""
+          echo "=== gen-0 pod log: close/suspend/idle/error activity in last 30 min ==="
+          kubectl logs dcc-gen-0-0 -n dcc --since=30m | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|havent sent|haven't sent|closing it|IOException|Connection reset|exceptionCaught|handleOutgoing|Connecting to" | tail -100
+          echo "=== gen-0's own suspension-residence-time / connection settings from its logback ==="
+          kubectl logs dcc-gen-0-0 -n dcc --since=30m | grep -aiE "Accepted handshake|Connecting to" | tail -20
+      - name: gen-1 and val-0 same check
+        run: |
+          echo "=== gen-1 close-reason activity ==="
+          kubectl logs dcc-gen-1-0 -n dcc --since=30m | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|havent sent|haven't sent|closing it|IOException|Connection reset|exceptionCaught" | tail -50
+          echo "=== val-0 close-reason activity ==="
+          kubectl logs dcc-val-0-0 -n dcc --since=30m | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|havent sent|haven't sent|closing it|IOException|Connection reset|exceptionCaught" | tail -50
