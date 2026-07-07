@@ -18,10 +18,13 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== live config on disk ==="
-             grep -n "extensions" /opt/dcc/config/node-testnet/dcc.conf || echo "(no extensions line)"
-             echo "=== config inside the running container ==="
-             docker exec node-scala-testnet cat /etc/dcc/dcc.conf | grep -n "extensions" || echo "(no extensions line in container)"
-             echo "=== full recent log tail ==="
-             docker logs node-scala-testnet --tail 80 2>&1'
+            'echo "=== JAVA_OPTS / extensions in secrets env ==="
+             sudo grep -o "\-Ddcc\.extensions[^ ]*" /opt/dcc/secrets/testnet.env || echo "(none found)"
+             echo "=== full JAVA_OPTS line (redacted secrets) ==="
+             sudo grep "JAVA_OPTS" /opt/dcc/secrets/testnet.env | sed -E "s/(SEED|PASSWORD|KEY)=[^ ]*/\1=[REDACTED]/gI"
+             echo "=== backup file for comparison ==="
+             sudo diff /opt/dcc/secrets/testnet.env.bak-dexext /opt/dcc/secrets/testnet.env 2>&1 | sed -E "s/(SEED|PASSWORD|KEY)=[^ ]*/\1=[REDACTED]/gI" || echo "(no backup or no diff)"
+             echo "=== container image local.conf ==="
+             docker exec node-scala-testnet find / -maxdepth 3 -iname "*local.conf*" 2>/dev/null
+             docker exec node-scala-testnet cat /usr/share/dcc/conf/local.conf 2>/dev/null || echo "(not at that path)"'
           rm -f /tmp/id_rsa
