@@ -1,22 +1,44 @@
-name: Wipe testnet chain data
+name: Resync testnet main node chain data from a live peer
+
+# Previously this destroyed the main node's chain volume outright and let it
+# resync via a full P2P replay from genesis. That path is permanently broken
+# for this network: node-config/testnet/dcc.conf's pre-activated-features
+# list was extended after genesis (commit 00658a1, 2026-06-20) to retroactively
+# activate features that weren't actually active when blocks around height
+# ~1800 were originally produced. A fresh node replaying from genesis under
+# today's config computes a different state hash than what's on-chain and
+# gets stuck forever with "InvalidStateHash" errors -- confirmed live during
+# the 2026-07-07 incident (see ../../INCIDENT-GEN0-PEERS.md). Reverting the
+# config isn't an option either, since the live chain has run with those
+# features active for tens of thousands of blocks already.
+#
+# The only way to reset main's chain data that actually works is to copy an
+# already-valid state directory from a peer that's been running continuously
+# (gen-0/gen-1/val-0 on LKE, never wiped) instead of replaying anything.
+# This workflow does exactly that.
 
 on:
   workflow_dispatch:
     inputs:
       network:
         # Only testnet has DEPLOY_HOST/USER/SSH_KEY secrets provisioned today
-        # (verified: no STAGENET_DEPLOY_* org secrets exist). The wipe step below
-        # is hardcoded to TESTNET_DEPLOY_* and node-scala-testnet/node-state-testnet —
-        # do not add stagenet back here until both the secrets exist AND the wipe
-        # step is parameterized by ${{ inputs.network }}, or this will silently
-        # wipe testnet while claiming to target stagenet.
-        description: 'Network to wipe'
+        # (verified: no STAGENET_DEPLOY_* org secrets exist). Steps below are
+        # hardcoded to TESTNET_DEPLOY_*/node-scala-testnet/node-state-testnet —
+        # do not add stagenet back here until both the secrets exist AND the
+        # steps are parameterized by ${{ inputs.network }}.
+        description: 'Network to resync'
         required: true
         default: 'testnet'
         type: choice
         options: [testnet]
+      source_pod:
+        description: 'Pod to copy chain state from (must be healthy and in sync)'
+        required: true
+        default: 'dcc-gen-1-0'
+        type: choice
+        options: [dcc-gen-1-0, dcc-gen-0-0, dcc-val-0-0]
       confirm:
-        description: 'Type WIPE-CONFIRMED to proceed (irreversible — destroys all chain data)'
+        description: 'Type RESYNC-CONFIRMED to proceed (stops the node briefly; new blocks since the source pod''s last height are re-fetched normally via P2P after restart)'
         required: true
         type: string
 
@@ -24,49 +46,78 @@ permissions:
   contents: read
 
 jobs:
-  wipe:
-    name: Wipe chain data on ${{ inputs.network }}
+  resync:
+    name: Resync main node from ${{ inputs.source_pod }} on ${{ inputs.network }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: ${{ inputs.network }}
     steps:
       - name: Verify confirmation
         run: |
-          if [ "${{ inputs.confirm }}" != "WIPE-CONFIRMED" ]; then
-            echo "ERROR: confirm input must be exactly 'WIPE-CONFIRMED'. Got: '${{ inputs.confirm }}'"
-            echo "This workflow permanently destroys all chain data and cannot be undone."
+          if [ "${{ inputs.confirm }}" != "RESYNC-CONFIRMED" ]; then
+            echo "ERROR: confirm input must be exactly 'RESYNC-CONFIRMED'. Got: '${{ inputs.confirm }}'"
             exit 1
           fi
 
-      - name: Setup SSH key
-        run: |
-          install -dm 700 ~/.ssh
-          echo "${{ secrets.TESTNET_DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.TESTNET_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
 
-      - name: Stop node, wipe chain data, remove volume
+      - name: Get LKE kubeconfig
         env:
-          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-          NETWORK: ${{ inputs.network }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << 'REMOTE'
           set -euo pipefail
-          echo "Stopping node-scala-testnet..."
-          docker stop node-scala-testnet 2>/dev/null || true
-          docker rm node-scala-testnet 2>/dev/null || true
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("'"${{ inputs.network }}"'")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
-          echo "Wiping chain volume..."
-          # Try both volume name variants
-          docker volume rm node-state-testnet 2>/dev/null || true
-          docker volume rm dcc-node-state-testnet 2>/dev/null || true
+      - name: Export chain state from source pod (data dir only, no wallet/peers)
+        run: |
+          set -euo pipefail
+          kubectl exec -n dcc ${{ inputs.source_pod }} -- tar czf /tmp/dcc-state.tar.gz -C /var/lib/dcc data
+          kubectl cp dcc/${{ inputs.source_pod }}:/tmp/dcc-state.tar.gz /tmp/dcc-state.tar.gz
+          kubectl exec -n dcc ${{ inputs.source_pod }} -- rm -f /tmp/dcc-state.tar.gz
+          ls -la /tmp/dcc-state.tar.gz
 
-          echo "Recreating empty volume..."
-          docker volume create node-state-testnet
-          echo "Volume created:"
-          docker volume ls | grep -E "state|dcc" || echo "(no matching volumes — unexpected)"
-
-          echo "Done — chain data wiped."
-          REMOTE
+      - name: Ship state to main node and install it
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/dcc-state.tar.gz "${SSH_USER}@${SSH_HOST}:/tmp/dcc-state.tar.gz"
+          cat > /tmp/install-state.sh << 'SCRIPT'
+          set -e
+          echo "=== capture current image before stopping ==="
+          IMAGE=$(docker inspect node-scala-testnet --format '{{.Config.Image}}' 2>/dev/null || true)
+          if [ -z "$IMAGE" ]; then
+            IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep node-scala-testnet | head -1)
+          fi
+          echo "Using image: $IMAGE"
+          echo "=== stop node ==="
+          docker rm -f node-scala-testnet 2>&1 | tail -1 || true
+          echo "=== install source pod's data dir into the volume ==="
+          # UID/GID 999 matches the "dcc" user node-scala's Docker image runs
+          # as (docker/Dockerfile: groupadd -r dcc --gid=999; useradd ... --uid=999).
+          docker run --rm -v node-state-testnet:/v -v /tmp:/src alpine sh -c "
+            rm -rf /v/data
+            tar xzf /src/dcc-state.tar.gz -C /v
+            chown -R 999:999 /v/data
+            ls -la /v
+          "
+          rm -f /tmp/dcc-state.tar.gz
+          echo "=== restart ==="
+          IMAGE_TAG="$IMAGE" NETWORK=testnet docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 180 node-scala
+          sleep 5
+          docker ps --format "{{.Names}} {{.Status}}" | grep node-scala
+          curl -s http://localhost:6869/blocks/height; echo
+          SCRIPT
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/install-state.sh "${SSH_USER}@${SSH_HOST}:/tmp/install-state.sh"
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" "bash /tmp/install-state.sh && rm -f /tmp/install-state.sh"
+          rm -f /tmp/id_rsa
