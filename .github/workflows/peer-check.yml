@@ -7,44 +7,25 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment: testnet
     steps:
-      - name: simplest possible TCP polling
+      - name: read-only status check, no restarts
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== sanity: what does ss -tn show right now, unfiltered? ==="
-             ss -tn | head -20
-             echo "=== nohup tight poll ==="
-             nohup bash -c "
-              for i in \$(seq 1 150); do
-                echo \"=== \$(date -u +%H:%M:%S) ===\" >> /tmp/ss-poll.log
-                ss -tn >> /tmp/ss-poll.log 2>&1
-                sleep 2
-              done
-             " > /dev/null 2>&1 &
-             disown
-             echo "started"'
-          rm -f /tmp/id_rsa
-      - name: wait 5.5 minutes
-        run: sleep 330
-      - name: fetch and grep results
-        env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-        run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'wc -l /tmp/ss-poll.log
-             echo "=== lines mentioning 172.105.64 ==="
-             grep -B2 "172.105.64" /tmp/ss-poll.log | head -100
-             rm -f /tmp/ss-poll.log'
+            'set +e
+             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
+             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
+             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"])"'
           rm -f /tmp/id_rsa
