@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,38 +24,15 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: launch tcpdump pod
+      - name: check which pod(s) are on the SAME node as gen-0
         run: |
-          cat <<'POD' | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: tcpdump-debug3
-            namespace: dcc
-          spec:
-            hostNetwork: true
-            nodeName: lke615553-902887-0b399b6d0000
-            restartPolicy: Never
-            containers:
-              - name: tcpdump
-                image: nicolaka/netshoot:latest
-                command: ["sh", "-c", "tcpdump -i any -w /tmp/capture.pcap 'port 6868' & echo $! > /tmp/tcpdump.pid; sleep 700"]
-                securityContext:
-                  privileged: true
-          POD
-          kubectl wait --for=condition=Ready pod/tcpdump-debug3 -n dcc --timeout=60s
-      - name: wait 10 minutes
-        run: sleep 600
-      - name: stop tcpdump, get FULL detail (with -A for ascii payload) around any duplicate-SYN burst, cleanup
+          echo "=== node assignment for all 3 gen pods ==="
+          kubectl get pods -n dcc -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName
+      - name: correlate each pod's own handshake-to-main timestamps around 18:28:43-44
         run: |
-          kubectl exec -n dcc tcpdump-debug3 -- sh -c "kill \$(cat /tmp/tcpdump.pid) 2>/dev/null; sleep 2"
-          kubectl cp dcc/tcpdump-debug3:/tmp/capture.pcap /tmp/capture.pcap
-          echo "=== find duplicate-SYN clusters (two SYNs within 5s of each other) ==="
-          kubectl exec -n dcc tcpdump-debug3 -- tcpdump -r /tmp/capture.pcap -tttt -n 'tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0' 2>&1 | tail -30
-          echo "=== full packet lengths + flags, chronological, whole capture ==="
-          kubectl exec -n dcc tcpdump-debug3 -- tcpdump -r /tmp/capture.pcap -tttt -n 2>&1 | awk '{print}' > /tmp/full.txt
-          wc -l /tmp/full.txt
-          echo "=== packets with actual payload length in the first 90s after each new-SYN cluster (to see if handshake DATA flows on duplicates) ==="
-          grep -E "length [1-9]" /tmp/full.txt | head -100
-          echo "=== cleanup ==="
-          kubectl delete pod tcpdump-debug3 -n dcc --grace-period=0 --force 2>&1 | tail -1
+          echo "=== gen-0's handshakes to main (DCC testnet node), full 15 min ==="
+          kubectl logs dcc-gen-0-0 -n dcc --since=15m | grep -a "DCC testnet node" | python3 -c "import sys,json; [print(json.loads(l)['@timestamp']) for l in sys.stdin]"
+          echo "=== gen-1's handshakes to main ==="
+          kubectl logs dcc-gen-1-0 -n dcc --since=15m | grep -a "DCC testnet node" | python3 -c "import sys,json; [print(json.loads(l)['@timestamp']) for l in sys.stdin]"
+          echo "=== val-0's handshakes to main ==="
+          kubectl logs dcc-val-0-0 -n dcc --since=15m | grep -a "DCC testnet node" | python3 -c "import sys,json; [print(json.loads(l)['@timestamp']) for l in sys.stdin]"
