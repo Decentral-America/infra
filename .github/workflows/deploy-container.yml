@@ -200,9 +200,20 @@ jobs:
           DEPLOY_USER: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
         run: |
           set -euo pipefail
+          # /opt/dcc/config/node-<network>/dcc.conf is root-owned on the server
+          # (deploy-node-config.yml sets chown root:root), so a direct scp to it
+          # fails with "Permission denied". Stage in /tmp and sudo cp instead,
+          # same as deploy-node-config.yml does.
           scp -i ~/.ssh/deploy_key \
             "node-config/${{ inputs.network }}/dcc.conf" \
-            "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/config/node-${{ inputs.network }}/"
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/dcc.conf.new"
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "sudo cp /tmp/dcc.conf.new /opt/dcc/config/node-${{ inputs.network }}/dcc.conf \
+             && sudo chown root:root /opt/dcc/config/node-${{ inputs.network }}/dcc.conf \
+             && rm -f /tmp/dcc.conf.new"
 
       - name: Pull image, deploy, and auto-rollback on failure
         env:
