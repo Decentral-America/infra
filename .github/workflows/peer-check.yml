@@ -7,62 +7,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     environment: testnet
     steps:
-      - name: install network-package trace override and restart
+      - name: raw TCP state on main toward gen-0/1/val-0
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          cat > /tmp/logback.xml << 'LOGBACK'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <configuration>
-            <logger name="com.decentralchain.network" level="TRACE"/>
-          </configuration>
-          LOGBACK
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/logback.xml "${SSH_USER}@${SSH_HOST}:/tmp/logback.xml"
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=20 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'sudo cp /tmp/logback.xml /opt/dcc/config/node-testnet/logback.xml
-             rm -f /tmp/logback.xml
-             IMAGE=$(docker inspect node-scala-testnet --format "{{.Config.Image}}")
-             docker rm -f node-scala-testnet 2>&1 | tail -1 || true
-             docker run -d --name node-scala-testnet --network host --restart unless-stopped \
-               -v node-state-testnet:/var/lib/dcc \
-               -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
-               -v /opt/dcc/config/node-testnet/logback.xml:/etc/dcc/logback.xml:ro \
-               -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
-               --env-file /opt/dcc/secrets/testnet.env \
-               -e DCC_NETWORK=testnet -e DCC_HEAP_SIZE=2g -e DCC_REST_API_BIND=0.0.0.0 \
-               "$IMAGE"
-             sleep 8
-             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}}"'
-          rm -f /tmp/id_rsa
-      - name: sleep 8 minutes
-        run: sleep 480
-      - name: dump close activity, then restore normal compose deploy
-        env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-        run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "=== log volume + gen-0/1/val-0 handshake and close context ==="
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=20 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet --since 8m 2>&1 > /tmp/nodelog.txt
-             wc -l /tmp/nodelog.txt
-             grep -n "dcc-gen-0-testnet\|dcc-gen-1-testnet\|dcc-val-0-testnet\|was closed\|exceptionCaught\|IOException\|Connection reset\|readTimeout" /tmp/nodelog.txt | tail -80
-             rm -f /tmp/nodelog.txt'
-          echo "=== restore normal compose deploy (drops the logback override) ==="
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=20 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'IMAGE=$(docker inspect node-scala-testnet --format "{{.Config.Image}}")
-             docker rm -f node-scala-testnet 2>&1 | tail -1 || true
-             sudo rm -f /opt/dcc/config/node-testnet/logback.xml
-             IMAGE_TAG="$IMAGE" NETWORK=testnet docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
-             docker inspect node-scala-testnet --format "restored: restarts={{.RestartCount}} status={{.State.Status}}"'
+          for i in 1 2 3 4 5 6; do
+            ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+              "${SSH_USER}@${SSH_HOST}" \
+              'echo "=== $(date -u +%H:%M:%S) ==="
+               ss -tn state established "( dport = :6863 or dport = :6864 or dport = :6865 or sport = :6863 or sport = :6864 or sport = :6865 )" 2>/dev/null
+               ss -tn "( dst 172.105.64.89 )" 2>/dev/null'
+            sleep 60
+          done
           rm -f /tmp/id_rsa
