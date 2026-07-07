@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,11 +24,37 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: check what tools are actually available (gen-0 container + node)
+      - name: launch privileged hostNetwork tcpdump pod on gen-0's node
         run: |
-          echo "=== tcpdump inside gen-0 container? ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- which tcpdump 2>&1 || echo "not present"
-          echo "=== can we run a privileged hostNetwork debug pod on the same node? ==="
-          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.spec.nodeName}'
-          echo ""
-          kubectl auth can-i create pods -n dcc
+          cat <<'POD' | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: tcpdump-debug
+            namespace: dcc
+          spec:
+            hostNetwork: true
+            nodeName: lke615553-902887-0b399b6d0000
+            restartPolicy: Never
+            containers:
+              - name: tcpdump
+                image: nicolaka/netshoot:latest
+                command: ["sh", "-c", "tcpdump -i any -w /tmp/capture.pcap 'port 6863 or port 6868' & echo $! > /tmp/tcpdump.pid; sleep 500"]
+                securityContext:
+                  privileged: true
+          POD
+          echo "=== wait for pod to be running ==="
+          kubectl wait --for=condition=Ready pod/tcpdump-debug -n dcc --timeout=60s
+      - name: wait for a full reconnect cycle to be captured (~6.5 min)
+        run: sleep 390
+      - name: stop tcpdump, pull pcap, summarize, clean up
+        run: |
+          echo "=== stop tcpdump cleanly ==="
+          kubectl exec -n dcc tcpdump-debug -- sh -c "kill \$(cat /tmp/tcpdump.pid) 2>/dev/null; sleep 2"
+          echo "=== pull pcap ==="
+          kubectl cp dcc/tcpdump-debug:/tmp/capture.pcap /tmp/capture.pcap
+          ls -la /tmp/capture.pcap
+          echo "=== summarize: all packets between main (66.228.55.154) and gen-0's own IP on port 6863/6868 ==="
+          kubectl exec -n dcc tcpdump-debug -- tcpdump -r /tmp/capture.pcap -tttt -n 'host 66.228.55.154' 2>&1 | head -200
+          echo "=== cleanup ==="
+          kubectl delete pod tcpdump-debug -n dcc --grace-period=0 --force 2>&1 | tail -1
