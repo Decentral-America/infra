@@ -7,31 +7,33 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     environment: testnet
     steps:
-      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
-      - name: Get LKE kubeconfig
+      - name: Verification window - peers, generator diversity, suspend/close pattern
         env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
-          set -euo pipefail
-          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters" | \
-            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
-          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
-          echo "$RAW" | base64 -d > /tmp/kubeconfig
-          chmod 600 /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: confirm new image and restart counts
-        run: |
-          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.spec.containers[0].image}'
-          echo ""
-          kubectl get pods -n dcc -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,READY:.status.containerStatuses[0].ready
-      - name: wait 6 minutes for a natural reconnect cycle
-        run: sleep 360
-      - name: watch for the new close/suspend/reset log lines on gen-0
-        run: |
-          echo "=== gen-0's log: close/suspend/reset activity (real info-level now) ==="
-          kubectl logs dcc-gen-0-0 -n dcc --since=7m | grep -aiE "Channel closed|Suspending|Connection reset|Exception caught|Connection established|Accepted handshake" | tail -60
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
+             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
+             for i in $(seq 1 12); do
+               echo "--- check $i at $(date -u +%H:%M:%S) ---"
+               curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"peers:\", [p[\"peerName\"] for p in d.get(\"peers\",[])])"
+               HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])")
+               GENS=$(for h in $(seq $((HEIGHT-4)) $HEIGHT); do curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"generator\",\"?\")[:12])" 2>/dev/null; done | sort -u | tr "\n" ",")
+               echo "height=$HEIGHT distinct_generators_last5=$GENS"
+               sleep 80
+             done
+             echo "=== suspend/close pattern in the last 20 min ==="
+             docker logs node-scala-testnet --since 20m 2>&1 | grep -aiE "Suspending|Channel closed \(expected\)" | wc -l'
+          rm -f /tmp/id_rsa
