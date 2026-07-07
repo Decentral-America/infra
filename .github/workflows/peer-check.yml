@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,12 +24,22 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: check ConfigMap current state and Flux status
+      - name: force flux reconcile
         run: |
-          echo "=== ConfigMap keys right now ==="
-          kubectl get configmap gen-0-config -n dcc -o jsonpath='{.data}' | python3 -m json.tool 2>/dev/null || kubectl get configmap gen-0-config -n dcc -o yaml | grep -A2 "^data:"
-          echo "=== Flux kustomization last-applied time and interval ==="
-          kubectl get kustomization apps -n flux-system -o jsonpath='{.spec.interval} last-applied={.status.lastAppliedRevision}' 2>/dev/null || echo "(flux CRD query failed, checking events)"
-          echo ""
-          echo "=== recent events on the ConfigMap ==="
-          kubectl get events -n dcc --field-selector involvedObject.name=gen-0-config --sort-by='.lastTimestamp' 2>/dev/null | tail -10
+          curl -sL "https://github.com/fluxcd/flux2/releases/download/v2.9.0/flux_2.9.0_linux_amd64.tar.gz" -o /tmp/flux.tar.gz
+          tar -xzf /tmp/flux.tar.gz -C /tmp flux
+          sudo install -m 755 /tmp/flux /usr/local/bin/flux
+          flux reconcile source git flux-system --timeout=2m
+          flux reconcile kustomization apps --timeout=3m
+          echo "=== confirm logback.xml appeared ==="
+          for i in $(seq 1 10); do
+            if kubectl exec -n dcc dcc-gen-0-0 -- cat /etc/dcc/logback.xml 2>/dev/null; then break; fi
+            sleep 6
+          done
+          echo "=== restart count sanity ==="
+          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.status.containerStatuses[0].restartCount}'
+      - name: settle for logback scan, then wait 6 min for a full cycle
+        run: sleep 400
+      - name: dump gen-0's trace activity toward main
+        run: |
+          kubectl logs dcc-gen-0-0 -n dcc --since=8m | grep -aiE "66.228.55.154|Suspending|was closed|Channel closed|exceptionCaught|IOException|Connection reset|handleOutgoing|Connecting to|haven't sent|havent sent" | tail -150
