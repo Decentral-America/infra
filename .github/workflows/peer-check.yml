@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,18 +24,30 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: gen-0's OWN close-reason logs (never checked before)
+      - name: find dcc.config.directory and check writability in gen-0's live pod
         run: |
-          echo "=== gen-0 restart count (sanity) ==="
+          echo "=== gen-0 process command line (find -Ddcc.config.directory) ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c "cat /proc/1/cmdline | tr '\0' '\n' | grep -i 'dcc.config.directory\|dcc.directory'"
+          echo "=== is /etc/dcc writable? ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- sh -c "touch /etc/dcc/test-write 2>&1 && echo WRITABLE && rm -f /etc/dcc/test-write || echo NOT-WRITABLE"
+      - name: inject trace-level logback override into the live pod (no restart)
+        run: |
+          cat > /tmp/logback.xml << 'LOGBACK'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <configuration>
+            <logger name="com.decentralchain.network" level="TRACE"/>
+          </configuration>
+          LOGBACK
+          kubectl cp /tmp/logback.xml dcc/dcc-gen-0-0:/etc/dcc/logback.xml
+          echo "=== injected, logback scan=true should pick it up within 30s ==="
+          sleep 35
+          echo "=== confirm no crash from the injection ==="
           kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.status.containerStatuses[0].restartCount}'
-          echo ""
-          echo "=== gen-0 pod log: close/suspend/idle/error activity in last 30 min ==="
-          kubectl logs dcc-gen-0-0 -n dcc --since=30m | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|havent sent|haven't sent|closing it|IOException|Connection reset|exceptionCaught|handleOutgoing|Connecting to" | tail -100
-          echo "=== gen-0's own suspension-residence-time / connection settings from its logback ==="
-          kubectl logs dcc-gen-0-0 -n dcc --since=30m | grep -aiE "Accepted handshake|Connecting to" | tail -20
-      - name: gen-1 and val-0 same check
+      - name: wait 6 minutes to catch a full cycle
+        run: sleep 360
+      - name: dump gen-0's trace-level activity toward main, then remove override
         run: |
-          echo "=== gen-1 close-reason activity ==="
-          kubectl logs dcc-gen-1-0 -n dcc --since=30m | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|havent sent|haven't sent|closing it|IOException|Connection reset|exceptionCaught" | tail -50
-          echo "=== val-0 close-reason activity ==="
-          kubectl logs dcc-val-0-0 -n dcc --since=30m | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|havent sent|haven't sent|closing it|IOException|Connection reset|exceptionCaught" | tail -50
+          echo "=== gen-0 trace-level close/suspend activity toward main (66.228.55.154) ==="
+          kubectl logs dcc-gen-0-0 -n dcc --since=7m | grep -aiE "66.228.55.154|Suspending|was closed|Channel closed|exceptionCaught|IOException|Connection reset|handleOutgoing|Connecting to|haven't sent|havent sent" | tail -150
+          echo "=== remove override ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- rm -f /etc/dcc/logback.xml
