@@ -18,7 +18,10 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}} startedAt={{.State.StartedAt}}"
-             echo "=== first 60 lines of log (startup) ==="
-             docker logs node-scala-testnet 2>&1 | head -60'
+            'echo "=== live config on disk ==="
+             grep -n "extensions" /opt/dcc/config/node-testnet/dcc.conf || echo "(no extensions line)"
+             echo "=== config inside the running container ==="
+             docker exec node-scala-testnet cat /etc/dcc/dcc.conf | grep -n "extensions" || echo "(no extensions line in container)"
+             echo "=== full recent log tail ==="
+             docker logs node-scala-testnet --tail 80 2>&1'
           rm -f /tmp/id_rsa
