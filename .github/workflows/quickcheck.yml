@@ -18,11 +18,8 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== matcher status ==="
-             docker ps --format "{{.Names}} {{.Status}}" | grep matcher
-             echo "=== matcher recent logs ==="
-             docker logs matcher-testnet --tail 40 2>&1
-             echo "=== is anything listening on 6887 (DEXExtension gRPC)? ==="
-             docker exec node-scala-testnet sh -c "cat /proc/net/tcp | grep -i :1AE7" || true
-             ss -tlnp 2>/dev/null | grep 6887 || echo "nothing on 6887"'
+            'echo "=== /opt/dcc/plugins/testnet/ ==="
+             ls -la /opt/dcc/plugins/testnet/ 2>&1
+             echo "=== /opt/dcc/plugins/disabled/ ==="
+             ls -la /opt/dcc/plugins/disabled/ 2>&1'
           rm -f /tmp/id_rsa
