@@ -26,7 +26,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write  # read/write the PEER_WATCHDOG_LAST_WIPE_TS debounce variable
 
 jobs:
   watchdog:
@@ -41,7 +40,6 @@ jobs:
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
-          GH_TOKEN:     ${{ github.token }}
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
@@ -119,9 +117,17 @@ jobs:
           # ── 3. REST connect failed — debounce, then wipe peers.dat and restart ──
           echo "⚠️  REST connect did not restore peers (peers_after=$PEERS_AFTER)."
 
-          REPO="${GITHUB_REPOSITORY}"
+          # Debounce state lives on the target server itself via this same SSH
+          # connection, not a GH Actions repository variable. The variables API
+          # needs broader token scope than `actions: write` actually grants to
+          # the default GITHUB_TOKEN (confirmed live: every run since this was
+          # added failed with "403 Resource not accessible by integration" on
+          # the variable GET, which aborted the whole script under `set -e`
+          # before ever reaching the destructive path below -- so the watchdog
+          # had been fully inert, not just un-debounced, since the bug landed).
           NOW=$(date +%s)
-          LAST_WIPE=$(gh api "repos/${REPO}/actions/variables/PEER_WATCHDOG_LAST_WIPE_TS" --jq '.value' 2>/dev/null || echo 0)
+          DEBOUNCE_FILE="/tmp/.peer-watchdog-last-wipe"
+          LAST_WIPE=$($SSH "cat ${DEBOUNCE_FILE} 2>/dev/null || echo 0")
           ELAPSED=$(( NOW - ${LAST_WIPE:-0} ))
           if [ "$ELAPSED" -lt 900 ]; then
             echo "⏳ Last destructive wipe was ${ELAPSED}s ago (< 900s debounce) — skipping to avoid flapping. Investigate manually if this persists."
@@ -146,9 +152,7 @@ jobs:
             docker start "$NAME" 2>/dev/null && sleep 3
             docker exec "$NAME" sh -c "rm -f /var/lib/dcc/peers.dat && echo WIPED" 2>/dev/null || true
             docker restart "$NAME" && echo "OK - node restarted with clean peer state"'; then
-            gh api "repos/${REPO}/actions/variables/PEER_WATCHDOG_LAST_WIPE_TS" -X PATCH -f "value=${NOW}" >/dev/null 2>&1 \
-              || gh api "repos/${REPO}/actions/variables" -X POST -f "name=PEER_WATCHDOG_LAST_WIPE_TS" -f "value=${NOW}" >/dev/null 2>&1 \
-              || echo "WARNING: could not persist debounce timestamp"
+            $SSH "echo ${NOW} > ${DEBOUNCE_FILE}" 2>&1 || echo "WARNING: could not persist debounce timestamp"
             rm -f /tmp/id_rsa
             echo "🔄 Node restarted. Peers will reconnect within 60 seconds."
           else
