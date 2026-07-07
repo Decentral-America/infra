@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,12 +24,12 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: gen-1 block id at height 30170 (shared with main)
+      - name: dump gen-1 block ids for a wide range
         run: |
-          kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/blocks/at/30170 | python3 -c "import json,sys; d=json.load(sys.stdin); print('gen-1 h=30170 id=', d.get('id'), 'generator=', d.get('generator'))"
-          echo "=== gen-1 current height again (recheck) ==="
-          kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/blocks/height
-      - name: main block id at height 30170
+          for h in 28500 29000 29200 29400 29500 29600 29700 29800 29850 29870 29880 29890 29900; do
+            kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print($h, d.get('id'))" 2>/dev/null
+          done
+      - name: dump main block ids for the same range
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -38,7 +38,7 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'curl -s http://localhost:6869/blocks/at/30170 | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"main h=30170 id=\", d.get(\"id\"), \"generator=\", d.get(\"generator\"))"
-             echo "=== main current height again (recheck) ==="
-             curl -s http://localhost:6869/blocks/height'
+            'for h in 28500 29000 29200 29400 29500 29600 29700 29800 29850 29870 29880 29890 29900; do
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print($h, d.get(\"id\"))" 2>/dev/null
+             done'
           rm -f /tmp/id_rsa
