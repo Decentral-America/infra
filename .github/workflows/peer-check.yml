@@ -24,17 +24,11 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: wait until just before predicted reconnect, then start live tail
+      - name: check what tools are actually available (gen-0 container + node)
         run: |
-          echo "current time: $(date -u +%H:%M:%S)"
-          echo "predicted next gen-0<->main handshake: ~17:52:53 UTC"
-          nohup bash -c "kubectl logs -f dcc-gen-0-0 -n dcc --since=1s > /tmp/gen0-live.log 2>&1" &
-          echo "tail started, pid=$!"
-          sleep 150
-      - name: dump the captured window, unfiltered, around the handshake
-        run: |
-          echo "=== total lines captured ==="
-          wc -l /tmp/gen0-live.log
-          echo "=== full unfiltered content ==="
-          cat /tmp/gen0-live.log
-          rm -f /tmp/gen0-live.log
+          echo "=== tcpdump inside gen-0 container? ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- which tcpdump 2>&1 || echo "not present"
+          echo "=== can we run a privileged hostNetwork debug pod on the same node? ==="
+          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.spec.nodeName}'
+          echo ""
+          kubectl auth can-i create pods -n dcc
