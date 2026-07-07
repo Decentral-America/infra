@@ -7,10 +7,10 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     environment: testnet
     steps:
-      - name: Remove duplicate plugin jar, restart, verify
+      - name: Check peers and recent blocks
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -23,21 +23,16 @@ jobs:
           rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set -e
+            'set +e
              API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             echo "=== remove older duplicate jar pair ==="
-             sudo mkdir -p /opt/dcc/plugins/disabled
-             sudo mv /opt/dcc/plugins/testnet/dcc-ext.jar /opt/dcc/plugins/disabled/dcc-ext.jar.dup 2>&1 || true
-             sudo mv /opt/dcc/plugins/testnet/dcc-grpc.jar /opt/dcc/plugins/disabled/dcc-grpc.jar.dup 2>&1 || true
-             ls -la /opt/dcc/plugins/testnet/
-             echo "=== restart ==="
-             IMAGE=$(docker inspect node-scala-testnet --format "{{.Config.Image}}" 2>/dev/null)
-             docker rm -f node-scala-testnet 2>&1 | tail -1 || true
-             IMAGE_TAG="$IMAGE" NETWORK=testnet docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
-             sleep 5
-             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}}"
-             echo "=== extension log ==="
-             docker logs node-scala-testnet 2>&1 | grep -aiE "Enable extension|lock hold|Error while initializing" | head -10
-             echo "=== 6887 listening ==="
-             ss -tlnp 2>/dev/null | grep 6887 || echo "nothing on 6887"'
+             echo "=== Connected peers ==="
+             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
+             echo "=== Height and finality ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[]))) " 2>/dev/null
+             echo "=== matcher connection status ==="
+             sleep 20
+             docker logs matcher-testnet --since 25s 2>&1 | grep -aiE "Connected|Connection refused|utx=true|bu=true" | tail -10
+             echo "=== restarts ==="
+             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}}"'
           rm -f /tmp/id_rsa
