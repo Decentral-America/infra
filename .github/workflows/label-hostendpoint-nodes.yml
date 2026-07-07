@@ -63,3 +63,36 @@ jobs:
           set -euo pipefail
           kubectl label nodes --all kubernetes-host= --overwrite
           kubectl get nodes --show-labels | grep kubernetes-host
+
+      - name: Force-kill gen-0, THEN clear peers.dat, THEN restart
+        run: |
+          set +e
+          # peer-watchdog.yml (the main node's equivalent remediation) is
+          # explicit about why order matters here: "SIGKILL to prevent
+          # peer-save on graceful shutdown". A plain `kubectl delete pod`
+          # sends SIGTERM and waits out the grace period -- during which
+          # the still-running old process can re-persist its current
+          # (stale/bad) in-memory peer state back to peers.dat, silently
+          # undoing a clear performed beforehand. This is very likely why
+          # the earlier peers.dat clear for gen-0 didn't actually help:
+          # the file was removed, then the gracefully-terminating old
+          # process wrote it right back before fully exiting.
+          echo "=== 1: force-kill gen-0 pod (grace-period=0, no clean shutdown) ==="
+          kubectl delete pod -n dcc dcc-gen-0-0 --grace-period=0 --force
+          echo "=== 2: wait for the NEW pod to be created and running ==="
+          for i in $(seq 1 30); do
+            PHASE=$(kubectl get pod -n dcc dcc-gen-0-0 -o jsonpath="{.status.phase}" 2>/dev/null)
+            echo "phase: ${PHASE:-<not found yet>}"
+            [ "$PHASE" = "Running" ] && break
+            sleep 3
+          done
+          echo "=== 3: NOW clear peers.dat -- the old process is fully gone, nothing can re-write it ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- rm -fv /var/lib/dcc/peers.dat
+          echo "=== 4: restart again so it boots fresh with no peers.dat at all ==="
+          kubectl delete pod -n dcc dcc-gen-0-0 --grace-period=0 --force
+          kubectl rollout status statefulset/dcc-gen-0 -n dcc --timeout=180s
+          echo "=== settle 45s ==="
+          sleep 45
+          echo "=== 5: confirm peers.dat is absent or fresh on the NEW process ==="
+          kubectl exec -n dcc dcc-gen-0-0 -- cat /var/lib/dcc/peers.dat 2>&1
+          exit 0
