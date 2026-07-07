@@ -76,9 +76,22 @@ jobs:
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
             -d "{\"type\":19,\"sender\":\"$ADDR\"}")
           if echo "$SIGNED" | grep -q '"id"'; then
-            RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
-              -H "Content-Type: application/json" -d "$SIGNED")
-            echo "Gen-0: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+            # gen-0's connection to the main node stays probabilistic even
+            # with the HandshakeHandler stale-dedup fix live (2026-07-07
+            # incident) -- a single-shot attempt misses often enough that
+            # this cron (fires every 5 min) was relying purely on
+            # volume-of-attempts across a whole 100-block generation period
+            # to eventually land one (confirmed live: 4/4 consecutive
+            # single-shot cron fires failed on 2026-07-07 while the chain
+            # kept progressing regardless). A short retry here makes each
+            # individual fire much more likely to succeed on its own.
+            for attempt in $(seq 1 5); do
+              RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
+                -H "Content-Type: application/json" -d "$SIGNED")
+              if ! echo "$RESULT" | grep -q "not enough connections"; then break; fi
+              [ "$attempt" -lt 5 ] && sleep 15
+            done
+            echo "Gen-0: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null) (attempt ${attempt}/5)"
           else
             echo "Gen-0: already committed or sign failed"
           fi
@@ -96,9 +109,13 @@ jobs:
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
             -d "{\"type\":19,\"sender\":\"$ADDR\"}")
           if echo "$SIGNED" | grep -q '"id"'; then
-            RESULT=$(curl -s -X POST http://localhost:16870/transactions/broadcast \
-              -H "Content-Type: application/json" -d "$SIGNED")
-            echo "Gen-1: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+            for attempt in $(seq 1 5); do
+              RESULT=$(curl -s -X POST http://localhost:16870/transactions/broadcast \
+                -H "Content-Type: application/json" -d "$SIGNED")
+              if ! echo "$RESULT" | grep -q "not enough connections"; then break; fi
+              [ "$attempt" -lt 5 ] && sleep 15
+            done
+            echo "Gen-1: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null) (attempt ${attempt}/5)"
           else
             echo "Gen-1: already committed or sign failed"
           fi
@@ -122,9 +139,13 @@ jobs:
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
             -d "{\"type\":19,\"sender\":\"$ADDR\"}")
           if echo "$SIGNED" | grep -q '"id"'; then
-            RESULT=$(curl -s -X POST http://localhost:16871/transactions/broadcast \
-              -H "Content-Type: application/json" -d "$SIGNED")
-            echo "Val-0: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null)"
+            for attempt in $(seq 1 5); do
+              RESULT=$(curl -s -X POST http://localhost:16871/transactions/broadcast \
+                -H "Content-Type: application/json" -d "$SIGNED")
+              if ! echo "$RESULT" | grep -q "not enough connections"; then break; fi
+              [ "$attempt" -lt 5 ] && sleep 15
+            done
+            echo "Val-0: $(echo $RESULT | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"id\",d.get(\"message\",\"?\"))[:40])" 2>/dev/null) (attempt ${attempt}/5)"
           else
             echo "Val-0: already committed or sign failed"
           fi
