@@ -10,32 +10,18 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
-      - name: Deep chain state check
+      - name: finality + generator eligibility check
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
-          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "${MAIN_API_KEY}" > /tmp/.main_key
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
-          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
-             echo "=== Connected peers now ==="
-             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
-             echo "=== Last 100 block generators (distinct + counts) ==="
-             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])")
-             echo "current height: $HEIGHT"
-             for h in $(seq $((HEIGHT-99)) $HEIGHT); do
-               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"generator\",\"?\")[:12])" 2>/dev/null
-             done | sort | uniq -c | sort -rn
-             echo "=== suspend/close pattern since fix deploy (last 2.5 hours) ==="
-             docker logs node-scala-testnet --since 150m 2>&1 | grep -aiE "Suspending|Channel closed \(expected\)" | wc -l
-             echo "=== finality ==="
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",[g[\"address\"][:12] for g in d.get(\"currentGenerators\",[])],\"NextGens:\",[g[\"address\"][:12] for g in d.get(\"nextGenerators\",[])])"'
+            'echo "=== raw finality response ==="
+             curl -s http://localhost:6869/blockchain/finality
+             echo ""
+             echo "=== recent mining errors on main ==="
+             docker logs node-scala-testnet --since 60m 2>&1 | grep -aiE "Error mining|not allowed to generate|generating balance" | tail -20'
           rm -f /tmp/id_rsa
