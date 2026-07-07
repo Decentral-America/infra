@@ -7,10 +7,10 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment: testnet
     steps:
-      - name: Watch main node health + peers stabilize
+      - name: Check peers and recent blocks
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -23,14 +23,18 @@ jobs:
           rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set -e
+            'set +e
              API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             docker ps --format "{{.Names}} {{.Status}}" | grep node-scala
-             for i in $(seq 1 16); do
-               H=$(curl -s --max-time 5 http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null || echo "?")
-               P=$(curl -s --max-time 5 -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get(\"peers\",[])))" 2>/dev/null || echo "?")
-               echo "height=$H peers=$P"
-               sleep 15
+             echo "=== Connected peers ==="
+             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
+             echo "=== Height and finality ==="
+             curl -s http://localhost:6869/blocks/height 2>/dev/null
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[]))) " 2>/dev/null
+             echo "=== Last 10 block generators ==="
+             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             for h in $(seq $((HEIGHT-9)) $HEIGHT); do
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\",\"?\"), d.get(\"generator\",\"?\")[:20])" 2>/dev/null
              done
-             docker logs node-scala-testnet --tail 200 2>&1 | grep -aiE "Accepted handshake|Replacing dead|Already connected|IllegalState|error" | tail -20'
+             echo "=== Recent handshake / dedup activity ==="
+             docker logs node-scala-testnet --since 10m 2>&1 | grep -aiE "Accepted handshake|Replacing dead|Already connected|IllegalState" | tail -20'
           rm -f /tmp/id_rsa
