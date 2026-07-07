@@ -7,17 +7,31 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     environment: testnet
     steps:
-      - name: idle-timeout close check
+      - name: temporarily bump log level and watch a full connect-close cycle
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          cat > /tmp/watch.sh << 'SCRIPT'
+          set -e
+          IMAGE=$(docker inspect node-scala-testnet --format '{{.Config.Image}}')
+          echo "=== restart with DCC_LOG_LEVEL=DEBUG ==="
+          docker rm -f node-scala-testnet 2>&1 | tail -1 || true
+          IMAGE_TAG="$IMAGE" NETWORK=testnet DCC_LOG_LEVEL=DEBUG docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
+          echo "=== watching for ~6 min to catch a full gen-0/gen-1/val-0 connect-close cycle ==="
+          sleep 360
+          echo "=== all channel-close / suspend / dedup activity in that window ==="
+          docker logs node-scala-testnet --since 6m 2>&1 | grep -aiE "was closed|suspend|Already connected|Replacing dead|Channel closed|haven't sent|Malformed|requirement failed" | tail -60
+          echo "=== restore INFO level ==="
+          docker rm -f node-scala-testnet 2>&1 | tail -1 || true
+          IMAGE_TAG="$IMAGE" NETWORK=testnet docker compose -p node-scala-testnet -f /opt/dcc/compose/node-scala.yml up -d --wait --wait-timeout 120 node-scala
+          SCRIPT
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/watch.sh "${SSH_USER}@${SSH_HOST}:/tmp/watch.sh"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet --since 20m 2>&1 | grep -aiE "havent sent a message|closing it" | tail -30'
+            "${SSH_USER}@${SSH_HOST}" "bash /tmp/watch.sh && rm -f /tmp/watch.sh"
           rm -f /tmp/id_rsa
