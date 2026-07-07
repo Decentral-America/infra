@@ -7,29 +7,31 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     environment: testnet
     steps:
-      - name: precise idle-timeout message search on main
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet --since 20m 2>&1 > /tmp/main.log
-             wc -l /tmp/main.log
-             echo "=== search 1: closing it ==="
-             grep -ac "closing it" /tmp/main.log
-             echo "=== search 2: sent a message ==="
-             grep -ac "sent a message" /tmp/main.log
-             echo "=== search 3: haven ==="
-             grep -ac "haven" /tmp/main.log
-             echo "=== all lines mentioning BrokenConnectionDetector class name if present ==="
-             grep -ac "BrokenConnectionDetector" /tmp/main.log
-             echo "=== score/GetSignatures/keepalive traffic (to see if periodic protocol messages exist) ==="
-             grep -aiE "score|GetSignatures|ping" /tmp/main.log | tail -10
-             rm -f /tmp/main.log'
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: confirm new image and restart counts
+        run: |
+          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.spec.containers[0].image}'
+          echo ""
+          kubectl get pods -n dcc -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,READY:.status.containerStatuses[0].ready
+      - name: wait 6 minutes for a natural reconnect cycle
+        run: sleep 360
+      - name: watch for the new close/suspend/reset log lines on gen-0
+        run: |
+          echo "=== gen-0's log: close/suspend/reset activity (real info-level now) ==="
+          kubectl logs dcc-gen-0-0 -n dcc --since=7m | grep -aiE "Channel closed|Suspending|Connection reset|Exception caught|Connection established|Accepted handshake" | tail -60
