@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,24 +24,13 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: force flux reconcile for the TRACE config
-        run: |
-          curl -sL "https://github.com/fluxcd/flux2/releases/download/v2.9.0/flux_2.9.0_linux_amd64.tar.gz" -o /tmp/flux.tar.gz
-          tar -xzf /tmp/flux.tar.gz -C /tmp flux
-          sudo install -m 755 /tmp/flux /usr/local/bin/flux
-          flux reconcile source git flux-system --timeout=2m
-          flux reconcile kustomization apps --timeout=3m
-          for i in $(seq 1 10); do
-            if kubectl exec -n dcc dcc-gen-0-0 -- cat /etc/dcc/logback.xml 2>/dev/null | grep -q TRACE; then echo "TRACE config confirmed live"; break; fi
-            sleep 6
-          done
-      - name: launch tcpdump pod on gen-0's node
+      - name: launch tcpdump pod
         run: |
           cat <<'POD' | kubectl apply -f -
           apiVersion: v1
           kind: Pod
           metadata:
-            name: tcpdump-debug2
+            name: tcpdump-debug3
             namespace: dcc
           spec:
             hostNetwork: true
@@ -50,21 +39,23 @@ jobs:
             containers:
               - name: tcpdump
                 image: nicolaka/netshoot:latest
-                command: ["sh", "-c", "tcpdump -i any -w /tmp/capture.pcap 'port 6863 or port 6868' & echo $! > /tmp/tcpdump.pid; sleep 900"]
+                command: ["sh", "-c", "tcpdump -i any -w /tmp/capture.pcap 'port 6868' & echo $! > /tmp/tcpdump.pid; sleep 700"]
                 securityContext:
                   privileged: true
           POD
-          kubectl wait --for=condition=Ready pod/tcpdump-debug2 -n dcc --timeout=60s
-      - name: wait 13 minutes for a dual-connection event
-        run: sleep 780
-      - name: stop tcpdump, correlate with gen-0's TRACE app log for the SAME window
+          kubectl wait --for=condition=Ready pod/tcpdump-debug3 -n dcc --timeout=60s
+      - name: wait 10 minutes
+        run: sleep 600
+      - name: stop tcpdump, get FULL detail (with -A for ascii payload) around any duplicate-SYN burst, cleanup
         run: |
-          echo "=== stop tcpdump ==="
-          kubectl exec -n dcc tcpdump-debug2 -- sh -c "kill \$(cat /tmp/tcpdump.pid) 2>/dev/null; sleep 2"
-          kubectl cp dcc/tcpdump-debug2:/tmp/capture.pcap /tmp/capture.pcap
-          echo "=== packet summary (SYN/FIN/RST only, to find the dual-connection window) ==="
-          kubectl exec -n dcc tcpdump-debug2 -- tcpdump -r /tmp/capture.pcap -tttt -n 'host 66.228.55.154 and (tcp[tcpflags] & (tcp-syn|tcp-fin|tcp-rst) != 0)' 2>&1 | tail -100
-          echo "=== gen-0's app log for the SAME period (TRACE active) ==="
-          kubectl logs dcc-gen-0-0 -n dcc --since=14m | grep -aiE "66.228.55.154|Suspending|was closed|Channel closed|exceptionCaught|IOException|Connection reset|handleOutgoing|Connecting to" | tail -150
+          kubectl exec -n dcc tcpdump-debug3 -- sh -c "kill \$(cat /tmp/tcpdump.pid) 2>/dev/null; sleep 2"
+          kubectl cp dcc/tcpdump-debug3:/tmp/capture.pcap /tmp/capture.pcap
+          echo "=== find duplicate-SYN clusters (two SYNs within 5s of each other) ==="
+          kubectl exec -n dcc tcpdump-debug3 -- tcpdump -r /tmp/capture.pcap -tttt -n 'tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0' 2>&1 | tail -30
+          echo "=== full packet lengths + flags, chronological, whole capture ==="
+          kubectl exec -n dcc tcpdump-debug3 -- tcpdump -r /tmp/capture.pcap -tttt -n 2>&1 | awk '{print}' > /tmp/full.txt
+          wc -l /tmp/full.txt
+          echo "=== packets with actual payload length in the first 90s after each new-SYN cluster (to see if handshake DATA flows on duplicates) ==="
+          grep -E "length [1-9]" /tmp/full.txt | head -100
           echo "=== cleanup ==="
-          kubectl delete pod tcpdump-debug2 -n dcc --grace-period=0 --force 2>&1 | tail -1
+          kubectl delete pod tcpdump-debug3 -n dcc --grace-period=0 --force 2>&1 | tail -1
