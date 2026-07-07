@@ -7,39 +7,32 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment: testnet
     steps:
-      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
-      - name: Get LKE kubeconfig
+      - name: Check peers and recent blocks
         env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
-          set -euo pipefail
-          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters" | \
-            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
-          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
-          echo "$RAW" | base64 -d > /tmp/kubeconfig
-          chmod 600 /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: force flux reconcile
-        run: |
-          curl -sL "https://github.com/fluxcd/flux2/releases/download/v2.9.0/flux_2.9.0_linux_amd64.tar.gz" -o /tmp/flux.tar.gz
-          tar -xzf /tmp/flux.tar.gz -C /tmp flux
-          sudo install -m 755 /tmp/flux /usr/local/bin/flux
-          flux reconcile source git flux-system --timeout=2m
-          flux reconcile kustomization apps --timeout=3m
-          echo "=== confirm logback.xml appeared ==="
-          for i in $(seq 1 10); do
-            if kubectl exec -n dcc dcc-gen-0-0 -- cat /etc/dcc/logback.xml 2>/dev/null; then break; fi
-            sleep 6
-          done
-          echo "=== restart count sanity ==="
-          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.status.containerStatuses[0].restartCount}'
-      - name: settle for logback scan, then wait 6 min for a full cycle
-        run: sleep 400
-      - name: dump gen-0's trace activity toward main
-        run: |
-          kubectl logs dcc-gen-0-0 -n dcc --since=8m | grep -aiE "66.228.55.154|Suspending|was closed|Channel closed|exceptionCaught|IOException|Connection reset|handleOutgoing|Connecting to|haven't sent|havent sent" | tail -150
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          echo "${MAIN_API_KEY}" > /tmp/.main_key
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          rm -f /tmp/.main_key
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'set +e
+             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
+             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
+             echo "=== Connected peers ==="
+             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
+             echo "=== Height and finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",[g[\"address\"][:8] for g in d.get(\"currentGenerators\",[])])"
+             echo "=== Last 20 block generators ==="
+             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             for h in $(seq $((HEIGHT-19)) $HEIGHT); do
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\",\"?\"), d.get(\"generator\",\"?\")[:12])" 2>/dev/null
+             done'
+          rm -f /tmp/id_rsa
