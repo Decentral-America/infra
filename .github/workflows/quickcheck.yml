@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
-      - name: check
+      - name: restore plugins
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -18,8 +18,9 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== /opt/dcc/plugins/testnet/ ==="
-             ls -la /opt/dcc/plugins/testnet/ 2>&1
-             echo "=== /opt/dcc/plugins/disabled/ ==="
-             ls -la /opt/dcc/plugins/disabled/ 2>&1'
+            'sudo mv /opt/dcc/plugins/disabled/dcc-ext.jar.disabled /opt/dcc/plugins/testnet/dcc-ext.jar
+             sudo mv /opt/dcc/plugins/disabled/dcc-grpc.jar /opt/dcc/plugins/testnet/dcc-grpc.jar
+             sudo mv /opt/dcc/plugins/disabled/ext.jar /opt/dcc/plugins/testnet/ext.jar
+             sudo mv /opt/dcc/plugins/disabled/grpc.jar /opt/dcc/plugins/testnet/grpc.jar
+             ls -la /opt/dcc/plugins/testnet/'
           rm -f /tmp/id_rsa
