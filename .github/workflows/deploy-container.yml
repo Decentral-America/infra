@@ -266,16 +266,21 @@ jobs:
 
           # ── Clean up project-label mismatch (one-time migration) ──────────
           # Containers created before --project-name was introduced carry the
-          # directory-based label (e.g. "compose"). docker compose up with a
-          # different --project-name sees no matching container and tries to
-          # CREATE one — but the name is taken → conflict. Detect and remove
-          # the mismatched container so docker compose can recreate it cleanly.
+          # directory-based label (e.g. "compose"), and containers created by
+          # plain `docker run` (deploy-node-config.yml's restart path) carry
+          # NO compose label at all. In both cases docker compose up with our
+          # --project-name sees no matching container and tries to CREATE one
+          # — but the name is taken → conflict. Remove any existing same-name
+          # container whose project label isn't ours (including the empty
+          # unlabeled case) so docker compose can recreate it cleanly.
+          # PREV_IMAGE (captured above) doubles as the existence check so a
+          # first deploy with no container at all skips this cleanly.
           EXISTING_PROJECT=\$(docker inspect \
             --format '{{index .Config.Labels "com.docker.compose.project"}}' \
             "\${SERVICE}-\${NETWORK}" 2>/dev/null || true)
           EXPECTED_PROJECT="\${SERVICE}-\${NETWORK}"
-          if [[ -n "\$EXISTING_PROJECT" && "\$EXISTING_PROJECT" != "\$EXPECTED_PROJECT" ]]; then
-            echo "Removing \${SERVICE}-\${NETWORK} (project '\$EXISTING_PROJECT' ≠ '\$EXPECTED_PROJECT')..."
+          if [[ -n "\$PREV_IMAGE" && "\$EXISTING_PROJECT" != "\$EXPECTED_PROJECT" ]]; then
+            echo "Removing \${SERVICE}-\${NETWORK} (project '\${EXISTING_PROJECT:-<none/docker run>}' ≠ '\$EXPECTED_PROJECT')..."
             docker rm -f "\${SERVICE}-\${NETWORK}"
           fi
 
