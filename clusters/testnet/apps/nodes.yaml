@@ -129,6 +129,16 @@ data:
         round-timeout-ms = 1200
       }
     }
+  # TEMPORARY diagnostic for INCIDENT-GEN0-PEERS.md #11 (2026-07-07), round 2 --
+  # correlating TRACE-level app logs against a simultaneous packet capture this
+  # time, since the first TRACE window (17:51-17:53) didn't overlap with an
+  # actual dual-connection race event (later found via tcpdump at 18:01-18:02).
+  # REMOVE once the investigation concludes.
+  logback.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+      <logger name="com.decentralchain.network" level="TRACE"/>
+    </configuration>
 
 ---
 # ── ConfigMap: dcc-gen-1 ──────────────────────────────────────────────────────
