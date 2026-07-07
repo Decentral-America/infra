@@ -7,10 +7,10 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     environment: testnet
     steps:
-      - name: Verification window - peers, generator diversity, suspend/close pattern
+      - name: Deep chain state check
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -26,14 +26,16 @@ jobs:
             'set +e
              API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
              docker inspect node-scala-testnet --format "restarts={{.RestartCount}} started={{.State.StartedAt}}"
-             for i in $(seq 1 12); do
-               echo "--- check $i at $(date -u +%H:%M:%S) ---"
-               curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"peers:\", [p[\"peerName\"] for p in d.get(\"peers\",[])])"
-               HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])")
-               GENS=$(for h in $(seq $((HEIGHT-4)) $HEIGHT); do curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"generator\",\"?\")[:12])" 2>/dev/null; done | sort -u | tr "\n" ",")
-               echo "height=$HEIGHT distinct_generators_last5=$GENS"
-               sleep 80
-             done
-             echo "=== suspend/close pattern in the last 20 min ==="
-             docker logs node-scala-testnet --since 20m 2>&1 | grep -aiE "Suspending|Channel closed \(expected\)" | wc -l'
+             echo "=== Connected peers now ==="
+             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
+             echo "=== Last 100 block generators (distinct + counts) ==="
+             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])")
+             echo "current height: $HEIGHT"
+             for h in $(seq $((HEIGHT-99)) $HEIGHT); do
+               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"generator\",\"?\")[:12])" 2>/dev/null
+             done | sort | uniq -c | sort -rn
+             echo "=== suspend/close pattern since fix deploy (last 2.5 hours) ==="
+             docker logs node-scala-testnet --since 150m 2>&1 | grep -aiE "Suspending|Channel closed \(expected\)" | wc -l
+             echo "=== finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",[g[\"address\"][:12] for g in d.get(\"currentGenerators\",[])],\"NextGens:\",[g[\"address\"][:12] for g in d.get(\"nextGenerators\",[])])"'
           rm -f /tmp/id_rsa
