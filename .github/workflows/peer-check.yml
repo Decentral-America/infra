@@ -7,17 +7,34 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     environment: testnet
     steps:
-      - name: main's view of the same window gen-0 activity
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
         env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'docker logs node-scala-testnet --since 15m 2>&1 | grep -aiE "gen-0-testnet|586753" | tail -30'
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: wait until just before predicted reconnect, then start live tail
+        run: |
+          echo "current time: $(date -u +%H:%M:%S)"
+          echo "predicted next gen-0<->main handshake: ~17:52:53 UTC"
+          nohup bash -c "kubectl logs -f dcc-gen-0-0 -n dcc --since=1s > /tmp/gen0-live.log 2>&1" &
+          echo "tail started, pid=$!"
+          sleep 150
+      - name: dump the captured window, unfiltered, around the handshake
+        run: |
+          echo "=== total lines captured ==="
+          wc -l /tmp/gen0-live.log
+          echo "=== full unfiltered content ==="
+          cat /tmp/gen0-live.log
+          rm -f /tmp/gen0-live.log
