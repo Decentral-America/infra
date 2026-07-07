@@ -7,34 +7,64 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     environment: testnet
     steps:
-      - name: Check peers and recent blocks
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
         env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
-          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "${MAIN_API_KEY}" > /tmp/.main_key
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
-          rm -f /tmp/.main_key
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             echo "=== Connected peers ==="
-             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
-             echo "=== Height and finality ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[]))) " 2>/dev/null
-             echo "=== Last 10 block generators ==="
-             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             for h in $(seq $((HEIGHT-9)) $HEIGHT); do
-               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\",\"?\"), d.get(\"generator\",\"?\")[:20])" 2>/dev/null
-             done
-             echo "=== Recent handshake / dedup / extension activity ==="
-             docker logs node-scala-testnet --since 10m 2>&1 | grep -aiE "Accepted handshake|Replacing dead|Already connected|IllegalState|Enable extension" | tail -20'
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: force flux reconcile for the TRACE config
+        run: |
+          curl -sL "https://github.com/fluxcd/flux2/releases/download/v2.9.0/flux_2.9.0_linux_amd64.tar.gz" -o /tmp/flux.tar.gz
+          tar -xzf /tmp/flux.tar.gz -C /tmp flux
+          sudo install -m 755 /tmp/flux /usr/local/bin/flux
+          flux reconcile source git flux-system --timeout=2m
+          flux reconcile kustomization apps --timeout=3m
+          for i in $(seq 1 10); do
+            if kubectl exec -n dcc dcc-gen-0-0 -- cat /etc/dcc/logback.xml 2>/dev/null | grep -q TRACE; then echo "TRACE config confirmed live"; break; fi
+            sleep 6
+          done
+      - name: launch tcpdump pod on gen-0's node
+        run: |
+          cat <<'POD' | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: tcpdump-debug2
+            namespace: dcc
+          spec:
+            hostNetwork: true
+            nodeName: lke615553-902887-0b399b6d0000
+            restartPolicy: Never
+            containers:
+              - name: tcpdump
+                image: nicolaka/netshoot:latest
+                command: ["sh", "-c", "tcpdump -i any -w /tmp/capture.pcap 'port 6863 or port 6868' & echo $! > /tmp/tcpdump.pid; sleep 900"]
+                securityContext:
+                  privileged: true
+          POD
+          kubectl wait --for=condition=Ready pod/tcpdump-debug2 -n dcc --timeout=60s
+      - name: wait 13 minutes for a dual-connection event
+        run: sleep 780
+      - name: stop tcpdump, correlate with gen-0's TRACE app log for the SAME window
+        run: |
+          echo "=== stop tcpdump ==="
+          kubectl exec -n dcc tcpdump-debug2 -- sh -c "kill \$(cat /tmp/tcpdump.pid) 2>/dev/null; sleep 2"
+          kubectl cp dcc/tcpdump-debug2:/tmp/capture.pcap /tmp/capture.pcap
+          echo "=== packet summary (SYN/FIN/RST only, to find the dual-connection window) ==="
+          kubectl exec -n dcc tcpdump-debug2 -- tcpdump -r /tmp/capture.pcap -tttt -n 'host 66.228.55.154 and (tcp[tcpflags] & (tcp-syn|tcp-fin|tcp-rst) != 0)' 2>&1 | tail -100
+          echo "=== gen-0's app log for the SAME period (TRACE active) ==="
+          kubectl logs dcc-gen-0-0 -n dcc --since=14m | grep -aiE "66.228.55.154|Suspending|was closed|Channel closed|exceptionCaught|IOException|Connection reset|handleOutgoing|Connecting to" | tail -150
+          echo "=== cleanup ==="
+          kubectl delete pod tcpdump-debug2 -n dcc --grace-period=0 --force 2>&1 | tail -1
