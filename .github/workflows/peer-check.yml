@@ -10,19 +10,35 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
-      - name: main height and very recent generators
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
         env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: gen-1 block id at height 30170 (shared with main)
+        run: |
+          kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/blocks/at/30170 | python3 -c "import json,sys; d=json.load(sys.stdin); print('gen-1 h=30170 id=', d.get('id'), 'generator=', d.get('generator'))"
+          echo "=== gen-1 current height again (recheck) ==="
+          kubectl exec -n dcc dcc-gen-1-0 -- wget -qO- http://127.0.0.1:6869/blocks/height
+      - name: main block id at height 30170
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])")
-             echo "main height: $HEIGHT"
-             echo "=== last 30 generators ==="
-             for h in $(seq $((HEIGHT-29)) $HEIGHT); do
-               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\"), d.get(\"generator\",\"?\")[:12])" 2>/dev/null
-             done'
+            'curl -s http://localhost:6869/blocks/at/30170 | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"main h=30170 id=\", d.get(\"id\"), \"generator=\", d.get(\"generator\"))"
+             echo "=== main current height again (recheck) ==="
+             curl -s http://localhost:6869/blocks/height'
           rm -f /tmp/id_rsa
