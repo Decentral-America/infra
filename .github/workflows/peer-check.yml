@@ -10,18 +10,33 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
-      - name: finality + generator eligibility check
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
         env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== raw finality response ==="
-             curl -s http://localhost:6869/blockchain/finality
-             echo ""
-             echo "=== recent mining errors on main ==="
-             docker logs node-scala-testnet --since 60m 2>&1 | grep -aiE "Error mining|not allowed to generate|generating balance" | tail -20'
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: check gen-1 and val-0's own mining attempts
+        run: |
+          echo "=== gen-1 mining errors/attempts (last 60 min) ==="
+          kubectl logs dcc-gen-1-0 -n dcc --since=60m | grep -aiE "Error mining|not allowed to generate|generating balance|Started voting|New height" | tail -20
+          echo "=== val-0 mining errors/attempts (last 60 min) ==="
+          kubectl logs dcc-val-0-0 -n dcc --since=60m | grep -aiE "Error mining|not allowed to generate|generating balance|Started voting|New height" | tail -20
+          echo "=== gen-1 image + restart count ==="
+          kubectl get pod dcc-gen-1-0 -n dcc -o jsonpath='{.spec.containers[0].image}{"\n"}{.status.containerStatuses[0].restartCount}'
+      - name: check finality endpoint on gen-1 directly
+        run: |
+          kubectl port-forward -n dcc dcc-gen-1-0 17870:6870 >/dev/null 2>&1 &
+          PF=$!; sleep 3
+          echo "=== gen-1's own /blockchain/finality ==="
+          curl -s http://127.0.0.1:17870/blockchain/finality
+          echo ""
+          kill $PF 2>/dev/null || true
