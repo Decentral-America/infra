@@ -7,10 +7,30 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     environment: testnet
     steps:
-      - name: Check peers and recent blocks
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: gen-0/gen-1/val-0 pod health
+        run: |
+          echo "=== pod status + restart counts ==="
+          kubectl get pods -n dcc -o wide
+          echo "=== container restart counts detail ==="
+          kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.metadata.name}{": restarts="}{.status.containerStatuses[0].restartCount}{" ready="}{.status.containerStatuses[0].ready}{"\n"}{end}'
+      - name: main node full check
         env:
           SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -25,16 +45,19 @@ jobs:
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
              API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             echo "=== Connected peers ==="
-             curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -m json.tool
-             echo "=== Height and finality ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[]))) " 2>/dev/null
-             echo "=== Last 10 block generators ==="
-             HEIGHT=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             for h in $(seq $((HEIGHT-9)) $HEIGHT); do
-               curl -s http://localhost:6869/blocks/at/$h 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"height\",\"?\"), d.get(\"generator\",\"?\")[:20])" 2>/dev/null
+             echo "=== container restarts ==="
+             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}} started={{.State.StartedAt}}"
+             docker inspect matcher-testnet --format "matcher restarts={{.RestartCount}} status={{.State.Status}}"
+             echo "=== peers over 40s ==="
+             for i in 1 2 3 4; do
+               curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"peers:\", [p[\"peerName\"] for p in d.get(\"peers\",[])])"
+               sleep 10
              done
-             echo "=== Recent handshake / dedup / extension activity ==="
-             docker logs node-scala-testnet --since 10m 2>&1 | grep -aiE "Accepted handshake|Replacing dead|Already connected|IllegalState|Enable extension" | tail -20'
+             echo "=== finality ==="
+             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",d.get(\"currentGenerators\",[]),\"NextGens:\",d.get(\"nextGenerators\",[]))"
+             echo "=== 6887/6881 listening ==="
+             ss -tlnp 2>/dev/null | grep -E "6887|6881"
+             echo "=== extension enable count (should be 1 each) ==="
+             docker logs node-scala-testnet 2>&1 | grep -c "Enable extension: com.decentralchain.events.BlockchainUpdates"
+             docker logs node-scala-testnet 2>&1 | grep -c "Enable extension: com.decentralchain.dex.grpc.integration.DEXExtension"'
           rm -f /tmp/id_rsa
