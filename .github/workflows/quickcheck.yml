@@ -19,11 +19,16 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             'cd /opt/dcc/plugins/testnet
-             echo "=== sha256sums ==="
-             sha256sum *.jar
-             echo "=== application.conf inside each jar ==="
              for f in *.jar; do
                echo "--- $f ---"
-               unzip -p "$f" application.conf 2>&1 | head -5
+               python3 -c "
+import zipfile
+z = zipfile.ZipFile(\"$f\")
+names = [n for n in z.namelist() if n == \"application.conf\"]
+if names:
+    print(z.read(\"application.conf\").decode())
+else:
+    print(\"(no application.conf in this jar)\")
+"
              done'
           rm -f /tmp/id_rsa
