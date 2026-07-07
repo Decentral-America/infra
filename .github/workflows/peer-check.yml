@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
@@ -24,23 +24,12 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: patch ConfigMap with a trace-level logback override, no pod restart
+      - name: check ConfigMap current state and Flux status
         run: |
-          cat > /tmp/patch.json << 'PATCH'
-          {"data":{"logback.xml":"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n  <logger name=\"com.decentralchain.network\" level=\"TRACE\"/>\n</configuration>\n"}}
-          PATCH
-          kubectl patch configmap gen-0-config -n dcc --type merge --patch-file /tmp/patch.json
-          echo "=== waiting for kubelet configmap sync + logback scan (~90s) ==="
-          sleep 90
-          echo "=== confirm file appeared in the pod ==="
-          kubectl exec -n dcc dcc-gen-0-0 -- cat /etc/dcc/logback.xml
-          echo "=== confirm no crash ==="
-          kubectl get pod dcc-gen-0-0 -n dcc -o jsonpath='{.status.containerStatuses[0].restartCount}'
-      - name: wait 6 more minutes to catch a full cycle
-        run: sleep 360
-      - name: dump gen-0's trace-level activity toward main, then revert the ConfigMap
-        run: |
-          echo "=== gen-0 trace-level close/suspend activity toward main (66.228.55.154) ==="
-          kubectl logs dcc-gen-0-0 -n dcc --since=8m | grep -aiE "66.228.55.154|Suspending|was closed|Channel closed|exceptionCaught|IOException|Connection reset|handleOutgoing|Connecting to|haven't sent|havent sent" | tail -150
-          echo "=== revert ConfigMap (remove logback.xml key) ==="
-          kubectl patch configmap gen-0-config -n dcc --type json -p '[{"op":"remove","path":"/data/logback.xml"}]' || true
+          echo "=== ConfigMap keys right now ==="
+          kubectl get configmap gen-0-config -n dcc -o jsonpath='{.data}' | python3 -m json.tool 2>/dev/null || kubectl get configmap gen-0-config -n dcc -o yaml | grep -A2 "^data:"
+          echo "=== Flux kustomization last-applied time and interval ==="
+          kubectl get kustomization apps -n flux-system -o jsonpath='{.spec.interval} last-applied={.status.lastAppliedRevision}' 2>/dev/null || echo "(flux CRD query failed, checking events)"
+          echo ""
+          echo "=== recent events on the ConfigMap ==="
+          kubectl get events -n dcc --field-selector involvedObject.name=gen-0-config --sort-by='.lastTimestamp' 2>/dev/null | tail -10
