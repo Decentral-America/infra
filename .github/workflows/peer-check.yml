@@ -24,29 +24,24 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: export main's canonical chain state (retry with sleep before cp)
+      - name: export main's canonical chain state (stream via docker exec, no docker cp)
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
+          set -euo pipefail
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          cat > /tmp/export.sh << 'SCRIPT'
-          set -e
-          docker exec node-scala-testnet sh -c "rm -f /tmp/mainstate.tar.gz; tar czf /tmp/mainstate.tar.gz -C /var/lib/dcc data"
-          sleep 2
-          docker exec node-scala-testnet sh -c "ls -la /tmp/mainstate.tar.gz"
-          docker cp node-scala-testnet:/tmp/mainstate.tar.gz /tmp/mainstate.tar.gz
-          docker exec node-scala-testnet rm -f /tmp/mainstate.tar.gz
-          ls -la /tmp/mainstate.tar.gz
-          SCRIPT
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/export.sh "${SSH_USER}@${SSH_HOST}:/tmp/export.sh"
+          # docker cp against this container reproducibly fails to find a file
+          # that docker exec just confirmed exists (likely a tmpfs/overlay
+          # read-path quirk on this docker version) -- avoid docker cp
+          # entirely and stream the tar straight out over stdout instead.
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" "bash /tmp/export.sh && rm -f /tmp/export.sh"
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}:/tmp/mainstate.tar.gz" /tmp/mainstate.tar.gz
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" "rm -f /tmp/mainstate.tar.gz"
+            "${SSH_USER}@${SSH_HOST}" \
+            "docker exec node-scala-testnet tar czf - -C /var/lib/dcc data" \
+            > /tmp/mainstate.tar.gz
           ls -la /tmp/mainstate.tar.gz
+          gzip -t /tmp/mainstate.tar.gz && echo "tar.gz integrity OK"
           rm -f /tmp/id_rsa
       - name: install main's canonical chain state onto each fork node
         run: |
