@@ -7,57 +7,17 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     environment: testnet
     steps:
-      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
-      - name: Get LKE kubeconfig
+      - name: extension timing check
         env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-        run: |
-          set -euo pipefail
-          CLUSTER_ID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters" | \
-            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
-          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
-            "https://api.linode.com/v4/lke/clusters/${CLUSTER_ID}/kubeconfig" | jq -r '.kubeconfig')
-          echo "$RAW" | base64 -d > /tmp/kubeconfig
-          chmod 600 /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: gen-0/gen-1/val-0 pod health
-        run: |
-          echo "=== pod status + restart counts ==="
-          kubectl get pods -n dcc -o wide
-          echo "=== container restart counts detail ==="
-          kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.metadata.name}{": restarts="}{.status.containerStatuses[0].restartCount}{" ready="}{.status.containerStatuses[0].ready}{"\n"}{end}'
-      - name: main node full check
-        env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
-          MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          echo "${MAIN_API_KEY}" > /tmp/.main_key
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
-          rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n"); rm -f /tmp/.main_key
-             echo "=== container restarts ==="
-             docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}} started={{.State.StartedAt}}"
-             docker inspect matcher-testnet --format "matcher restarts={{.RestartCount}} status={{.State.Status}}"
-             echo "=== peers over 40s ==="
-             for i in 1 2 3 4; do
-               curl -s -H "X-API-Key: $API_KEY" http://localhost:6869/peers/connected 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"peers:\", [p[\"peerName\"] for p in d.get(\"peers\",[])])"
-               sleep 10
-             done
-             echo "=== finality ==="
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",d.get(\"currentGenerators\",[]),\"NextGens:\",d.get(\"nextGenerators\",[]))"
-             echo "=== 6887/6881 listening ==="
-             ss -tlnp 2>/dev/null | grep -E "6887|6881"
-             echo "=== extension enable count (should be 1 each) ==="
-             docker logs node-scala-testnet 2>&1 | grep -c "Enable extension: com.decentralchain.events.BlockchainUpdates"
-             docker logs node-scala-testnet 2>&1 | grep -c "Enable extension: com.decentralchain.dex.grpc.integration.DEXExtension"'
+            'docker logs node-scala-testnet 2>&1 | grep -aE "Enable extension|lock hold|RestartCount|Error while initializing"'
           rm -f /tmp/id_rsa
