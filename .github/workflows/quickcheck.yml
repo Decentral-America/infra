@@ -1,0 +1,23 @@
+name: quickcheck
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: testnet
+    steps:
+      - name: check
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            'docker inspect node-scala-testnet --format "restarts={{.RestartCount}} status={{.State.Status}} startedAt={{.State.StartedAt}}"
+             docker logs node-scala-testnet 2>&1 | grep -aiE "BlockchainUpdates|resetting|IllegalState" | tail -10'
+          rm -f /tmp/id_rsa
