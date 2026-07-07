@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 10
     environment: testnet
     steps:
-      - name: tight TCP state polling on the server itself
+      - name: simplest possible TCP polling
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -19,18 +19,22 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'nohup bash -c "
+            'echo "=== sanity: what does ss -tn show right now, unfiltered? ==="
+             ss -tn | head -20
+             echo "=== nohup tight poll ==="
+             nohup bash -c "
               for i in \$(seq 1 150); do
-                echo \"=== \$(date -u +%H:%M:%S) ===\"
-                ss -tn \"( dst 172.105.64.89 )\" 2>/dev/null
+                echo \"=== \$(date -u +%H:%M:%S) ===\" >> /tmp/ss-poll.log
+                ss -tn >> /tmp/ss-poll.log 2>&1
                 sleep 2
               done
-            " > /tmp/ss-poll.log 2>&1 &
-             echo "started, pid=\$!"'
+             " > /dev/null 2>&1 &
+             disown
+             echo "started"'
           rm -f /tmp/id_rsa
-      - name: wait 5.5 minutes for the poll to run
+      - name: wait 5.5 minutes
         run: sleep 330
-      - name: fetch results
+      - name: fetch and grep results
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -39,8 +43,8 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'grep -B1 -A1 "ESTAB\|CLOSE\|172.105.64.89:686" /tmp/ss-poll.log | grep -v "^--$" | head -150
-             echo "=== total samples with any output ==="
-             grep -c "172.105.64.89" /tmp/ss-poll.log
+            'wc -l /tmp/ss-poll.log
+             echo "=== lines mentioning 172.105.64 ==="
+             grep -B2 "172.105.64" /tmp/ss-poll.log | head -100
              rm -f /tmp/ss-poll.log'
           rm -f /tmp/id_rsa
