@@ -18,13 +18,11 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'echo "=== JAVA_OPTS / extensions in secrets env ==="
-             sudo grep -o "\-Ddcc\.extensions[^ ]*" /opt/dcc/secrets/testnet.env || echo "(none found)"
-             echo "=== full JAVA_OPTS line (redacted secrets) ==="
-             sudo grep "JAVA_OPTS" /opt/dcc/secrets/testnet.env | sed -E "s/(SEED|PASSWORD|KEY)=[^ ]*/\1=[REDACTED]/gI"
-             echo "=== backup file for comparison ==="
-             sudo diff /opt/dcc/secrets/testnet.env.bak-dexext /opt/dcc/secrets/testnet.env 2>&1 | sed -E "s/(SEED|PASSWORD|KEY)=[^ ]*/\1=[REDACTED]/gI" || echo "(no backup or no diff)"
-             echo "=== container image local.conf ==="
-             docker exec node-scala-testnet find / -maxdepth 3 -iname "*local.conf*" 2>/dev/null
-             docker exec node-scala-testnet cat /usr/share/dcc/conf/local.conf 2>/dev/null || echo "(not at that path)"'
+            'echo "=== matcher status ==="
+             docker ps --format "{{.Names}} {{.Status}}" | grep matcher
+             echo "=== matcher recent logs ==="
+             docker logs matcher-testnet --tail 40 2>&1
+             echo "=== is anything listening on 6887 (DEXExtension gRPC)? ==="
+             docker exec node-scala-testnet sh -c "cat /proc/net/tcp | grep -i :1AE7" || true
+             ss -tlnp 2>/dev/null | grep 6887 || echo "nothing on 6887"'
           rm -f /tmp/id_rsa
