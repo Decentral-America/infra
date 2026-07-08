@@ -42,13 +42,7 @@ jobs:
           echo "=== generator distribution over last 50 blocks (height $FROM-$MH) ==="
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
             "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/seq/${FROM}/${MH}" | \
-            python3 -c "
-import json,sys,collections
-d=json.load(sys.stdin)
-c=collections.Counter(b.get('generator') for b in d)
-for gen,count in c.most_common():
-    print(f'{gen}: {count}/50')
-"
+            python3 -c "import json,sys,collections; d=json.load(sys.stdin); c=collections.Counter(b.get('generator') for b in d); [print(f'{gen}: {count}/50') for gen,count in c.most_common()]"
           echo "=== gen-0/gen-1/val-0 log check: any Suspending/Channel closed in last 30 min? ==="
           for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
             echo "--- $pod ---"
