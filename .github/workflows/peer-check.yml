@@ -36,7 +36,14 @@ jobs:
             echo "$pod: $H"
           done
           echo "=== main peers connected ==="
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('peers',[])), 'peers:', [p.get('declaredAddress') for p in d.get('peers',[])])"
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" > /tmp/peers.json
+          cat /tmp/peers.json
+          python3 -c "
+import json
+d = json.load(open('/tmp/peers.json'))
+peers = d.get('peers', d) if isinstance(d, dict) else d
+print(len(peers), 'peers:', [p.get('declaredAddress') or p.get('address') for p in peers])
+"
           MH=$(echo "$MAIN_H" | grep -o '[0-9]*')
           FROM=$((MH-49))
           echo "=== generator distribution over last 50 blocks (height $FROM-$MH) ==="
