@@ -1,4 +1,4 @@
-name: Verify Fork Reconciliation Stability
+name: Final Fork Reconciliation Check
 on:
   workflow_dispatch: {}
 permissions:
@@ -6,7 +6,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment: testnet
     steps:
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d
@@ -20,28 +20,37 @@ jobs:
           echo "$RAW" | base64 -d > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-      - name: check heights + block IDs + generator diversity over time
+      - name: current heights + last 50 block generators + peer connectivity
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          for i in 1 2 3 4; do
-            echo "===== round $i ($(date -u)) ====="
-            MAIN_H=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/height")
-            echo "main: $MAIN_H"
-            for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
-              H=$(kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/blocks/height 2>&1 || echo fail)
-              echo "$pod: $H"
-            done
-            echo "--- main last 20 blocks generators ---"
-            ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
-              "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/last | true"
-            MH=$(echo "$MAIN_H" | grep -o '[0-9]*')
-            FROM=$((MH-19))
-            ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
-              "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/seq/${FROM}/${MH}" | \
-              python3 -c "import json,sys; d=json.load(sys.stdin); print([b.get('generator') for b in d])"
-            sleep 60
+          echo "=== current time (UTC) ==="
+          date -u
+          MAIN_H=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/height")
+          echo "main: $MAIN_H"
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            H=$(kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/blocks/height 2>&1 || echo fail)
+            echo "$pod: $H"
+          done
+          echo "=== main peers connected ==="
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('peers',[])), 'peers:', [p.get('declaredAddress') for p in d.get('peers',[])])"
+          MH=$(echo "$MAIN_H" | grep -o '[0-9]*')
+          FROM=$((MH-49))
+          echo "=== generator distribution over last 50 blocks (height $FROM-$MH) ==="
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
+            "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/seq/${FROM}/${MH}" | \
+            python3 -c "
+import json,sys,collections
+d=json.load(sys.stdin)
+c=collections.Counter(b.get('generator') for b in d)
+for gen,count in c.most_common():
+    print(f'{gen}: {count}/50')
+"
+          echo "=== gen-0/gen-1/val-0 log check: any Suspending/Channel closed in last 30 min? ==="
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "--- $pod ---"
+            kubectl logs -n dcc $pod --since=30m 2>&1 | grep -E "Suspending|Channel closed \(expected\)" | wc -l
           done
