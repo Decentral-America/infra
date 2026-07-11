@@ -45,6 +45,10 @@ def metrics():
         "# TYPE dcc_finalized_height gauge",
         "# HELP dcc_finality_lag Blocks behind the chain tip that have not yet been finalized",
         "# TYPE dcc_finality_lag gauge",
+        "# HELP dcc_hotstuff_finalized_height Observational T2 HotStuff committed height (only present when hotstuff.enabled and it has committed >=1 block; feature-25 remains authoritative)",
+        "# TYPE dcc_hotstuff_finalized_height gauge",
+        "# HELP dcc_hotstuff_lag Blocks the observational HotStuff commit is behind the chain tip",
+        "# TYPE dcc_hotstuff_lag gauge",
         "# HELP dcc_peers_connected Number of currently connected P2P peers",
         "# TYPE dcc_peers_connected gauge",
         "# HELP dcc_scrape_error 1 if the last scrape failed for any endpoint, 0 otherwise",
@@ -78,6 +82,14 @@ def metrics():
                 lines.append(f'dcc_finality_lag{{{lbl}}} {max(0, height - finalized)}')
         else:
             error = 1
+
+        # Observational T2 HotStuff height, surfaced on /node/status only when hotstuff is enabled and
+        # has committed a block. Absent (HotStuff off/idle) => emit nothing, and do NOT flag an error.
+        if s and "hotStuffFinalizedHeight" in s:
+            hs = s["hotStuffFinalizedHeight"]
+            lines.append(f'dcc_hotstuff_finalized_height{{{lbl}}} {hs}')
+            if height:
+                lines.append(f'dcc_hotstuff_lag{{{lbl}}} {max(0, height - hs)}')
 
         # /peers/connected may require X-API-Key; silently return 0 without marking error
         peers = fetch(f"{base}/peers/connected")
