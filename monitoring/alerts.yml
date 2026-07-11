@@ -18,16 +18,19 @@ groups:
       # HotStuff commit is observational and exposes no separate metric; monitor the one real
       # finalized height from GET /blocks/height/finalized. If generators stop committing or quorum
       # is lost, the lag grows and this fires (covers the old generator-count alerts).
+      # Normal lag on this testnet is ~100 blocks (finality is per-generation-period,
+      # generation-period-length=100, so finalizedHeight ≈ height − 100). Alert only when lag exceeds
+      # ~2.5 periods, i.e. finality is genuinely falling behind, to avoid false positives at steady state.
       - alert: FinalizationStalled
         expr: |
-          dcc_finality_lag > 50
-        for: 10m
+          dcc_finality_lag > 250
+        for: 15m
         labels:
           severity: high
           network: testnet
         annotations:
-          summary: "DCC finalization lagging >50 blocks"
-          description: "dcc_finality_lag > 50 for 10 min. Generators may not be committed or quorum lost — check auto-commit-generators."
+          summary: "DCC finalization lagging >250 blocks (>2.5 generation periods)"
+          description: "dcc_finality_lag > 250 for 15 min (normal ~100). Generators may not be committed or quorum lost — check auto-commit-generators."
 
       # ── Exporter health ────────────────────────────────────────────────────
       - alert: ExporterScrapeError
