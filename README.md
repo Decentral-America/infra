@@ -1329,9 +1329,9 @@ and gen-1 (running on LKE), it fetches the cluster kubeconfig via the Linode API
 | `GEN_1_NODE_REST_API_KEY` | API key hash for dcc-gen-1's REST API |
 
 **Final step:** After committing all generators, the workflow SSHs to the main node and
-calls `/blockchain/finality` to log current height, finalized height, T2 finalized height,
-and active generator counts. This serves as a lightweight health check after each commitment
-cycle.
+calls `GET /blocks/height` and `GET /blocks/height/finalized` to log the chain tip, the
+feature-25 Deterministic Finality finalized height, and the lag between them. This serves
+as a lightweight health check after each commitment cycle.
 
 **Manual run:**
 ```bash

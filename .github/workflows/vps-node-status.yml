@@ -26,7 +26,9 @@ jobs:
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
              echo "=== Finality ==="
-             curl -s http://localhost:6869/blockchain/finality 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[])),\"Period:\",d.get(\"currentGenerationPeriod\",{}).get(\"start\",\"?\"),\"->\",d.get(\"currentGenerationPeriod\",{}).get(\"end\",\"?\"))" 2>/dev/null
+             H=$(curl -s http://localhost:6869/blocks/height 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             F=$(curl -s http://localhost:6869/blocks/height/finalized 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "H: $H Finalized: $F Lag: $(( ${H:-0} - ${F:-0} ))"
              echo "=== HotStuff round latency (Kamon) ==="
              curl -s http://localhost:6870/metrics 2>/dev/null | grep -E "^hotstuff_round_latency" | grep -v "_bucket\|_sum\|_count" | head -5
              echo "=== BPS block count ==="

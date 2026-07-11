@@ -105,8 +105,8 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Finality Lag (T0 / T2)",
-      "description": "Blocks behind tip that T0 DeterministicFinality / T2 HotStuff have not yet finalized.",
+      "title": "Finality Lag",
+      "description": "Blocks behind the tip not yet finalized (feature-25 Deterministic Finality; authoritative). HotStuff commit is observational and exposes no separate metric.",
       "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": {
@@ -120,20 +120,16 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "dcc_t0_finality_lag",
-          "legendFormat": "T0 {{node}}"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "dcc_t2_finality_lag",
-          "legendFormat": "T2 {{node}}"
+          "expr": "dcc_finality_lag",
+          "legendFormat": "lag {{node}}"
         }
       ]
     },
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Committed Generators (current / next period)",
+      "title": "Finalized Height",
+      "description": "feature-25 Deterministic Finality finalized block height (GET /blocks/height/finalized).",
       "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": {
@@ -146,13 +142,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "dcc_current_generators",
-          "legendFormat": "current {{node}}"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "dcc_next_generators",
-          "legendFormat": "next {{node}}"
+          "expr": "dcc_finalized_height",
+          "legendFormat": "finalized {{node}}"
         }
       ]
     },

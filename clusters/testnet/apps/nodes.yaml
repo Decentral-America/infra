@@ -126,7 +126,7 @@ data:
       }
       hotstuff {
         enabled = true
-        round-timeout-ms = 1200
+        round-timeout = 1200ms
       }
     }
 
@@ -228,7 +228,7 @@ data:
       }
       hotstuff {
         enabled = true
-        round-timeout-ms = 1200
+        round-timeout = 1200ms
       }
     }
 
@@ -331,7 +331,7 @@ data:
       }
       hotstuff {
         enabled = true
-        round-timeout-ms = 1200
+        round-timeout = 1200ms
       }
     }
 

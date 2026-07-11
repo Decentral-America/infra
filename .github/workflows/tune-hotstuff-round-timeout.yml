@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Compute new round-timeout-ms from Kamon p99
+      - name: Compute new round-timeout from Kamon p99
         id: compute
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
@@ -60,13 +60,13 @@ jobs:
       - name: Update configs in repo
         run: |
           NEW_TIMEOUT="${{ steps.compute.outputs.NEW_TIMEOUT }}"
-          echo "Applying round-timeout-ms = ${NEW_TIMEOUT}ms (source: ${{ steps.compute.outputs.SOURCE }})"
+          echo "Applying round-timeout = ${NEW_TIMEOUT}ms (source: ${{ steps.compute.outputs.SOURCE }})"
 
-          sed -i "s/round-timeout-ms = [0-9]*/round-timeout-ms = ${NEW_TIMEOUT}/" \
+          sed -i "s/round-timeout = [0-9]*ms/round-timeout = ${NEW_TIMEOUT}ms/" \
             node-config/testnet/dcc.conf
           grep "round-timeout" node-config/testnet/dcc.conf
 
-          sed -i "s/round-timeout-ms = [0-9]*/round-timeout-ms = ${NEW_TIMEOUT}/g" \
+          sed -i "s/round-timeout = [0-9]*ms/round-timeout = ${NEW_TIMEOUT}ms/g" \
             clusters/testnet/apps/nodes.yaml
           grep "round-timeout" clusters/testnet/apps/nodes.yaml
 
@@ -77,7 +77,7 @@ jobs:
           git config user.email "josuecr.288@gmail.com"
           git add node-config/testnet/dcc.conf clusters/testnet/apps/nodes.yaml
           git diff --cached --stat
-          git commit -m "ops(testnet): tune round-timeout-ms -> ${NEW_TIMEOUT}ms (HotStuff p99+20%)"
+          git commit -m "ops(testnet): tune round-timeout -> ${NEW_TIMEOUT}ms (HotStuff p99+20%)"
           git push
 
       - name: Deploy to VPS and restart node

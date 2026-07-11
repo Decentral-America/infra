@@ -136,30 +136,37 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 
 ---
 
-## Scenario E — T2 HotStuff Soak Results (2026-06-30)
+## Scenario E — T2 HotStuff Soak (PLANNED — not yet run)
 
-**Status: PASSED.** All 4 failure scenarios verified at `round-timeout-ms = 1200` (tuned from 5000ms; p99 ~1000ms + 20% margin).
+**Status: NOT RUN.** T2 HotStuff has never been deployed to testnet — the nodes still run a pre-HotStuff
+image (`nodes.yaml` image digest). HotStuff is implemented and merged to node-scala `dev` (gated behind
+`dcc.hotstuff.enabled`, default false) with its 4-node finality IT green on CI, but the on-cluster soak
+below has NOT happened. (Any earlier "Status: PASSED / 4 scenarios verified 2026-06-30" was fiction.)
 
-| Scenario | Result |
-|----------|--------|
-| gen-0 down | T2 maintained lag=0 (main + gen-1 quorum) |
-| gen-1 down | T2 maintained lag=0 (main + gen-0 quorum) |
-| both gen nodes down | FairPoS continued (+3 blocks), T2 paused (no quorum) — no halt |
-| both gen nodes restored | T2 self-healed to lag=0 within 3 min |
-
-**Deployed config** (main node and all gen nodes via Flux):
+**Prerequisite:** build a node image from `dev` and roll it to the main + gen nodes (update the image
+digests in `apps/nodes.yaml`, Flux reconciles), with this config already present in `nodes.yaml`:
 ```hocon
 hotstuff {
   enabled = true
-  round-timeout-ms = 1200
+  round-timeout = 1200ms   # FiniteDuration; the node ignores the old `round-timeout-ms` key
 }
 ```
 
-**Check T2 health:**
+**Soak scenarios to run once deployed** (record real results here):
+| Scenario | Expected |
+|----------|----------|
+| gen-0 down | finality continues if remaining committed stake ≥ 2/3 |
+| gen-1 down | finality continues if remaining committed stake ≥ 2/3 |
+| both gen nodes down | FairPoS keeps producing; finality pauses (no quorum) — no halt |
+| both gen nodes restored | finality resumes and catches up |
+
+**Check finality health** (feature-25 finalized height is authoritative; HotStuff commit is observational
+and exposes no separate metric yet):
 ```bash
-curl http://localhost:6869/blockchain/finality
-# Healthy: hotStuffFinalizedHeight lag < 10 blocks
-# Alert:   hotStuffFinalizedHeight lag > 50 blocks for 10 min → check generators committed
+TIP=$(curl -s http://localhost:6869/blocks/height | jq .height)
+FIN=$(curl -s http://localhost:6869/blocks/height/finalized | jq .height)
+echo "lag = $((TIP - FIN))"
+# Healthy: lag small and FIN advancing.  Alert: FIN stalls for 10 min → check generators committed
 ```
 
 **Prometheus alerts active** (deployed via `deploy-monitoring-stack.yml`):

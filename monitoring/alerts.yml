@@ -14,28 +14,20 @@ groups:
           summary: "DCC testnet block production stalled (>5 min since last block)"
           description: "dcc_blockchain_height_age_seconds > 300. Chain may be halted or main node offline."
 
-      # ── T2 HotStuff finality ───────────────────────────────────────────────
-      - alert: T2FinalizationStalled
+      # ── Finality (feature-25 Deterministic Finality — the authoritative finalized height) ──
+      # HotStuff commit is observational and exposes no separate metric; monitor the one real
+      # finalized height from GET /blocks/height/finalized. If generators stop committing or quorum
+      # is lost, the lag grows and this fires (covers the old generator-count alerts).
+      - alert: FinalizationStalled
         expr: |
-          dcc_t2_finality_lag > 50
+          dcc_finality_lag > 50
         for: 10m
         labels:
           severity: high
           network: testnet
         annotations:
-          summary: "T2 HotStuff finalization lagging >50 blocks"
-          description: "dcc_t2_finality_lag > 50 for 10 min. Generators may not be committed or quorum lost."
-
-      - alert: T2GeneratorsNotCommitted
-        expr: |
-          dcc_next_generators < 2
-        for: 15m
-        labels:
-          severity: high
-          network: testnet
-        annotations:
-          summary: "T2 NextGenerators < 2 for >15 min"
-          description: "Less than 2 generators committed for next period. T2 will stop finalizing at end of current period (~50 min)."
+          summary: "DCC finalization lagging >50 blocks"
+          description: "dcc_finality_lag > 50 for 10 min. Generators may not be committed or quorum lost — check auto-commit-generators."
 
       # ── Exporter health ────────────────────────────────────────────────────
       - alert: ExporterScrapeError
@@ -64,37 +56,14 @@ groups:
           summary: "DCC chain exporter unreachable"
           description: "Prometheus cannot scrape dcc-exporter at :9101. Exporter container may be down."
 
-      # ── T0 DeterministicFinality ──────────────────────────────────────────
-      - alert: T0FinalizationStalled
+      # ── Finality not advancing at all ─────────────────────────────────────
+      - alert: FinalizationNotAdvancing
         expr: |
-          dcc_t0_finality_lag > 150
-        for: 60m
-        labels:
-          severity: medium
-          network: testnet
-        annotations:
-          summary: "T0 DeterministicFinality lagging >150 blocks for 1 hour"
-          description: "dcc_t0_finality_lag > 150 for 60 min. T0 should self-heal via auto-commit-generators. If persisting, check generator commitment history."
-
-      - alert: T0NotAdvancing
-        expr: |
-          increase(dcc_t0_finalized_height[30m]) == 0
+          increase(dcc_finalized_height[30m]) == 0
         for: 30m
         labels:
           severity: high
           network: testnet
         annotations:
-          summary: "T0 finalizedHeight not advancing for 30 min"
-          description: "T0 finalizedHeight has been completely static for 30 min. Generators are not committing or endorsements are not flowing."
-
-      # ── Current period generators ──────────────────────────────────────────
-      - alert: CurrentGeneratorsExpired
-        expr: |
-          dcc_current_generators < 2
-        for: 5m
-        labels:
-          severity: high
-          network: testnet
-        annotations:
-          summary: "Current period generators < 2"
-          description: "Fewer than 2 generators committed for the current period. T2 cannot form quorum. Run auto-commit-generators.yml immediately."
+          summary: "finalizedHeight not advancing for 30 min"
+          description: "dcc_finalized_height has been completely static for 30 min. Generators are not committing or endorsements are not flowing — run auto-commit-generators.yml."

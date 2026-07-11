@@ -164,5 +164,7 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
             "${SSH_USER}@${SSH_HOST}" \
-            'curl -s http://localhost:6869/blockchain/finality | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"H:\",d[\"height\"],\"T0:\",d[\"finalizedHeight\"],\"T2:\",d[\"hotStuffFinalizedHeight\"],\"CurGens:\",len(d.get(\"currentGenerators\",[])),\"NextGens:\",len(d.get(\"nextGenerators\",[])))  "' 2>/dev/null
+            'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "H: $H Finalized: $F Lag: $(( ${H:-0} - ${F:-0} ))"' 2>/dev/null
           rm -f /tmp/id_rsa

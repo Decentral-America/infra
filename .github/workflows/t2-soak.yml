@@ -11,7 +11,15 @@
 #   D) both back  → 3-of-3 quorum restored         → T2 resumes
 #
 # After each step: verify chain height advances (FairPoS never halts),
-# check hotStuffLag and hotStuffFinalizedHeight.
+# and check the finalized height from GET /blocks/height/finalized and its
+# lag behind the chain tip.
+#
+# NOTE: T2 HotStuff is implemented and merged to the node-scala `dev` branch,
+# gated behind `dcc.hotstuff.enabled` (default false); its 4-node finality
+# integration test is green on CI. It is PENDING deployment of a dev-built node
+# image to testnet + soak + external audit before it can be considered
+# validated. No soak has run yet — this workflow is the harness for that future
+# soak and requires a T2-enabled node image deployed to testnet first.
 # ──────────────────────────────────────────────────────────────────────────────
 name: T2 Soak Test
 
@@ -48,7 +56,7 @@ jobs:
 
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
 
-      - name: Baseline — verify T2 active before soak
+      - name: Baseline — record chain + finalized height before soak
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
@@ -59,8 +67,8 @@ jobs:
           kubectl get pods -n dcc -o wide 2>/dev/null | head -10
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H finality=$F"'
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F"'
 
       # ── Phase A: kill gen-0 ────────────────────────────────────────────────
       - name: "Phase A — scale gen-0 to 0"
@@ -78,9 +86,8 @@ jobs:
           kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H"
-             echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null'
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F lag:$(( ${H:-0} - ${F:-0} ))"'
 
       - name: "Phase A — restore gen-0"
         run: |
@@ -97,9 +104,8 @@ jobs:
           echo "=== Phase A: T2 after gen-0 restored ==="
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H"
-             echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null'
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F lag:$(( ${H:-0} - ${F:-0} ))"'
 
       # ── Phase B: kill gen-1 ────────────────────────────────────────────────
       - name: "Phase B — scale gen-1 to 0"
@@ -116,9 +122,8 @@ jobs:
           kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H"
-             echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null'
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F lag:$(( ${H:-0} - ${F:-0} ))"'
 
       - name: "Phase B — restore gen-1"
         run: |
@@ -135,9 +140,8 @@ jobs:
           echo "=== Phase B: T2 after gen-1 restored ==="
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H"
-             echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null'
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F lag:$(( ${H:-0} - ${F:-0} ))"'
 
       # ── Phase C: kill both ─────────────────────────────────────────────────
       - name: "Phase C — scale both gen nodes to 0"
@@ -155,9 +159,8 @@ jobs:
           kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H"
-             echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null'
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F lag:$(( ${H:-0} - ${F:-0} ))"'
 
       # ── Phase D: restore both ──────────────────────────────────────────────
       - name: "Phase D — restore both gen nodes"
@@ -177,9 +180,8 @@ jobs:
           kubectl get pods -n dcc -o wide 2>/dev/null | grep gen || echo "(no gen pods running)"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
             'H=$(curl -s http://localhost:6869/blocks/height | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
-             F=$(curl -s http://localhost:6869/blockchain/finality 2>/dev/null)
-             echo "height=$H"
-             echo "$F" | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"lag:\",d.get(\"hotStuffLag\",\"?\"),\"finalized:\",d.get(\"hotStuffFinalizedHeight\",\"?\"))" 2>/dev/null
+             F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import sys,json; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
+             echo "height=$H finalized=$F lag:$(( ${H:-0} - ${F:-0} ))"
              echo "=== Kamon HotStuff round latency (p50/p95/p99) ==="
              curl -s http://localhost:6870/metrics 2>/dev/null | grep "hotstuff_round_latency" | grep -v "^#" | head -20 || echo "metrics not available at :6870"'
 

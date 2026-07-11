@@ -5,14 +5,11 @@ Scrapes the public node REST API over HTTPS — no extra firewall rules needed.
 Exposes Prometheus metrics on :9101/metrics.
 
 Metrics exposed:
-  dcc_block_height                  — current blockchain height
+  dcc_block_height                  — current blockchain height (chain tip)
   dcc_blockchain_height_age_seconds — seconds since last block (staleness)
-  dcc_t2_finalized_height           — T2 HotStuff finalized height
-  dcc_t0_finalized_height           — T0 DeterministicFinality finalized height
-  dcc_t2_finality_lag               — blocks behind tip T2 has not finalized
-  dcc_t0_finality_lag               — blocks behind tip T0 has not finalized
-  dcc_current_generators            — generators committed for current period
-  dcc_next_generators               — generators committed for next period
+  dcc_finalized_height              — feature-25 Deterministic Finality finalized
+                                      height (from GET /blocks/height/finalized)
+  dcc_finality_lag                  — blocks behind the tip not yet finalized
   dcc_peers_connected               — connected P2P peers (0 if API key required)
   dcc_scrape_error                  — 1 if last scrape failed, 0 otherwise
 """
@@ -44,18 +41,10 @@ def metrics():
         "# TYPE dcc_block_height gauge",
         "# HELP dcc_blockchain_height_age_seconds Seconds since last block timestamp (block production staleness)",
         "# TYPE dcc_blockchain_height_age_seconds gauge",
-        "# HELP dcc_t2_finalized_height T2 HotStuff finalized block height",
-        "# TYPE dcc_t2_finalized_height gauge",
-        "# HELP dcc_t0_finalized_height T0 DeterministicFinality finalized block height",
-        "# TYPE dcc_t0_finalized_height gauge",
-        "# HELP dcc_t2_finality_lag Blocks behind chain tip that T2 has not yet finalized",
-        "# TYPE dcc_t2_finality_lag gauge",
-        "# HELP dcc_t0_finality_lag Blocks behind chain tip that T0 has not yet finalized",
-        "# TYPE dcc_t0_finality_lag gauge",
-        "# HELP dcc_current_generators Number of generators committed for current period",
-        "# TYPE dcc_current_generators gauge",
-        "# HELP dcc_next_generators Number of generators committed for next period",
-        "# TYPE dcc_next_generators gauge",
+        "# HELP dcc_finalized_height Feature-25 Deterministic Finality finalized block height (GET /blocks/height/finalized)",
+        "# TYPE dcc_finalized_height gauge",
+        "# HELP dcc_finality_lag Blocks behind the chain tip that have not yet been finalized",
+        "# TYPE dcc_finality_lag gauge",
         "# HELP dcc_peers_connected Number of currently connected P2P peers",
         "# TYPE dcc_peers_connected gauge",
         "# HELP dcc_scrape_error 1 if the last scrape failed for any endpoint, 0 otherwise",
@@ -81,19 +70,12 @@ def metrics():
         else:
             error = 1
 
-        fin = fetch(f"{base}/blockchain/finality")
-        if fin:
-            t2  = fin.get("hotStuffFinalizedHeight") or 0
-            t0  = fin.get("finalizedHeight") or 0
-            cur = len(fin.get("currentGenerators", []))
-            nxt = len(fin.get("nextGenerators", []))
-            lines.append(f'dcc_t2_finalized_height{{{lbl}}} {t2}')
-            lines.append(f'dcc_t0_finalized_height{{{lbl}}} {t0}')
+        fin = fetch(f"{base}/blocks/height/finalized")
+        if fin and "height" in fin:
+            finalized = fin["height"]
+            lines.append(f'dcc_finalized_height{{{lbl}}} {finalized}')
             if height:
-                lines.append(f'dcc_t2_finality_lag{{{lbl}}} {max(0, height - t2)}')
-                lines.append(f'dcc_t0_finality_lag{{{lbl}}} {max(0, height - t0)}')
-            lines.append(f'dcc_current_generators{{{lbl}}} {cur}')
-            lines.append(f'dcc_next_generators{{{lbl}}} {nxt}')
+                lines.append(f'dcc_finality_lag{{{lbl}}} {max(0, height - finalized)}')
         else:
             error = 1
 
