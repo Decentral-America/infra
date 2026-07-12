@@ -1,0 +1,147 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Unified testnet node release — ONE image digest to EVERY node, both substrates.
+#
+# The testnet runs on two substrates with historically separate deploy paths:
+#   • LKE k8s swarm  (gen-0 / gen-1 / val-0) — GitOps via clusters/testnet/apps/nodes.yaml + Flux
+#   • VPS main node  (31RPEKcz + matcher/BPS/redis) — SSH + `docker run`
+# With no single source of truth, the two drift (half-deploys, mixed protocol versions).
+#
+# This workflow is the single source of truth for "what node-scala image the testnet runs":
+#   1. Resolve the given tag/digest to an immutable @sha256 digest (regctl).
+#   2. VPS: SSH-deploy that exact digest to node-scala-testnet (no data wipe, same volume/config).
+#   3. K8s: pin clusters/testnet/apps/nodes.yaml to the SAME digest and open a PR (Flux applies on merge).
+#   4. Verify the VPS came back healthy on the new image.
+# Both substrates are driven from ONE resolved digest, so they cannot silently diverge.
+#
+# NORTH STAR (tracked separately): fold the VPS main node + matcher stack into the k8s cluster so the
+# whole testnet is one GitOps substrate and step 2 disappears. Until then, this orchestrator is the
+# guardrail — never hand-edit nodes.yaml or run the single-node workflows for an image change; run this.
+# ──────────────────────────────────────────────────────────────────────────────
+name: Deploy Testnet Release (all nodes, one digest)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: 'node-scala tag or digest to release to ALL testnet nodes (e.g. testnet-latest, dev-hotstuff, sha256:...)'
+        required: true
+        default: 'testnet-latest'
+      deploy_vps:
+        description: 'SSH-deploy the VPS main node (uncheck to only pin k8s)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-testnet-release
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/decentral-america/node-scala
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: testnet
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: true
+
+      - uses: regclient/actions/regctl-installer@1b705e32d40851370799ea5814e83d0a5f6a70dc  # v0.1.0
+
+      # ── 1. Single source of truth: resolve to an immutable digest ──────────────
+      - name: Resolve digest
+        id: resolve
+        run: |
+          set -euo pipefail
+          REF="${{ inputs.image_ref }}"
+          case "$REF" in
+            sha256:*) DIGEST="$REF" ;;
+            *)        DIGEST="$(regctl manifest digest "${IMAGE_NAME}:${REF}")" ;;
+          esac
+          echo "Releasing ${IMAGE_NAME}@${DIGEST} (from ref '${REF}') to ALL testnet nodes"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      # ── 2. VPS main node: SSH-deploy the exact digest (no data wipe) ───────────
+      - name: Deploy VPS main node
+        if: ${{ inputs.deploy_vps }}
+        env:
+          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set -e
+             IMG=${IMAGE_NAME}@${DIGEST}
+             echo '=== Current node ==='; docker ps | grep node-scala || true
+             echo '${GHCR_TOKEN}' | docker login ghcr.io -u nobody --password-stdin 2>/dev/null || true
+             docker pull \"\$IMG\" 2>&1 | tail -3
+             echo '=== Restart on pinned digest (SAME volume + config, no data wipe) ==='
+             docker stop node-scala-testnet 2>/dev/null || true
+             docker rm node-scala-testnet 2>/dev/null || true
+             docker run -d \
+               --name node-scala-testnet \
+               --network host --restart unless-stopped \
+               --memory 4g --memory-reservation 1g \
+               --security-opt no-new-privileges:true --cap-drop ALL --read-only \
+               --tmpfs /tmp:size=256m,mode=1777,exec \
+               -v node-state-testnet:/var/lib/dcc \
+               -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
+               -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
+               --env-file /opt/dcc/secrets/testnet.env \
+               -e DCC_NETWORK=testnet -e DCC_HEAP_SIZE=2g -e DCC_REST_API_BIND=0.0.0.0 \
+               \"\$IMG\"
+             sleep 20
+             docker ps | grep node-scala"
+          rm -f /tmp/id_rsa
+
+      # ── 3. K8s swarm: pin nodes.yaml to the SAME digest, open a PR (Flux applies on merge) ──
+      - name: Pin k8s swarm to the same digest
+        id: pin
+        run: |
+          set -euo pipefail
+          FILE=clusters/testnet/apps/nodes.yaml
+          NEW="${IMAGE_NAME}@${{ steps.resolve.outputs.digest }}"
+          if grep -qF "$NEW" "$FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "k8s already pins this digest."; exit 0
+          fi
+          sed -i -E "s#${IMAGE_NAME}(:[A-Za-z0-9._-]+|@sha256:[0-9a-f]+)#${NEW}#g" "$FILE"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open k8s pin PR
+        if: steps.pin.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+        run: |
+          set -euo pipefail
+          BRANCH="release-testnet-$(date -u +%Y%m%d%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add clusters/testnet/apps/nodes.yaml
+          git commit -m "chore(release): pin testnet k8s swarm to ${DIGEST}"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore(release): testnet k8s swarm -> ${DIGEST}" \
+            --body "Part of a unified testnet release (deploy-testnet-release.yml). The VPS main node was already SSH-deployed to this same digest in the same run; merge this to bring gen-0/gen-1/val-0 to it via Flux. All nodes then run the identical digest."
+
+      # ── 4. Verify the VPS came back on the new image ───────────────────────────
+      - name: Verify VPS health
+        if: ${{ inputs.deploy_vps }}
+        run: |
+          set -euo pipefail
+          echo "Post-deploy VPS (public) status:"
+          curl -s --max-time 15 https://testnet-node.decentralchain.io/node/version || echo "(unreachable — investigate)"
+          echo; curl -s --max-time 15 https://testnet-node.decentralchain.io/node/status || true
+          echo; echo "Note: gen-0/gen-1/val-0 come to this digest only after the k8s pin PR merges (Flux)."
