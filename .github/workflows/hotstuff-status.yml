@@ -1,0 +1,70 @@
+# Read-only diagnostic: dump each testnet gen node's image, /node/status, and HotStuff log lines to an
+# artifact (so it can be inspected without scraping Actions logs). Used to verify whether HotStuff is
+# actually running/committing on the k8s swarm, which is not reachable from outside the cluster.
+name: HotStuff Status (k8s gen nodes)
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Target network'
+        required: true
+        default: 'testnet'
+        type: choice
+        options: [testnet]
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-${{ inputs.network }}") | .id')
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            -X GET "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig')
+          echo "$RAW" | python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip() + "=="))' > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+
+      - name: Collect HotStuff status
+        run: |
+          set +e
+          OUT=/tmp/hotstuff-status.txt
+          : > "$OUT"
+          echo "collected: $(date -u +%FT%TZ)" >> "$OUT"
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "" >> "$OUT"; echo "############## $pod ##############" >> "$OUT"
+            echo "-- image --" >> "$OUT"
+            kubectl get pod -n dcc "$pod" -o jsonpath='{.spec.containers[0].image}' >> "$OUT" 2>&1; echo >> "$OUT"
+            echo "-- phase --" >> "$OUT"
+            kubectl get pod -n dcc "$pod" -o jsonpath='{.status.phase} restarts={.status.containerStatuses[0].restartCount}' >> "$OUT" 2>&1; echo >> "$OUT"
+            echo "-- /node/status (via port-forward) --" >> "$OUT"
+            kubectl port-forward -n dcc "$pod" 17869:6869 >/dev/null 2>&1 &
+            PF=$!; sleep 4
+            curl -s --max-time 8 http://127.0.0.1:17869/node/status >> "$OUT" 2>&1; echo >> "$OUT"
+            curl -s --max-time 8 http://127.0.0.1:17869/blocks/height/finalized >> "$OUT" 2>&1; echo >> "$OUT"
+            kill $PF 2>/dev/null
+            echo "-- HotStuff / endorsement log lines (tail) --" >> "$OUT"
+            kubectl logs -n dcc "$pod" --tail=1200 2>/dev/null \
+              | grep -iE "hotstuff|T2 HotStuff coordinator|observational commit|Generator set is empty|Started voting|endorsement" \
+              | tail -25 >> "$OUT" 2>&1
+          done
+          echo "" >> "$OUT"; echo "############## flux kustomizations ##############" >> "$OUT"
+          kubectl get kustomization -A >> "$OUT" 2>&1
+          echo "===== BEGIN STATUS ====="; cat "$OUT"; echo "===== END STATUS ====="
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: hotstuff-status
+          path: /tmp/hotstuff-status.txt
+          retention-days: 3
