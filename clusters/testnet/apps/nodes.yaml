@@ -127,6 +127,7 @@ data:
       hotstuff {
         enabled = true
         round-timeout = 1200ms
+        settled-depth = 3
       }
     }
 
@@ -229,6 +230,7 @@ data:
       hotstuff {
         enabled = true
         round-timeout = 1200ms
+        settled-depth = 3
       }
     }
 
@@ -332,6 +334,7 @@ data:
       hotstuff {
         enabled = true
         round-timeout = 1200ms
+        settled-depth = 3
       }
     }
 
