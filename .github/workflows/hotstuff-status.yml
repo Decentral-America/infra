@@ -54,10 +54,17 @@ jobs:
             curl -s --max-time 8 http://127.0.0.1:17869/node/status >> "$OUT" 2>&1; echo >> "$OUT"
             curl -s --max-time 8 http://127.0.0.1:17869/blocks/height/finalized >> "$OUT" 2>&1; echo >> "$OUT"
             kill $PF 2>/dev/null
-            echo "-- HotStuff / endorsement log lines (tail) --" >> "$OUT"
-            kubectl logs -n dcc "$pod" --tail=1200 2>/dev/null \
-              | grep -iE "hotstuff|T2 HotStuff coordinator|observational commit|Generator set is empty|Started voting|endorsement" \
-              | tail -25 >> "$OUT" 2>&1
+            echo "-- HotStuff coordinator startup line (FULL logs, not tail) --" >> "$OUT"
+            kubectl logs -n dcc "$pod" 2>/dev/null \
+              | grep -iE "T2 HotStuff coordinator|consensus\.hotstuff|hotstuff" | head -15 >> "$OUT" 2>&1
+            echo "(none)" >> "$OUT"
+            echo "-- hotstuff-related WARN/ERROR/exception (FULL logs) --" >> "$OUT"
+            kubectl logs -n dcc "$pod" 2>/dev/null \
+              | grep -iE "hotstuff|consensus" | grep -iE "warn|error|exception|fail" | head -10 >> "$OUT" 2>&1
+            echo "-- effective hotstuff config (from mounted ConfigMap) --" >> "$OUT"
+            cm="${pod#dcc-}"; cm="${cm%-0}-config"
+            kubectl get configmap -n dcc "$cm" -o jsonpath='{.data.dcc\.conf}' 2>/dev/null \
+              | grep -iA3 hotstuff >> "$OUT" 2>&1
           done
           echo "" >> "$OUT"; echo "############## flux kustomizations ##############" >> "$OUT"
           kubectl get kustomization -A >> "$OUT" 2>&1
