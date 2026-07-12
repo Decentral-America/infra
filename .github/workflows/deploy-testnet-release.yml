@@ -81,14 +81,14 @@ jobs:
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            "set -e
+            "set +e   # tolerate benign nonzeros (stop/rm on absent container); we assert success explicitly at the end
              IMG=${IMAGE_NAME}@${DIGEST}
-             echo '=== Current node ==='; docker ps | grep node-scala || true
+             echo '=== Current node ==='; docker ps | grep node-scala
              echo '${GHCR_TOKEN}' | docker login ghcr.io -u nobody --password-stdin 2>/dev/null || true
              docker pull \"\$IMG\" 2>&1 | tail -3
              echo '=== Restart on pinned digest (SAME volume + config, no data wipe) ==='
-             docker stop node-scala-testnet 2>/dev/null || true
-             docker rm node-scala-testnet 2>/dev/null || true
+             docker stop node-scala-testnet 2>/dev/null
+             docker rm node-scala-testnet 2>/dev/null
              docker run -d \
                --name node-scala-testnet \
                --network host --restart unless-stopped \
@@ -102,7 +102,11 @@ jobs:
                -e DCC_NETWORK=testnet -e DCC_HEAP_SIZE=2g -e DCC_REST_API_BIND=0.0.0.0 \
                \"\$IMG\"
              sleep 20
-             docker ps | grep node-scala"
+             echo '=== New node ==='
+             # Explicit success gate: container must be Up (not missing / Restarting / Exited) on the new image.
+             if ! docker ps --format '{{.Names}} {{.Status}}' | grep -E '^node-scala-testnet +Up'; then
+               echo 'DEPLOY FAILED: node-scala-testnet is not Up after restart'; docker ps -a | grep node-scala; exit 1
+             fi"
           rm -f /tmp/id_rsa
 
       # ── 3. K8s swarm: pin nodes.yaml to the SAME digest, open a PR (Flux applies on merge) ──
