@@ -14,9 +14,10 @@ the exact mistake that causes half-deploys and mixed protocol versions. Full inv
 > Any consensus change (e.g. enabling HotStuff) that skips it will fail to reach quorum network-wide.
 
 ## The rule: image changes go through ONE workflow
-**`deploy-testnet-release.yml`** resolves an image ref to an immutable digest and reconciles **both**
-substrates to that **same digest** (VPS via SSH now; k8s via a `nodes.yaml` pin PR → Flux on merge).
-This is the single source of truth for what image every node runs.
+**`deploy-testnet-release.yml`** is a thin orchestrator that **calls the existing battle-tested
+workflows** (it does not reimplement them) with the same image ref, so both substrates move together:
+`deploy-specific-sha.yml` (VPS main node, SSH) + `pin-node-image-digest.yml` (k8s swarm — resolves the
+ref to an immutable digest and PRs `nodes.yaml` → Flux on merge). One dispatch, one image ref, all nodes.
 
 - ✅ **Do:** `Actions → Deploy Testnet Release → image_ref=<tag|digest>`. One digest, all nodes.
 - ❌ **Don't** hand-edit `nodes.yaml`, or run `update-node-image.yml` / `deploy-specific-sha.yml` /

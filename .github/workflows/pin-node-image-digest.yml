@@ -17,6 +17,13 @@
 name: Pin node-scala Testnet Image Digest
 
 on:
+  workflow_call:
+    inputs:
+      image_ref:
+        description: 'Tag or digest to resolve and pin'
+        required: false
+        default: 'testnet-latest'
+        type: string
   workflow_dispatch:
     inputs:
       image_ref:

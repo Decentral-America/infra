@@ -1,6 +1,11 @@
 name: Deploy Specific SHA Image (Emergency)
 on:
   workflow_call:
+    inputs:
+      sha_tag:
+        description: 'Docker image tag to deploy to the VPS main node'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       sha_tag:
