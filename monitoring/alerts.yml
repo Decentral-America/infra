@@ -15,9 +15,10 @@ groups:
           description: "dcc_blockchain_height_age_seconds > 300. Chain may be halted or main node offline."
 
       # ── Finality (feature-25 Deterministic Finality — the authoritative finalized height) ──
-      # HotStuff commit is observational and exposes no separate metric; monitor the one real
-      # finalized height from GET /blocks/height/finalized. If generators stop committing or quorum
-      # is lost, the lag grows and this fires (covers the old generator-count alerts).
+      # This is the authoritative finalized height from GET /blocks/height/finalized. If generators
+      # stop committing or quorum is lost, the lag grows and this fires (covers the old generator-count
+      # alerts). HotStuff's observational commit has its own separate WARNING-level alert below
+      # (HotStuffCommitNotAdvancing) — it is NOT authoritative and must never page.
       # Normal lag on this testnet is ~100 blocks (finality is per-generation-period,
       # generation-period-length=100, so finalizedHeight ≈ height − 100). Alert only when lag exceeds
       # ~2.5 periods, i.e. finality is genuinely falling behind, to avoid false positives at steady state.
@@ -70,3 +71,20 @@ groups:
         annotations:
           summary: "finalizedHeight not advancing for 30 min"
           description: "dcc_finalized_height has been completely static for 30 min. Generators are not committing or endorsements are not flowing — run auto-commit-generators.yml."
+
+      # ── T2 HotStuff observational commit (NOT authoritative — feature-25 above is) ──────
+      # dcc_hotstuff_finalized_height is emitted only when dcc.hotstuff.enabled AND the node has
+      # committed >=1 HotStuff block (see exporter.py). When present it should track the tip at
+      # tip-settled-depth. If it goes static while the chain keeps producing, HotStuff QC formation
+      # has regressed (e.g. the 2026-07-13 blockHeight-mismatch class of bug) — worth investigating
+      # but NOT page-worthy, since feature-25 remains the authoritative finality. WARNING only.
+      - alert: HotStuffCommitNotAdvancing
+        expr: |
+          (increase(dcc_hotstuff_finalized_height[30m]) == 0) and (increase(dcc_block_height[30m]) > 0)
+        for: 30m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "observational HotStuff commit static for 30 min while the chain advances"
+          description: "dcc_hotstuff_finalized_height has not advanced in 30 min although dcc_block_height is still increasing. HotStuff QC formation likely regressed (observational only; feature-25 finality is unaffected). Diagnose with hotstuff-status.yml and check for '[HotStuff] QUORUM REACHED but no QC' WARNs."

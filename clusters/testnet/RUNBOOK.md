@@ -136,43 +136,45 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 
 ---
 
-## Scenario E — T2 HotStuff Soak (PLANNED — not yet run)
+## Scenario E — T2 HotStuff Soak
 
-**Status: NOT RUN.** T2 HotStuff has never been deployed to testnet — the nodes still run a pre-HotStuff
-image (`nodes.yaml` image digest). HotStuff is implemented and merged to node-scala `dev` (gated behind
-`dcc.hotstuff.enabled`, default false) with its 4-node finality IT green on CI, but the on-cluster soak
-below has NOT happened. (Any earlier "Status: PASSED / 4 scenarios verified 2026-06-30" was fiction.)
+**Prerequisite: DONE (2026-07-13).** T2 HotStuff is deployed to all testnet nodes (image `dev-hotstuff`
+= `sha256:ea5da215`, `dcc.hotstuff.enabled=true`, `round-timeout=1200ms`, `settled-depth=3` — present in
+`apps/nodes.yaml` ×3) and is **committing across all nodes**: `hotStuffFinalizedHeight` advances in
+lockstep at tip−settled-depth on VPS + gen-0 + gen-1. (This closed the step-5 QC blocker — a vote-message
+`blockHeight` mismatch; see node-scala `docs/hotstuff-step5-findings-and-rework.md`. Any earlier
+"Status: PASSED 2026-06-30" was fiction — this section is now real.)
 
-**Prerequisite:** build a node image from `dev` and roll it to the main + gen nodes (update the image
-digests in `apps/nodes.yaml`, Flux reconciles), with this config already present in `nodes.yaml`:
-```hocon
-hotstuff {
-  enabled = true
-  round-timeout = 1200ms   # FiniteDuration; the node ignores the old `round-timeout-ms` key
-}
-```
+**How to run the fault soak:** `gh workflow run t2-soak.yml --repo Decentral-America/infra` (45-min
+harness; pulls the LKE kubeconfig via the Linode API — no local kubectl needed). It scales gen
+StatefulSets down/up and records, per phase, `height / finalized / lag / hotStuffFinalized` from the VPS
+main node. **feature-25 finalized height is the pass/fail authority; `hotStuffFinalized` is observed.**
 
-**Soak scenarios to run once deployed** (record real results here):
-| Scenario | Expected |
-|----------|----------|
-| gen-0 down | finality continues if remaining committed stake ≥ 2/3 |
-| gen-1 down | finality continues if remaining committed stake ≥ 2/3 |
-| both gen nodes down | FairPoS keeps producing; finality pauses (no quorum) — no halt |
-| both gen nodes restored | finality resumes and catches up |
+**Soak scenarios** (record real results here after each run):
+| Phase | Action | Expected (feature-25) | Expected (observational HotStuff) |
+|-------|--------|-----------------------|-----------------------------------|
+| A | gen-0 down | finality continues (main+gen-1 ≥ 2/3) | `hotStuffFinalized` keeps advancing |
+| B | gen-1 down | finality continues (main+gen-0 ≥ 2/3) | keeps advancing |
+| C | both gen down | FairPoS keeps producing; finality pauses (1-of-3 < 2/3) — no halt | pauses (no quorum) |
+| D | both restored | finality resumes + catches up | resumes + catches up |
 
-**Check finality health** (feature-25 finalized height is authoritative; HotStuff commit is observational
-and exposes no separate metric yet):
+_Latest run: (fill in — run id, date, per-phase height/finalized/lag/hotStuffFinalized, PASS/FAIL)._
+
+**Check finality health** (feature-25 = authoritative; HotStuff commit = observational, now on `/node/status`):
 ```bash
 TIP=$(curl -s http://localhost:6869/blocks/height | jq .height)
-FIN=$(curl -s http://localhost:6869/blocks/height/finalized | jq .height)
-echo "lag = $((TIP - FIN))"
-# Healthy: lag small and FIN advancing.  Alert: FIN stalls for 10 min → check generators committed
+FIN=$(curl -s http://localhost:6869/blocks/height/finalized | jq .height)          # authoritative
+HSF=$(curl -s http://localhost:6869/node/status | jq .hotStuffFinalizedHeight)     # observational
+echo "tip=$TIP finalized=$FIN lag=$((TIP-FIN)) hotStuffFinalized=$HSF"
+# Healthy: FIN advancing; HSF ≈ TIP − settled-depth(3) and advancing.
 ```
 
-**Prometheus alerts active** (deployed via `deploy-monitoring-stack.yml`):
-- `T2FinalizationStalled` — lag >50 blocks for 10 min (HIGH)
-- `T2GeneratorsNotCommitted` — NextGens <2 for 15 min (HIGH)
+**Prometheus alerts active** (deployed via `deploy-monitoring-stack.yml`; source `monitoring/alerts.yml`):
 - `BlockProductionStalled` — no block in 5 min (CRITICAL)
+- `FinalizationStalled` — `dcc_finality_lag > 250` for 15 min (HIGH, authoritative feature-25)
+- `FinalizationNotAdvancing` — `dcc_finalized_height` static 30 min (HIGH)
+- `HotStuffCommitNotAdvancing` — `dcc_hotstuff_finalized_height` static 30 min while chain advances
+  (WARNING only — observational; feature-25 unaffected)
 
 ---
 
