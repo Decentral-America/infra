@@ -13,9 +13,18 @@ sudo cp /tmp/prometheus.yaml /opt/dcc/monitoring/datasources/prometheus.yaml
 sudo mkdir -p /opt/dcc/compose
 sudo cp /tmp/loki-compose.yml /opt/dcc/compose/loki.yml
 sudo cp /tmp/prometheus-compose.yml /opt/dcc/compose/prometheus.yml
+# Grafana config + compose (optional — only if this deploy shipped them).
+if [ -f /tmp/grafana.ini ]; then
+  sudo cp /tmp/grafana.ini /opt/dcc/monitoring/grafana.ini
+  sudo mkdir -p /opt/dcc/monitoring/dashboards
+  sudo cp /tmp/dashboards.yaml /opt/dcc/monitoring/dashboards/dashboards.yaml
+  sudo cp /tmp/testnet.json /opt/dcc/monitoring/dashboards/testnet.json
+  sudo cp /tmp/grafana-compose.yml /opt/dcc/compose/grafana.yml
+fi
 rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/config.alloy /tmp/alertmanager.yml /tmp/alert-webhook.py \
-      /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml
+      /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml \
+      /tmp/grafana.ini /tmp/grafana-compose.yml /tmp/dashboards.yaml /tmp/testnet.json
 
 # Every compose file in /opt/dcc/compose otherwise shares the same default
 # Compose project name (the directory basename), so --remove-orphans on one
@@ -63,3 +72,19 @@ curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki not ready)"
 
 echo "=== Restart Alertmanager + Alert Webhook ==="
 NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d alertmanager alert-webhook
+
+# Grafana — isolated compose project so --remove-orphans elsewhere can't touch it, and so it
+# doesn't treat the other monitoring containers as orphans (see the 2026-07-04 incident note above).
+# NO --remove-orphans here. Only runs if this deploy shipped the grafana files.
+if [ -f /opt/dcc/compose/grafana.yml ]; then
+  echo "=== (Re)start Grafana ==="
+  GRAFANA_PROJECT="grafana-testnet"
+  have=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' grafana-testnet 2>/dev/null || true)
+  if [ -n "$have" ] && [ "$have" != "$GRAFANA_PROJECT" ]; then
+    echo "Removing grafana-testnet (project '$have' != '$GRAFANA_PROJECT')..."
+    docker rm -f grafana-testnet
+  fi
+  NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml up -d
+  sleep 5
+  curl -s http://127.0.0.1:3002/api/health 2>/dev/null && echo "  (grafana healthy)" || echo "  (grafana not ready yet — check logs)"
+fi
