@@ -158,7 +158,17 @@ main node. **feature-25 finalized height is the pass/fail authority; `hotStuffFi
 | C | both gen down | FairPoS keeps producing; finality pauses (1-of-3 < 2/3) — no halt | pauses (no quorum) |
 | D | both restored | finality resumes + catches up | resumes + catches up |
 
-_Latest run: (fill in — run id, date, per-phase height/finalized/lag/hotStuffFinalized, PASS/FAIL)._
+_Latest run: **PASS — 2026-07-13, run 29284578037** (all 18 steps success; gen nodes scaled down/up
+and restored cleanly). Evidence from independent VPS `/node/status` sampling every 60s across the window:_
+- _**Chain (FairPoS):** never halted — tip advanced continuously 47140 → 47231 throughout all phases._
+- _**HotStuff (observational):** paused briefly during each generator outage (hotStuffFinalized froze in
+  ~3 episodes — 47137/47146/47154 — hsLag rising to 6–8), **resumed after every restore**, and returned
+  to steady hsLag = 3 (= settled-depth) from ~21:15 onward. Post-soak healthy (47228 @ hsLag 3, 21:50)._
+- _**feature-25 (authoritative):** held at 47127 during the soak (within one generation-period; lag grew
+  13 → 100 as expected), then finalized the next period normally at 21:48 (47128 → 47131, lag settled to
+  the expected 100). No halt, no stall beyond normal per-period cadence._
+- _Net: matches the expected table — finality degrades gracefully under quorum loss and fully recovers;
+  the chain never halts. Remaining before mainnet enable: external consensus audit + the §5 A/B decision._
 
 **Check finality health** (feature-25 = authoritative; HotStuff commit = observational, now on `/node/status`):
 ```bash
