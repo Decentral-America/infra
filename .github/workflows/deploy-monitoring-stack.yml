@@ -45,6 +45,15 @@ jobs:
             compose/loki.yml "${SSH_USER}@${SSH_HOST}:/tmp/loki-compose.yml"
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
             compose/prometheus.yml "${SSH_USER}@${SSH_HOST}:/tmp/prometheus-compose.yml"
+          # Grafana (dashboards UI, embedded in admin-dashboard). Previously not managed by this
+          # deploy at all, so nothing (re)started it -> 502 at grafana.testnet.decentralchain.io.
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
+            compose/grafana.yml "${SSH_USER}@${SSH_HOST}:/tmp/grafana-compose.yml"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
+            monitoring/grafana.ini "${SSH_USER}@${SSH_HOST}:/tmp/grafana.ini"
+          scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
+            monitoring/dashboards/dashboards.yaml monitoring/dashboards/testnet.json \
+            "${SSH_USER}@${SSH_HOST}:/tmp/"
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=yes "${SSH_USER}@${SSH_HOST}" \
             bash /tmp/deploy-monitoring.sh
           rm -f /tmp/id_rsa
