@@ -26,12 +26,11 @@ deploy_ssh_public_key = ""            # cat deploy_key_testnet.pub
 # NOTE: there is no `postgres_password` OpenTofu variable. The PostgreSQL
 # password (POSTGRES_PASSWORD), DCC node wallet seed/password
 # (MAIN_NODE_WALLET_SEED / MAIN_NODE_WALLET_PASSWORD), matcher account
-# password (MATCHER_ACCOUNT_PASSWORD), matcher API key hash
-# (MATCHER_API_KEY_HASH), and off-site backup access/secret keys
-# (BACKUP_OBJ_ACCESS_KEY / BACKUP_OBJ_SECRET_KEY) are NOT OpenTofu inputs —
-# they are delivered post-boot via SOPS SSH push directly to
-# /opt/dcc/secrets/<network>.env and never transit Linode infrastructure or
-# this tfvars file. See testnet.tfvars header comment and secrets/testnet.env.
+# password (MATCHER_ACCOUNT_PASSWORD), and matcher API key hash
+# (MATCHER_API_KEY_HASH) are NOT OpenTofu inputs — they are delivered post-boot
+# via SOPS SSH push directly to /opt/dcc/secrets/<network>.env and never transit
+# Linode infrastructure or this tfvars file. See testnet.tfvars header comment
+# and secrets/testnet.env.
 
 # ── Matcher (DEX) ───────────────────────────────────────────────────────────
 DEFAULT_MATCHER = ""                  # DCC address of the matcher account
