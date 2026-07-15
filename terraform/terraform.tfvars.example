@@ -66,22 +66,10 @@ data_service_domain = "data-service.decentralchain.io"
 # If empty, certificates are requested anonymously (still works, no reminders).
 acme_email = "ops@decentralchain.io"
 
-# ── PostgreSQL off-site backup (Linode Object Storage) ────────────────────────
-# rclone copies each pg_dump archive to object storage after the local dump.
-# Backup bucket must already exist before the server is bootstrapped.
-# Leave the access/secret key unset to use local rotation only
-# (7-day /opt/dcc/backups/).
-#
-# Create a Linode Object Storage bucket: linode-cli obj mb dcc-backups-mainnet --cluster us-east-1
-# Create an access key in the Linode dashboard (limited to the backup bucket only).
-#
-# There are no `backup_obj_access_key` / `backup_obj_secret_key` OpenTofu
-# variables — set these as BACKUP_OBJ_ACCESS_KEY / BACKUP_OBJ_SECRET_KEY in
-# secrets/<network>.env instead (delivered via SOPS SSH push, see note
-# above). Note: bucket name and endpoint have no corresponding config
-# anywhere in this repo (no OpenTofu variable, no secrets/*.env key, no
-# rclone invocation) — off-site backup is not currently wired up beyond the
-# access/secret key being present in the secrets file.
+# Note: off-site backup of chain state is intentionally NOT used. Every node
+# re-syncs from peers, so there is no pg_dump, no object-storage upload, and no
+# backup credentials. (This replaced the former Cloudflare R2 / object-storage
+# blockchain backup, which has been removed entirely.)
 
 # ── Node wallet ──────────────────────────────────────────────────────────────
 # The node-scala entrypoint reads these env vars, writes them to a temp config

@@ -403,8 +403,9 @@ systemctl reload postgresql
 echo "[bootstrap] PostgreSQL hardened: scram-sha-256, connection logging enabled"
 
 # Chain state (Postgres, node-scala, matcher) is not backed up -- every node
-# re-syncs from peers. No local pg_dump, no off-site rclone upload, no
-# backup cron. (Decision: rely on peer sync, not backup/restore.)
+# re-syncs from peers. No local pg_dump, no off-site object-storage upload, no
+# backup cron. (Decision: rely on peer sync, not backup/restore. The former
+# Cloudflare R2 blockchain backup has been removed entirely.)
 
 # -- GHCR authentication for docker pull --------------------------------------
 # GHCR login is handled per-deploy in deploy-container.yml by passing

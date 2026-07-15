@@ -35,11 +35,9 @@ admin_domain        = "testnet-admin.decentralchain.io"
 grafana_domain      = "grafana.testnet.decentralchain.io"
 acme_email          = "ops@decentralamerica.com"
 
-# ── Off-site backup: disabled for testnet ─────────────────────────────────────
-# There is no `backup_obj_*` OpenTofu variable — off-site backup config (bucket,
-# endpoint, access key, secret key) is entirely out-of-band, delivered post-boot
-# via SOPS SSH push alongside the other application secrets (see header above).
-# Leave it unconfigured on the server to disable backup entirely.
+# ── Off-site backup: removed ──────────────────────────────────────────────────
+# The former R2 / object-storage blockchain backup has been removed entirely.
+# Chain state is not backed up; every node re-syncs from peers.
 
 # ── LKE peer-node cluster (Frankfurt) ─────────────────────────────────────────
 lke_enabled     = true
