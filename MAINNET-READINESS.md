@@ -41,7 +41,7 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
 - 🧊 Signing-key externalization (Waves-compatible remote signer) — custom work; roadmap.
 
 ### Actions
-1. 🔴 **Lease, don't hold** — hold minimal balance on each hot generating account; accrue stake via `Lease` from a separately-custodied cold treasury account. Native Waves feature; biggest custody win. *(mainnet design + testnet demo)*
+1. 🔴 **Lease, don't hold** — hold minimal balance on each hot generating account; accrue stake via `Lease` from a separately-custodied cold treasury account. Native Waves feature; biggest custody win. *(mainnet design + testnet demo)* See **`LEASING-CUSTODY-DESIGN.md`** (design ready; testnet rehearsal is the next executable step).
 2. 🟡 **SSH: accepted as-is.** Optional zero-dependency hardening (not yet applied — a live SSH-port change carries lockout risk and must be coordinated with the CI deploy workflows): (a) move sshd off port 22 to a non-standard port to cut automated-scan noise (requires updating bootstrap.sh sshd `Port`, the Linode firewall rule, the fail2ban jail, and every deploy workflow's SSH port together), (b) periodically rotate the `DEPLOY_SSH_KEY`. Only pursue self-hosted **WireGuard** if "no public SSH at all" ever becomes a hard requirement.
 3. 🧊 Evaluate HSM/vault-backed seed storage and a Waves-compatible remote/threshold signer.
 
