@@ -58,3 +58,14 @@ Run the full sequence on testnet (test funds) for one generator, confirm: genera
 2. Whether the 100-DCC commit deposit locks from **available (own)** balance each period (if so, size the hot retainer to cover N periods of deposits) or is returned/rolling.
 3. `LeaseCancel` of a large lease has no adverse finality-committee side effect (should be fine — generating balance drops only after depth, symmetric to lease-in).
 4. Faucet account (`31XRi…`) is unaffected (separate account; not a generator) — no change.
+
+## Testnet rehearsal — RESULTS (2026-07-16) ✅ validated
+Ran the full sequence on the **main** generator with a 1,000,000-DCC test slice (of ~21.8M), fully reversed:
+- **Transfer** 1,000,000 main→treasury — confirmed (h54535). ✓
+- **Lease** 900,000 treasury→main — confirmed (h54536); `/leasing/active/main` showed the 900k lease and the treasury's `available` dropped to 100k, i.e. **the leased funds are locked on the lessor and the generator cannot spend/steal them** (the whole point). ✓
+- **LeaseCancel** — confirmed; treasury `available` restored to 1,000,000. **Fully reversible.** ✓
+- **Restore** — transferred the slice back; main `available` returned to baseline (minus ~0.005 DCC fees). ✓
+- **Finality** stayed healthy the entire time (lag ≈ 2; never stalled). ✓
+- **Observed the depth hazard live:** immediately post-restore, main `available` = 21.8M but `generating` = 20.8M — generating balance lags by the ~1000-block depth and self-restores after. Confirms the "one generator at a time" migration rule.
+
+**Mechanics are proven.** For the real migration: use a **cold/offline** treasury seed (the rehearsal used a node-wallet address `31LQnV…`, now empty — harmless), migrate one generator at a time, and wait out the depth before the next. Remaining pre-mainnet verifications are the four "Open items" above.
