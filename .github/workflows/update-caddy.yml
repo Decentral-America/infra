@@ -123,6 +123,18 @@ jobs:
                       header_down -Via
                   }
               }
+              # Faucet abuse control (SEC-3): strict per-IP limit at the edge — persistent
+              # (survives scanner container restarts, unlike the app's in-memory 24h/address
+              # limiter) and IP-scoped, so one host can't script-drain the faucet across many
+              # addresses. 5 requests/hour/IP is ample for legitimate testers.
+              @faucet path /api/faucet
+              rate_limit @faucet {
+                  zone faucet_per_ip {
+                      key    {remote_host}
+                      events 5
+                      window 1h
+                  }
+              }
               reverse_proxy localhost:3000
               header {
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
