@@ -35,6 +35,17 @@ jobs:
             H=$(kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/blocks/height 2>&1 || echo fail)
             echo "$pod: $H"
           done
+          echo "=== live miner.quorum in each pod's mounted config (/etc/dcc/dcc.conf) ==="
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            Q=$(kubectl exec -n dcc $pod -- sh -c 'grep -E "quorum" /etc/dcc/dcc.conf 2>/dev/null | head -1' 2>&1 || echo "n/a")
+            echo "$pod: $Q"
+          done
+          echo "=== each pod's OWN /peers/connected (mesh from gen side, not main behind NAT) ==="
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            P=$(kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/peers/connected 2>/dev/null || echo '{}')
+            N=$(echo "$P" | python3 -c "import json,sys; d=json.load(sys.stdin); p=d.get('peers',d) if isinstance(d,dict) else d; print(len(p) if isinstance(p,list) else 0, [x.get('peerName') or x.get('declaredAddress') for x in p] if isinstance(p,list) else '')" 2>/dev/null || echo "0")
+            echo "$pod connected: $N"
+          done
           echo "=== main peers connected ==="
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" > /tmp/peers.json || echo '{}' > /tmp/peers.json
           cat /tmp/peers.json || true
@@ -45,8 +56,11 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
             "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/seq/${FROM}/${MH}" | \
             python3 -c "import json,sys,collections; d=json.load(sys.stdin); c=collections.Counter(b.get('generator') for b in d); [print(f'{gen}: {count}/50') for gen,count in c.most_common()]"
-          echo "=== gen-0/gen-1/val-0 log check: any Suspending/Channel closed in last 30 min? ==="
+          echo "=== drop-count in last 10 min (clean post-fix window) + last 3 drop reasons ==="
           for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
             echo "--- $pod ---"
-            kubectl logs -n dcc $pod --since=30m 2>&1 | grep -E "Suspending|Channel closed \(expected\)" | wc -l
+            echo -n "  Suspending/Channel-closed in last 10m: "
+            kubectl logs -n dcc $pod --since=10m 2>&1 | grep -E "Suspending|Channel closed \(expected\)" | wc -l
+            echo "  recent drop lines:"
+            kubectl logs -n dcc $pod --since=10m 2>&1 | grep -E "Suspending|Channel closed|blacklist|fork|invalid block" | tail -3 | sed 's/^/    /' || echo "    (none)"
           done
