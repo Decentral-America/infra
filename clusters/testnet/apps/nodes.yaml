@@ -95,7 +95,10 @@ data:
         declared-address = "172.105.64.89:6863"
         # Only main node in known-peers — prevents loopback mini-fork with gen-1
         known-peers = ["66.228.55.154:6868"]
-        enable-blacklisting = no
+        # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
+        # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
+        blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
+        enable-blacklisting = yes
         suspension-residence-time = 300s
       }
 
@@ -198,7 +201,10 @@ data:
         declared-address = "172.105.64.89:6864"
         # Only main node in known-peers — prevents loopback mini-fork with gen-0
         known-peers = ["66.228.55.154:6868"]
-        enable-blacklisting = no
+        # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
+        # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
+        blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
+        enable-blacklisting = yes
         suspension-residence-time = 300s
       }
 
@@ -301,7 +307,10 @@ data:
         declared-address = "172.105.64.89:6865"
         # Only main node in known-peers — single sync source
         known-peers = ["66.228.55.154:6868"]
-        enable-blacklisting = no
+        # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
+        # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
+        blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
+        enable-blacklisting = yes
         suspension-residence-time = 300s
       }
 
