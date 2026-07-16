@@ -1,0 +1,109 @@
+name: Migrate State Snapshot (main -> gen nodes)
+# One-off recovery: the canonical chain is internally state-hash-inconsistent
+# (blocks forged before a state-hash fix that is now in the be2dcfc0 build), so
+# the k8s gen nodes CANNOT p2p-sync it from genesis -- they die re-validating an
+# old block (~25.5k) with InvalidStateHash. main survives only because it never
+# re-validates history (trusts its own RocksDB).
+#
+# Fix: copy main's RocksDB chain-state directly into each gen node's PVC so they
+# adopt main's exact state at the tip WITHOUT re-validating history, then forge/
+# validate new (post-fix) blocks normally. Only /var/lib/dcc/data (chain state)
+# is copied -- NOT the wallet (each gen keeps its own DCC_WALLET_SEED) and NOT
+# peers.dat.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type MIGRATE to confirm copying main state into gen PVCs'
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: migrate-state-snapshot
+  cancel-in-progress: false
+jobs:
+  migrate:
+    if: ${{ inputs.confirm == 'MIGRATE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: testnet
+    steps:
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters" | jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          curl -s -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig' | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: Snapshot main RocksDB (brief stop) + load into each gen PVC
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          SSHOPT="-i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=20"
+          R() { ssh $SSHOPT "$SSH_USER@$SSH_HOST" "$@"; }
+
+          echo "=== main height before ==="
+          R "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/height" || true; echo
+
+          echo "=== stop main for a CONSISTENT RocksDB snapshot ==="
+          R "docker stop node-scala-testnet"
+          echo "=== stream snapshot (data/ only) directly to runner while main is stopped ==="
+          set +e
+          ssh $SSHOPT "$SSH_USER@$SSH_HOST" "docker run --rm -v node-state-testnet:/d alpine sh -c 'cd /d && tar czf - data'" > /tmp/dcc-data.tgz
+          SNAP_RC=$?
+          set -e
+          echo "=== restart main IMMEDIATELY (minimize pause) ==="
+          R "docker start node-scala-testnet"
+          ls -la /tmp/dcc-data.tgz
+          test "$SNAP_RC" = "0" || { echo "snapshot stream failed rc=$SNAP_RC"; exit 1; }
+          SZ=$(stat -c%s /tmp/dcc-data.tgz)
+          echo "snapshot size: $SZ bytes"
+          test "$SZ" -gt 1000000 || { echo "snapshot too small ($SZ) -- aborting before touching gen PVCs"; exit 1; }
+          sleep 15
+          echo "=== main height after restart ==="
+          R "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/height" || true; echo
+
+          load_gen() {
+            STS="$1"; POD="$1-0"; PVC="chain-data-$1-0"; LOADER="snap-loader-$1"
+            echo "########## $STS ##########"
+            kubectl scale statefulset "$STS" -n dcc --replicas=0
+            echo "-- waiting for $POD to terminate --"
+            for i in $(seq 1 30); do kubectl get pod "$POD" -n dcc >/dev/null 2>&1 || { echo "  gone"; break; }; sleep 4; done
+            kubectl delete pod "$LOADER" -n dcc --ignore-not-found >/dev/null 2>&1 || true
+            OV="{\"spec\":{\"containers\":[{\"name\":\"loader\",\"image\":\"alpine:3.20\",\"command\":[\"sh\",\"-c\",\"sleep 1800\"],\"volumeMounts\":[{\"name\":\"d\",\"mountPath\":\"/var/lib/dcc\"}]}],\"volumes\":[{\"name\":\"d\",\"persistentVolumeClaim\":{\"claimName\":\"$PVC\"}}]}}"
+            kubectl run "$LOADER" -n dcc --image=alpine:3.20 --restart=Never --overrides="$OV" --command -- sh -c "sleep 1800"
+            kubectl wait --for=condition=Ready pod/"$LOADER" -n dcc --timeout=120s
+            echo "-- clearing old data + peers.dat --"
+            kubectl exec "$LOADER" -n dcc -- sh -c 'rm -rf /var/lib/dcc/data /var/lib/dcc/peers.dat; echo cleared'
+            echo "-- copying snapshot into PVC (retry x3) --"
+            ok=""
+            for i in 1 2 3; do
+              if kubectl cp /tmp/dcc-data.tgz dcc/"$LOADER":/tmp/s.tgz; then ok=1; break; fi
+              echo "  cp retry $i"; sleep 5
+            done
+            test -n "$ok" || { echo "kubectl cp failed for $STS"; exit 1; }
+            kubectl exec "$LOADER" -n dcc -- sh -c 'tar xzf /tmp/s.tgz -C /var/lib/dcc && rm -f /tmp/s.tgz && du -sh /var/lib/dcc/data && ls /var/lib/dcc/data | head'
+            kubectl delete pod "$LOADER" -n dcc --wait=true
+            kubectl scale statefulset "$STS" -n dcc --replicas=1
+            echo "-- $STS scaled back up --"
+          }
+
+          load_gen dcc-gen-0
+          load_gen dcc-gen-1
+          load_gen dcc-val-0
+
+          echo "=== done; waiting 30s then checking gen heights ==="
+          sleep 30
+          for POD in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            for i in $(seq 1 20); do kubectl get pod "$POD" -n dcc -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Running && break; sleep 5; done
+            H=$(kubectl exec "$POD" -n dcc -- wget -qO- http://127.0.0.1:6869/blocks/height 2>/dev/null || echo "starting")
+            echo "$POD: $H"
+          done
+          rm -f /tmp/id_rsa
