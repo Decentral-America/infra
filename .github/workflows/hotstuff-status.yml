@@ -70,6 +70,12 @@ jobs:
             kubectl get configmap -n dcc "$cm" -o jsonpath='{.data.dcc\.conf}' 2>/dev/null \
               | grep -iA3 hotstuff >> "$OUT" 2>&1
           done
+          echo "" >> "$OUT"; echo "############## node capacity (dcc namespace nodes) ##############" >> "$OUT"
+          for nd in $(kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u); do
+            echo "-- $nd --" >> "$OUT"
+            kubectl get node "$nd" -o jsonpath='capacity.mem={.status.capacity.memory} allocatable.mem={.status.allocatable.memory}' >> "$OUT" 2>&1; echo >> "$OUT"
+            kubectl top node "$nd" >> "$OUT" 2>&1 || echo "(metrics-server n/a)" >> "$OUT"
+          done
           echo "" >> "$OUT"; echo "############## flux kustomizations ##############" >> "$OUT"
           kubectl get kustomization -A >> "$OUT" 2>&1
           echo "===== BEGIN STATUS ====="; cat "$OUT"; echo "===== END STATUS ====="
