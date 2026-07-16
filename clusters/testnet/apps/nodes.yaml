@@ -99,7 +99,7 @@ data:
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
         enable-blacklisting = no
-        suspension-residence-time = 300s
+        suspension-residence-time = 30s
       }
 
       wallet {
@@ -205,7 +205,7 @@ data:
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
         enable-blacklisting = no
-        suspension-residence-time = 300s
+        suspension-residence-time = 30s
       }
 
       wallet {
@@ -311,7 +311,7 @@ data:
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
         enable-blacklisting = no
-        suspension-residence-time = 300s
+        suspension-residence-time = 30s
       }
 
       wallet {
