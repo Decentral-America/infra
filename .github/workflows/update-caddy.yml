@@ -225,7 +225,17 @@ jobs:
                   header Vary "Origin"
                   respond "" 204
               }
-              @protected path /peers/* /debug/* /consensus/*
+              # Inject the node API key ONLY for the specific read-only peer endpoints the
+              # explorer/admin need. Do NOT key-inject the whole /debug/* or /consensus/*
+              # namespaces: /debug/* includes destructive/heavy endpoints (rollback, print,
+              # state, configInfo) that must never be publicly reachable, and POST /peers/*
+              # (connect, clearblacklist) must not be callable either. Everything outside
+              # this matcher falls through to the un-keyed proxy below, so the node's own
+              # api-key auth returns 403 for protected routes.
+              @protected {
+                  method GET
+                  path /peers/connected /peers/all /peers/blacklisted /peers/suspended
+              }
               handle @protected {
                   reverse_proxy localhost:6869 {
                       header_up X-API-Key "${NODE_API_KEY}"
