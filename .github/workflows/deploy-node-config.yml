@@ -54,7 +54,7 @@ jobs:
                -e DCC_NETWORK=testnet \
                -e DCC_HEAP_SIZE=2g \
                -e DCC_REST_API_BIND=0.0.0.0 \
-               ghcr.io/decentral-america/node-scala:node-scala-testnet-latest
+               ghcr.io/decentral-america/node-scala@sha256:9d7d4f31ed297d52730d4a10b71341e89f4d5ec43b7b16b0988838fca12cc692
              sleep 20
              echo "=== Node status ==="
              docker ps | grep node-scala
