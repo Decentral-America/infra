@@ -452,10 +452,15 @@ spec:
           resources:
             requests:
               cpu: "420m"
-              memory: "880Mi"
+              # 880Mi -> 1280Mi: heap -Xmx768m left only ~112Mi for non-heap
+              # (metaspace + native BLS/groth16 + RocksDB cache + netty direct
+              # buffers), so the full-resync memory spike OOMKilled the pod
+              # (exit 137, 9 restarts). val-0 survives sync at 256Mi headroom;
+              # 512Mi here covers sync + forging. Node has ~6Gi allocatable.
+              memory: "1280Mi"
             limits:
               cpu: "420m"
-              memory: "880Mi"
+              memory: "1280Mi"
           livenessProbe:
             httpGet:
               path: /node/status
@@ -575,10 +580,13 @@ spec:
           resources:
             requests:
               cpu: "300m"
-              memory: "750Mi"
+              # 750Mi -> 1280Mi: same OOMKilled-during-resync fix as gen-0
+              # (heap -Xmx640m + ~110Mi headroom was too tight; exit 137, 9
+              # restarts). 640Mi headroom now covers sync + forging.
+              memory: "1280Mi"
             limits:
               cpu: "300m"
-              memory: "750Mi"
+              memory: "1280Mi"
           livenessProbe:
             httpGet:
               path: /node/status
