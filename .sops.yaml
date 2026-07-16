@@ -1,6 +1,13 @@
 creation_rules:
   - path_regex: secrets/testnet\.env
     age: age1gpe6clrwzvfjlkwm2ww4a00f0ktk49raaslgs2zr3r0vzkcez9fsd97vzs
+  - path_regex: secrets/stagenet\.env
+    age: age13ecynhepttnz6f5ksg7hcsukl47ks5sdttcl8zrq5kxrvrxflfsqkd6q2q
+  - path_regex: secrets/mainnet\.env
+    age: age1kapnwpu7rjvu4hpyy86h2juyugdnv5hqdq5r3gp0treaytgey4vqncgfgh
   # Kubernetes Secret manifests for testnet LKE cluster
   - path_regex: clusters/testnet/.*\.secret\.yaml
     age: age1gpe6clrwzvfjlkwm2ww4a00f0ktk49raaslgs2zr3r0vzkcez9fsd97vzs
+  # Kubernetes Secret manifests for mainnet LKE cluster
+  - path_regex: clusters/mainnet/.*\.secret\.yaml
+    age: age1kapnwpu7rjvu4hpyy86h2juyugdnv5hqdq5r3gp0treaytgey4vqncgfgh
