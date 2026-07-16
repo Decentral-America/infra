@@ -299,3 +299,46 @@ peer. Next diagnostic requires **interactive cluster access** (not 8-min CI cycl
 **val-0 specific:** exits 61 `CANNOT GET CONSOLE TO ASK WALLET PASSWORD` if it lacks
 either a seed (`DCC_WALLET_SEED`) or `wallet.password = ""`. Both are now set; if it
 still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-wallet -n dcc`).
+
+---
+
+## Incident Response (consensus & security)
+
+> Complements the infra scenarios above. Each incident: **detect → triage → mitigate → recover**.
+> Golden signals live in Prometheus/Grafana; alerts route via Alertmanager. Node facts come from
+> `GET /node/status`, `/blocks/height`, `/blocks/height/finalized`, `/peers/connected`. Never call
+> `/debug/*` publicly — use the node's own API key over the loopback/SSH path.
+
+### IR-1 — Chain halt (no new blocks)
+- **Detect:** `BlockProductionStalled` (no block > 5 min); `dcc_blockchain_height_age_seconds` high; explorer/height frozen.
+- **Triage:** is the node process up (`ServiceDown`/`ExporterDown`)? `peers/connected` ≥ 1? Is any generator actually mining (logs "generating balance")? FairPoS needs ≥ 1 generator with generating balance and a connected mesh.
+- **Mitigate:** restart the affected node (`cluster-diagnostics.yml -f roll=true` for k8s gens; SSH `docker restart` for the VPS main). If a P2P partition, see infra Scenario D (peering) — verify `declared-address` and reachability. If all generators are down, bring at least one back.
+- **Recover:** confirm height advances again on all nodes; watch for a fork on rejoin (IR-4).
+
+### IR-2 — Finality stall (blocks produced but not finalizing)
+- **Detect:** `FinalizationStalled` (`dcc_finality_lag > 250`) or `FinalizationNotAdvancing` (30 min static). Chain keeps producing (FairPoS is unaffected) — finality is what's behind.
+- **Triage:** finality needs ≥ 2/3 of generating-balance **committed** for the current generation period. Check committed generators (RUNBOOK Scenario F: `CurGens`/`NextGens` should be ≥ 2). A generator that missed its `CommitToGeneration` (tx type 19) drops committed stake below 2/3.
+- **Mitigate:** run `auto-commit-generators.yml` (or the manual commit in Scenario F) to re-commit generators for the period; verify each generator's commit landed.
+- **Recover:** `dcc_finalized_height` resumes advancing, lag returns to ~1 generation-period (100). Not chain-fatal, but fix promptly — a sustained stall means no economic finality.
+- **Observational HotStuff** (`HotStuffCommitNotAdvancing`, WARNING) is **not** authoritative — never page-worthy; diagnose with `hotstuff-status.yml`, don't treat as a chain incident.
+
+### IR-3 — Key compromise (generator/main seed, API key, SOPS age, or SSH key)
+- **Detect:** unexpected transactions from a node/generator address; a leaked secret; anomalous admin/API access.
+- **Immediate blast-radius note:** today the full stake sits on the hot generating account (see MAINNET-READINESS.md item #1 — lease instead). Until then, a seed leak = potential total-stake loss.
+- **Mitigate by secret type:**
+  - **Node/generator wallet seed:** generate a NEW account, transfer funds out immediately to a fresh cold account, then rotate the node's seed (update `secrets/<net>.env` via `sops`, re-run push-secrets, redeploy). Post-leasing: cancel leases and re-point to a new generator.
+  - **Node REST API key:** rotate `MAIN_NODE_REST_API_KEY` in SOPS → push-secrets → redeploy; Caddy re-injects the new key.
+  - **SOPS age key:** follow Scenario C (age key rotation) — re-encrypt all `secrets/*.env`, rotate the in-cluster `sops-age` secret.
+  - **SSH deploy key:** rotate `DEPLOY_SSH_KEY` (GH secret) + the server's `authorized_keys`; prefer moving to Tailscale ephemeral access (MAINNET-READINESS item #2) so there is no long-lived public SSH key.
+- **Recover:** confirm no residual attacker access; audit recent transactions/logins; document the timeline.
+- **Note:** Waves FairPoS has **no slashing**, so the primary risk is fund theft / attacker block-signing, not stake burning.
+
+### IR-4 — Fork / reorg
+- **Detect:** nodes disagree on the block at a height (different block IDs/signatures); a node reports a lower cumulative score; explorer shows a reorg.
+- **Triage:** identify the canonical chain = highest cumulative score **and** highest `finalized` height. **Feature-25-finalized blocks must never be reverted** — if a *finalized* block forked, that is a critical consensus bug: halt and escalate (do not auto-heal).
+- **Mitigate (non-finalized divergence, normal):** FairPoS resolves by score automatically once the mesh reconnects. For a node stuck on a minority branch, roll it back below the divergence via the node's own API (`POST /debug/rollback`, loopback + API key only) and let it resync, or wipe state and resync from peers (peer re-sync is the sanctioned DR path — chain state needs no backup).
+- **Recover:** all nodes converge on one chain; `finalized` height monotonic across nodes; no double-spends in the reorged range.
+
+### Escalation & contacts
+- Secrets/keys: `Ecosystem/KEEWEB_BACKUP.md` (KeePassium) — main #1, gen-0 #2, gen-1 #3, API keys #11–13, AGE (testnet) #16, faucet #26. Stagenet/mainnet age keys are held by the operator (not in the export).
+- Deploy substrates & release flow: `clusters/testnet/TOPOLOGY.md`. Node image cutover: `deploy-testnet-release.yml`.
