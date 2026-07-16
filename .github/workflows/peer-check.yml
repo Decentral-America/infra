@@ -56,6 +56,20 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
             "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/seq/${FROM}/${MH}" | \
             python3 -c "import json,sys,collections; d=json.load(sys.stdin); c=collections.Counter(b.get('generator') for b in d); [print(f'{gen}: {count}/50') for gen,count in c.most_common()]"
+          echo "=== node images/versions (LKE vs main) ==="
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "$pod image: $(kubectl get pod -n dcc $pod -o jsonpath='{.spec.containers[0].image}' 2>&1)"
+            echo "$pod version: $(kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/node/version 2>/dev/null || echo n/a)"
+          done
+          echo "main version: $(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/node/version" 2>/dev/null || echo n/a)"
+          echo "=== gen-0 RAW last 70 log lines (full connect->close lifecycle, find real drop cause) ==="
+          kubectl logs -n dcc dcc-gen-0-0 --since=6m 2>&1 | tail -70 | python3 -c "import sys,json
+for ln in sys.stdin:
+    ln=ln.strip()
+    try:
+        d=json.loads(ln); print(d.get('@timestamp','')[11:19], d.get('level','')[:4], d.get('logger_name','').split('.')[-1][:22], '|', d.get('message','')[:150])
+    except Exception:
+        print(ln[:180])" || echo "(raw log parse failed)"
           echo "=== drop-count in last 10 min (clean post-fix window) + last 3 drop reasons ==="
           for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
             echo "--- $pod ---"
