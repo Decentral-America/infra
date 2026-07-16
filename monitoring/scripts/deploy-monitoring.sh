@@ -7,6 +7,7 @@ sudo cp /tmp/loki-config.yaml /opt/dcc/monitoring/loki-config.yaml
 sudo cp /tmp/config.alloy /opt/dcc/monitoring/config.alloy
 sudo cp /tmp/alertmanager.yml /opt/dcc/monitoring/alertmanager.yml
 sudo cp /tmp/alert-webhook.py /opt/dcc/monitoring/alert-webhook.py
+sudo cp /tmp/exporter.py /opt/dcc/monitoring/exporter.py
 sudo mkdir -p /opt/dcc/monitoring/datasources
 sudo cp /tmp/loki.yaml /opt/dcc/monitoring/datasources/loki.yaml
 sudo cp /tmp/prometheus.yaml /opt/dcc/monitoring/datasources/prometheus.yaml
@@ -55,6 +56,11 @@ done
 
 echo "=== Restart Prometheus (picks up volume mounts + new config) ==="
 NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --remove-orphans prometheus
+
+echo "=== Recreate exporter (mounts exporter.py; force-recreate to reload the new file) ==="
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --force-recreate exporter
+sleep 4
+curl -s http://127.0.0.1:9101/metrics 2>/dev/null | grep -c "dcc_service_up" | sed 's/^/  dcc_service_up series: /' || echo "  (exporter not reachable)"
 sleep 5
 curl -s http://127.0.0.1:9091/api/v1/rules 2>/dev/null | python3 -c "
 import json,sys

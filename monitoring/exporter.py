@@ -35,6 +35,37 @@ def fetch(url):
     except Exception:
         return None
 
+# ── Web-service liveness (MON-1) ──────────────────────────────────────────────
+# Each user-facing service is probed with a plain GET; "up" means it answered with
+# any HTTP status < 500 (a 400/403/404 still proves the service is serving). A
+# connection failure / timeout / 5xx => down. Health URLs are chosen so a healthy
+# service returns <500 (ws/faucet answer 4xx to a bare GET, which is still "up").
+_svc_raw = os.getenv(
+    "SERVICE_URLS",
+    "matcher=https://testnet-matcher.decentralchain.io/matcher,"
+    "data-service=https://testnet-data-service.decentralchain.io/v0,"
+    "explorer=https://testnet.decentralscan.com/,"
+    "websocket=https://testnet-ws.decentralchain.io/ws,"
+    "grafana=https://grafana.testnet.decentralchain.io/api/health,"
+    "admin=https://testnet-admin.decentralchain.io/,"
+    "faucet=https://testnet.decentralscan.com/api/faucet",
+)
+SERVICES = []
+for entry in _svc_raw.split(","):
+    if "=" in entry:
+        label, url = entry.split("=", 1)
+        SERVICES.append((label.strip(), url.strip()))
+
+def probe_status(url):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "dcc-exporter/1.0"})
+        with urllib.request.urlopen(req, timeout=6, context=ctx) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code          # 4xx/5xx: service responded
+    except Exception:
+        return None            # connection refused / timeout / DNS: down
+
 def metrics():
     lines = [
         "# HELP dcc_block_height Current blockchain height",
@@ -53,7 +84,16 @@ def metrics():
         "# TYPE dcc_peers_connected gauge",
         "# HELP dcc_scrape_error 1 if the last scrape failed for any endpoint, 0 otherwise",
         "# TYPE dcc_scrape_error gauge",
+        "# HELP dcc_service_up 1 if the web service answered with HTTP <500, 0 if down (conn error/timeout/5xx)",
+        "# TYPE dcc_service_up gauge",
     ]
+
+    # Web-service liveness for every user-facing service (matcher, data-service,
+    # explorer, websocket, grafana, admin, faucet) — so an outage of any of them pages.
+    for svc, url in SERVICES:
+        code = probe_status(url)
+        up = 1 if (code is not None and code < 500) else 0
+        lines.append(f'dcc_service_up{{service="{svc}"}} {up}')
 
     for name, base in NODES:
         lbl = f'node="{name}"'

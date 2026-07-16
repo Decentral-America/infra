@@ -88,3 +88,19 @@ groups:
         annotations:
           summary: "observational HotStuff commit static for 30 min while the chain advances"
           description: "dcc_hotstuff_finalized_height has not advanced in 30 min although dcc_block_height is still increasing. HotStuff QC formation likely regressed (observational only; feature-25 finality is unaffected). Diagnose with hotstuff-status.yml and check for '[HotStuff] QUORUM REACHED but no QC' WARNs."
+
+      # ── User-facing service uptime (MON-1) ─────────────────────────────────
+      # dcc_service_up is emitted by exporter.py for each hosted service (matcher,
+      # data-service, explorer, websocket, grafana, admin, faucet). 0 = the service
+      # failed to answer (connection error/timeout/5xx). Previously NONE of these had
+      # any alert, so an outage of the DEX/explorer/faucet paged nobody.
+      - alert: ServiceDown
+        expr: |
+          dcc_service_up == 0
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "DCC service {{ $labels.service }} is DOWN"
+          description: "dcc_service_up{service=\"{{ $labels.service }}\"} has been 0 for 5 min (connection failure / timeout / 5xx). Check the service container and its Caddy route."
