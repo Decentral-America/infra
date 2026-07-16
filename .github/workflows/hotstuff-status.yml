@@ -48,6 +48,10 @@ jobs:
             kubectl get pod -n dcc "$pod" -o jsonpath='{.spec.containers[0].image}' >> "$OUT" 2>&1; echo >> "$OUT"
             echo "-- phase --" >> "$OUT"
             kubectl get pod -n dcc "$pod" -o jsonpath='{.status.phase} restarts={.status.containerStatuses[0].restartCount}' >> "$OUT" 2>&1; echo >> "$OUT"
+            echo "-- lastState.terminated (why it restarted) --" >> "$OUT"
+            kubectl get pod -n dcc "$pod" -o jsonpath='reason={.status.containerStatuses[0].lastState.terminated.reason} exit={.status.containerStatuses[0].lastState.terminated.exitCode}' >> "$OUT" 2>&1; echo >> "$OUT"
+            echo "-- mem limit / node --" >> "$OUT"
+            kubectl get pod -n dcc "$pod" -o jsonpath='limit={.spec.containers[0].resources.limits.memory} node={.spec.nodeName}' >> "$OUT" 2>&1; echo >> "$OUT"
             echo "-- /node/status (via port-forward) --" >> "$OUT"
             kubectl port-forward -n dcc "$pod" 17869:6869 >/dev/null 2>&1 &
             PF=$!; sleep 4
