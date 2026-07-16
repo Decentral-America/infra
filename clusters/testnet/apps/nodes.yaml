@@ -98,7 +98,7 @@ data:
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
-        enable-blacklisting = yes
+        enable-blacklisting = no
         suspension-residence-time = 300s
       }
 
@@ -204,7 +204,7 @@ data:
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
-        enable-blacklisting = yes
+        enable-blacklisting = no
         suspension-residence-time = 300s
       }
 
@@ -310,7 +310,7 @@ data:
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
-        enable-blacklisting = yes
+        enable-blacklisting = no
         suspension-residence-time = 300s
       }
 
