@@ -41,10 +41,22 @@
 - Add sentry uptime to the `dcc_service_up` monitoring set.
 
 ## Phase 4 — P2P hardening (blacklisting + known-peers)
-- **Resolve RC#2 first.** `enable-blacklisting=no` + `known-peers=[]` today weaken eclipse resistance; they were set to stop the RC#2 gen-0/gen-1 60s suspension loop (see `[[project_dcc_rc2_fix]]`). Re-enabling blacklisting **without** fixing the root cause re-triggers the loop.
-  - Root-cause options to investigate: peer-exchange gossip re-adding self/declared-address (dedup), suspension-vs-blacklist timing, or a curated `known-peers` set removing the churn source.
-- **Then:** set `enable-blacklisting=yes` and a **curated `known-peers`** list spanning multiple regions/ASNs (seeds + sentries), and keep the defaults (`max-single-host-connections=3`, in/out caps 100).
-- **Validate on testnet** in a watched window: flip it, monitor `dcc_peers_connected` + finality lag; **revert immediately** if the RC#2 loop returns.
+
+### RC#2 root cause — VERIFIED in current node-scala (2026-07-16)
+`enable-blacklisting=no` + `known-peers=[]` today weaken eclipse resistance; they were set to stop the RC#2 gen-0/gen-1 ~60s suspension loop (`[[project_dcc_rc2_fix]]`). Confirmed against code:
+- `PeerDatabaseImpl.blacklist()` bans an IP for `black-list-residence-time` (now **15m**, was 1h) whenever `enable-blacklisting` — and **has no exemption for known/trusted peers**. `nextConnectionCandidate` rejects any blacklisted address for the full window.
+- `blacklistAndClose` fires on **transient/honest** conditions, not just malice: `RxExtensionLoader` ("did not return signatures / likely on a fork", "invalid block(s) in signatures"), and `ExtensionAppender`/`BlockAppender`/`MicroblockAppender` append-validation failures — i.e. a normal reorg or a peer briefly on a different tip.
+- So an honest generator that trips a transient validation failure is IP-banned 15m with no exemption. In a **small validator set** that can knock a generator out of the finality committee → drop committed stake < 2/3 → finality stall. The gen-nodes-on-a-fork case just made it a *sustained* loop.
+
+**Conclusion:** the problem isn't blacklisting per se — it's blacklisting **without a trusted-peer exemption**, which is unsafe for a small committee. Blacklisting is still wanted for eclipse resistance against *untrusted* peers.
+
+### The fix (three complementary layers)
+1. **Sentry topology (Phase 3) is the structural fix** — with sentries, generators peer **only** with their own trusted sentries, so generators can never blacklist each other; blacklisting runs at the public sentries against untrusted peers, where it belongs. This is why Phase 3 precedes Phase 4.
+2. **Known-peers blacklist exemption (small code change, recommended).** node-scala has none today. In `PeerDatabaseImpl.blacklist()` (and/or the connection filter), **skip blacklisting an address that resolves to a configured `known-peers` entry** — suspend briefly instead. ~5–10 lines + a unit test. Guarantees the trusted committee/sentries can never be locked out by a transient hiccup, even without sentries. This is the targeted root-cause fix.
+3. **Config:** re-enable `enable-blacklisting=yes`, populate a **curated `known-peers`** across regions/ASNs (seeds + sentries), keep `black-list-residence-time` short (≤15m), keep defaults (`max-single-host-connections=3`, in/out caps 100), keep `suspension-residence-time` + `invalid-blocks-storage.timeout` short so any transient ban self-heals.
+
+### Rollout
+Implement (2) + populate known-peers, then **validate on testnet** in a watched window: flip `enable-blacklisting=yes`, monitor `dcc_peers_connected` + finality lag; the exemption should mean the generators/sentries are never banned. Keep the config revert ready. Do **not** re-enable blacklisting without either the sentry topology (1) or the exemption (2) in place.
 
 ## Phase 5 — End-to-end validation before opening up
 - Run the fault **soak** (RUNBOOK Scenario E) on the mainnet-config chain: generator down / partition / restore, confirming finality degrades gracefully and recovers.
