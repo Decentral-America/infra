@@ -37,12 +37,12 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
 - ✅ Node on `127.0.0.1` behind Caddy; TLS at the edge; `/debug/*`·`/wallet`·`/addresses` blocked publicly (SEC-1 fix).
 - ✅ Seed **not** left in plaintext — injected at runtime by `entrypoint.sh` from `/opt/dcc/secrets/testnet.env` (SOPS-delivered); on-disk `wallet.dat` encrypted.
 - 🔴 **Stake blast-radius:** generators hold **22–27M DCC directly on the hot generating account** the node signs with. A node compromise can drain the stake.
-- 🔴 **SSH is `0.0.0.0/0`** (key-only + fail2ban). CI deploys over SSH from dynamic GitHub-runner IPs, so an IP allowlist is impossible today.
+- 🟡 **SSH is `0.0.0.0/0` — ACCEPTED with mitigations (decision 2026-07-16).** It is already `PasswordAuthentication no` (key-only), `PermitRootLogin no`, `AllowUsers deploy` (single user), `MaxAuthTries 3`, fail2ban (5/10min → 1h ban), X11 off, and strong ciphers/MACs/KEX. So the exposed surface is a single key-only, no-root, rate-limited account; residual risk = an OpenSSH 0-day or a leaked deploy key (held in a GH secret + KeePassium). This is a widely-accepted small-team baseline. A VPN layer (Tailscale rejected as an unwanted third-party dependency; self-hosted WireGuard is the zero-vendor equivalent) is a nice-to-have, **not** a mainnet blocker.
 - 🧊 Signing-key externalization (Waves-compatible remote signer) — custom work; roadmap.
 
 ### Actions
 1. 🔴 **Lease, don't hold** — hold minimal balance on each hot generating account; accrue stake via `Lease` from a separately-custodied cold treasury account. Native Waves feature; biggest custody win. *(mainnet design + testnet demo)*
-2. ⏳ **Tailscale ephemeral CI access** — install Tailscale on the VPS (tagged node), add the `tailscale/github-action` to the SSH-deploy workflows connecting over the tailnet IP, then close port 22 to `0.0.0.0/0` in the Linode firewall. **Needs:** a Tailscale tailnet + an OAuth client/auth-key stored as a GH secret. Alternative: SSH-CA + short-lived certs, or a bastion.
+2. 🟡 **SSH: accepted as-is.** Optional zero-dependency hardening (not yet applied — a live SSH-port change carries lockout risk and must be coordinated with the CI deploy workflows): (a) move sshd off port 22 to a non-standard port to cut automated-scan noise (requires updating bootstrap.sh sshd `Port`, the Linode firewall rule, the fail2ban jail, and every deploy workflow's SSH port together), (b) periodically rotate the `DEPLOY_SSH_KEY`. Only pursue self-hosted **WireGuard** if "no public SSH at all" ever becomes a hard requirement.
 3. 🧊 Evaluate HSM/vault-backed seed storage and a Waves-compatible remote/threshold signer.
 
 ---
@@ -107,7 +107,7 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
 | # | Item | Area | Severity | Owner / blocker |
 |---|------|------|----------|-----------------|
 | 1 | Lease stake instead of holding on hot generator accounts | 1 | 🔴 High | design now, exec needs treasury accts |
-| 2 | Tailscale ephemeral CI access → close public SSH | 1 | 🔴 High | ⏳ needs Tailscale tailnet + GH secret |
+| 2 | SSH exposure — ACCEPTED w/ mitigations (key-only, no-root, fail2ban) | 1 | 🟡 Low | decided 2026-07-16; optional port-move/key-rotation later |
 | 3 | Finality committed-stake headroom metric + alert | 2/4 | 🔴 High | **actionable now** |
 | 4 | Re-enable P2P blacklisting + curated known-peers | 3 | 🔴 High | test vs RC#2 loop first |
 | 5 | Sentry-node topology (private generators) | 3 | 🟠 Med | 🧊 mainnet |
