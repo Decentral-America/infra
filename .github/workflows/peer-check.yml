@@ -62,6 +62,7 @@ jobs:
             echo "$pod version: $(kubectl exec -n dcc $pod -- wget -qO- http://127.0.0.1:6869/node/version 2>/dev/null || echo n/a)"
           done
           echo "main version: $(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/node/version" 2>/dev/null || echo n/a)"
+          echo "main RepoDigest: $(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" "docker inspect --format '{{index .RepoDigests 0}}' node-scala-testnet" 2>/dev/null || echo n/a)"
           echo "=== gen-0 RAW last 70 log lines (full connect->close lifecycle, find real drop cause) ==="
           kubectl logs -n dcc dcc-gen-0-0 --since=6m 2>&1 | tail -70 | jq -rR 'fromjson? | "\(.["@timestamp"][11:19]) \(.level[0:4]) \(.logger_name|split(".")|last|.[0:22]) | \(.message[0:150])"' 2>/dev/null || echo "(jq parse failed, raw:)" && kubectl logs -n dcc dcc-gen-0-0 --since=6m 2>&1 | tail -40
           echo "=== drop-count in last 10 min (clean post-fix window) + last 3 drop reasons ==="
