@@ -90,7 +90,10 @@ if [ -f /opt/dcc/compose/grafana.yml ]; then
     echo "Removing grafana-testnet (project '$have' != '$GRAFANA_PROJECT')..."
     docker rm -f grafana-testnet
   fi
-  NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml up -d
+  # --force-recreate so a changed mounted grafana.ini (e.g. auth lockdown) is actually
+  # reloaded — grafana reads its config only at startup, and plain `up -d` won't restart
+  # a running container when only a bind-mounted file's contents changed.
+  NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml up -d --force-recreate
   sleep 5
   curl -s http://127.0.0.1:3002/api/health 2>/dev/null && echo "  (grafana healthy)" || echo "  (grafana not ready yet — check logs)"
 fi
