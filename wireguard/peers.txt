@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# DCC testnet WireGuard committee mesh — ADDRESS & KEY PLAN  (DRAFT, not applied)
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Subnet:   10.66.0.0/24   (RFC1918, does NOT overlap Linode VLAN 192.168.128.0/17
+#                           nor Calico pod/svc CIDRs — verify with `kubectl cluster-info dump | grep -i cidr`)
+# UDP port: 51820          (WireGuard listen port on the hub)
+# MTU:      1420           (1500 - 80B WG overhead; set on every wg0)
+#
+# TOPOLOGY at the WG *transport* layer = HUB & SPOKE (not point-to-point mesh).
+#   main (66.228.55.154) is the HUB: public static IP, ListenPort 51820, ip_forward=1.
+#   gen-0/gen-1/val-0 are SPOKES behind ONE shared NAT (LKE egress 172.105.64.89),
+#   so they CANNOT open direct gen<->gen WG tunnels. Each spoke peers ONLY with main
+#   (AllowedIPs = 10.66.0.0/24) and main ROUTES spoke<->spoke traffic.
+# TOPOLOGY at the node-scala P2P layer = logical mesh via known-peers (see dcc.conf.network-patch).
+#
+#   Node    Role        WG IP         P2P port   substrate
+#   main    hub/gen     10.66.0.1     6868       VPS (docker --network host)
+#   gen-0   spoke/gen   10.66.0.11    6863       LKE pod
+#   gen-1   spoke/gen   10.66.0.12    6864       LKE pod
+#   val-0   spoke/val   10.66.0.13    6865       LKE pod
+#
+# ── KEY GENERATION (run once per node, on a trusted workstation) ────────────────
+#   for n in main gen-0 gen-1 val-0; do
+#     umask 077
+#     wg genkey | tee "$n.key" | wg pubkey > "$n.pub"
+#   done
+#   # PRIVATE keys ($n.key) -> SOPS (see below). PUBLIC keys ($n.pub) -> paste below + into configs.
+#   # Shred the plaintext .key files after storing in SOPS:  shred -u *.key
+#
+# ── PUBLIC KEYS (safe to commit — fill in after generation) ─────────────────────
+MAIN_WG_PUBKEY=<paste main.pub>
+GEN0_WG_PUBKEY=<paste gen-0.pub>
+GEN1_WG_PUBKEY=<paste gen-1.pub>
+VAL0_WG_PUBKEY=<paste val-0.pub>
+#
+# ── PRIVATE KEY STORAGE ─────────────────────────────────────────────────────────
+# main (VPS): store in secrets/testnet.env under SOPS, then push-secrets delivers it
+#   to /opt/dcc/secrets/testnet.env. Add this line (plaintext) then `sops -e -i secrets/testnet.env`:
+#       WG_MAIN_PRIVATE_KEY=<contents of main.key>
+#   (Edit in place with:  sops secrets/testnet.env  — add the line, save; SOPS re-encrypts.)
+#
+# gen-0 / gen-1 / val-0 (LKE): one SOPS-encrypted k8s Secret per node, same pattern as
+#   the *-wallet.secret.yaml files. See gen-0-wg.secret.yaml (skeleton). Encrypt with:
+#       sops -e -i wireguard/gen-0-wg.secret.yaml
+#   then move it next to nodes.yaml (clusters/testnet/apps/) and add to that kustomization.yaml.
+#   Age recipient (testnet): age1gpe6clrwzvfjlkwm2ww4a00f0ktk49raaslgs2zr3r0vzkcez9fsd97vzs

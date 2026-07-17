@@ -1,0 +1,86 @@
+# DRAFT workflow — install/enable WireGuard on the main VPS over the existing SSH path.
+# Mirrors deploy-node-config.yml (same TESTNET_DEPLOY_* secrets, same environment).
+# Idempotent: safe to re-run. Does NOT touch the node container or dcc.conf.
+#
+# Prereq: WG_MAIN_PRIVATE_KEY is present in /opt/dcc/secrets/testnet.env (delivered by
+# push-secrets after you add it to secrets/testnet.env under SOPS). Public keys are
+# passed as inputs (non-secret).
+name: Deploy WireGuard to VPS
+on:
+  workflow_dispatch:
+    inputs:
+      gen0_pubkey: { description: "gen-0 WG public key", required: true, type: string }
+      gen1_pubkey: { description: "gen-1 WG public key", required: true, type: string }
+      val0_pubkey: { description: "val-0 WG public key", required: true, type: string }
+      lke_egress_ip: { description: "LKE egress IP allowed to reach 51820", required: true, default: "172.105.64.89", type: string }
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testnet
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install + configure wg0 on VPS
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          GEN0: ${{ inputs.gen0_pubkey }}
+          GEN1: ${{ inputs.gen1_pubkey }}
+          VAL0: ${{ inputs.val0_pubkey }}
+        run: |
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "${SSH_USER}@${SSH_HOST}" \
+            "GEN0='${GEN0}' GEN1='${GEN1}' VAL0='${VAL0}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          echo "=== install wireguard ==="
+          command -v wg >/dev/null || { sudo apt-get update -q && sudo apt-get install -y wireguard; }
+
+          echo "=== read private key from pushed secrets ==="
+          WG_MAIN_PRIVATE_KEY=$(sudo grep '^WG_MAIN_PRIVATE_KEY=' /opt/dcc/secrets/testnet.env | cut -d= -f2-)
+          test -n "$WG_MAIN_PRIVATE_KEY" || { echo "FATAL: WG_MAIN_PRIVATE_KEY missing — run push-secrets first"; exit 1; }
+
+          echo "=== render /etc/wireguard/wg0.conf ==="
+          sudo install -d -m 700 /etc/wireguard
+          sudo tee /etc/wireguard/wg0.conf >/dev/null <<CONF
+          [Interface]
+          Address    = 10.66.0.1/24
+          ListenPort = 51820
+          PrivateKey = ${WG_MAIN_PRIVATE_KEY}
+          MTU        = 1420
+          PostUp   = sysctl -w net.ipv4.ip_forward=1; iptables -A FORWARD -i wg0 -o wg0 -j ACCEPT; iptables -t mangle -A FORWARD -o wg0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+          PostDown = iptables -D FORWARD -i wg0 -o wg0 -j ACCEPT; iptables -t mangle -D FORWARD -o wg0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+
+          [Peer]
+          PublicKey           = ${GEN0}
+          AllowedIPs          = 10.66.0.11/32
+          PersistentKeepalive = 25
+
+          [Peer]
+          PublicKey           = ${GEN1}
+          AllowedIPs          = 10.66.0.12/32
+          PersistentKeepalive = 25
+
+          [Peer]
+          PublicKey           = ${VAL0}
+          AllowedIPs          = 10.66.0.13/32
+          PersistentKeepalive = 25
+          CONF
+          sudo chmod 600 /etc/wireguard/wg0.conf
+
+          echo "=== enable + (re)start tunnel ==="
+          sudo systemctl enable wg-quick@wg0
+          sudo systemctl restart wg-quick@wg0
+          sleep 2
+          echo "=== wg show (handshakes appear once spokes connect) ==="
+          sudo wg show
+          ip -4 addr show wg0
+          echo "=== NOTE: open UDP 51820 inbound + outbound to the LKE egress IP in the"
+          echo "===       Linode firewall (terraform/main.tf) — see main.tf.firewall-patch ==="
+          REMOTE
+          rm -f /tmp/id_rsa
