@@ -107,12 +107,18 @@ data:
       }
 
       miner {
-        # RE-ENABLED 2026-07-16 after the state-snapshot migration put the gen nodes AT main's tip.
-        # IMPORTANT: these gen nodes can NOT be recovered by wipe + p2p-sync -- the canonical chain is
-        # internally state-hash-inconsistent (old blocks forged before a state-hash fix now in be2dcfc0),
-        # so a from-genesis re-sync dies at ~25.5k with InvalidStateHash. To recover a gen node, run the
-        # migrate-state-snapshot workflow (copies main's RocksDB into the PVC) -- do NOT resync-gen-nodes.
-        enable = yes
+        # COMMITTEE MODEL (2026-07-16): block PRODUCER (main) + committed ENDORSER validators (gen-0/gen-1).
+        # enable=no -> these generators do NOT forge blocks; they stay COMMITTED and ENDORSE, so feature-25
+        # finality still REQUIRES their 2/3 stake (decentralized, safety-critical) and stays TIGHT (lag ~2).
+        # WHY not forge: feature-25 finality is miner-AGGREGATED (the current block's miner collects
+        # endorsements and embeds the finalization in its next microblock; endorsements are fire-once, no
+        # retry -- BlockAppender.scala:54 / EndorsementStorage). With 3 rotating miners the aggregator role
+        # rotates every block and the endorsement target changes before any block collects 2/3, so finality
+        # stalls (observed: fh frozen while all 3 forge). A single stable aggregator (main) collects all
+        # endorsements each block -> tight finality. Re-enabling multi-generator forging WITH tight finality
+        # needs a consensus-level change (endorsement retry/rebroadcast, currently absent) -- tracked as a
+        # node-scala item, not a config flip. Recover a gen node via migrate-state-snapshot (NOT resync).
+        enable = no
         # quorum=1 (was 0): a funded generator with quorum=0 forges even when it has ZERO peers,
         # so whenever its link to main drops it keeps producing on its stale local tip -> the next
         # reconnect has a fork to reconcile -> the sync channel breaks -> repeat (~30s self-fork loop,
@@ -224,9 +230,10 @@ data:
       }
 
       miner {
-        # RE-ENABLED 2026-07-16 after state-snapshot migration (see gen-0 note). Recover via
-        # migrate-state-snapshot, NOT resync-gen-nodes (chain is un-resyncable from genesis).
-        enable = yes
+        # COMMITTEE MODEL (2026-07-16): endorser validator, does NOT forge (see gen-0 note for the full
+        # rationale -- multi-miner rotation stalls miner-aggregated feature-25 finality). Stays committed +
+        # endorses so finality needs its 2/3 stake. Recover via migrate-state-snapshot, NOT resync.
+        enable = no
         # quorum=1 (was 0): see gen-0 note above -- a funded generator with quorum=0 self-forks on every
         # link drop, breaking the sync channel in a ~30s loop. quorum=1 makes it go quiet when isolated
         # and sync cleanly on reconnect. Only the bootstrap seed (main VPS) keeps quorum=0.
