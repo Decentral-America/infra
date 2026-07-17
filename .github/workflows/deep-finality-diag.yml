@@ -1,0 +1,84 @@
+name: Deep Finality/P2P Diagnostic
+# Read-only deep-dive: WHY does gen-1 intermittently drop out of the 2/3 finality
+# set? Captures per-node connection stability, endorsement/commit log activity,
+# and k8s topology (shared node/egress) to ground the enterprise topology fix.
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: testnet
+    steps:
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters" | jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          curl -s -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | jq -r '.kubeconfig' | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+      - name: Deep diagnostic
+        env:
+          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          set -uo pipefail
+          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          SSHOPT="-i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=20"
+          R() { ssh $SSHOPT "$SSH_USER@$SSH_HOST" "$@"; }
+          OUT=/tmp/diag.txt; : > "$OUT"
+
+          echo "############## K8S TOPOLOGY (shared node/egress?) ##############" | tee -a "$OUT"
+          kubectl get pods -n dcc -o wide 2>&1 | tee -a "$OUT"
+          echo "-- distinct nodes hosting gens --" | tee -a "$OUT"
+          kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.metadata.name}{" -> "}{.spec.nodeName}{" hostIP="}{.status.hostIP}{"\n"}{end}' 2>&1 | tee -a "$OUT"
+          echo "-- LB / NodeBalancer services for gens (distinct inbound IPs?) --" | tee -a "$OUT"
+          kubectl get svc -n dcc -o wide 2>&1 | tee -a "$OUT"
+
+          echo "" | tee -a "$OUT"
+          echo "############## PER-NODE PEER + FINALITY VIEW ##############" | tee -a "$OUT"
+          echo "== main peers ==" | tee -a "$OUT"
+          R "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);p=d.get('peers',[]);print(len(p),'peers:',[(x.get('peerName'),x.get('address')) for x in p])" 2>/dev/null | tee -a "$OUT" || echo "  (main peers parse failed)" | tee -a "$OUT"
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "== $pod peers ==" | tee -a "$OUT"
+            kubectl exec "$pod" -n dcc -- wget -qO- http://127.0.0.1:6869/peers/connected 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);p=d.get('peers',[]);print(len(p),'peers:',[(x.get('peerName'),x.get('address')) for x in p])" 2>/dev/null | tee -a "$OUT" || echo "  ($pod peers parse failed)" | tee -a "$OUT"
+          done
+
+          echo "" | tee -a "$OUT"
+          echo "############## CONNECTION CHURN — last 15m (per node) ##############" | tee -a "$OUT"
+          echo "== main: suspend/close counts + gen source IPs ==" | tee -a "$OUT"
+          R "docker logs --since 15m node-scala-testnet 2>&1 | grep -icE 'Suspending|Channel closed'" 2>/dev/null | sed 's/^/  main suspend+close(15m): /' | tee -a "$OUT"
+          R "docker logs --since 15m node-scala-testnet 2>&1 | grep -oE 'Suspending /[0-9.]+' | sort | uniq -c" 2>/dev/null | sed 's/^/  main suspends: /' | tee -a "$OUT"
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            n=$(kubectl logs "$pod" -n dcc --since=15m 2>&1 | grep -icE 'Suspending|Channel closed')
+            hs=$(kubectl logs "$pod" -n dcc --since=15m 2>&1 | grep -icE 'Accepted handshake|Connection established')
+            echo "  $pod (15m): suspend+close=$n  handshake/estab=$hs" | tee -a "$OUT"
+          done
+
+          echo "" | tee -a "$OUT"
+          echo "############## FINALITY/ENDORSEMENT ACTIVITY — last 15m (esp gen-1) ##############" | tee -a "$OUT"
+          for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
+            echo "== $pod finality log activity ==" | tee -a "$OUT"
+            kubectl logs "$pod" -n dcc --since=15m 2>&1 | grep -oiE "endors[a-z]*|vote[a-z]*|commit[a-z]*|finaliz[a-z]*|EndorsementFilter|committedGenerators|BLS|quorum|2/3|micro-?fork|declined|invalid" | tr 'A-Z' 'a-z' | sort | uniq -c | sort -rn | head -12 | sed 's/^/    /' | tee -a "$OUT"
+          done
+          echo "== gen-1 RAW finality/commit/endorse lines (last 15m, tail 25) ==" | tee -a "$OUT"
+          kubectl logs dcc-gen-1-0 -n dcc --since=15m 2>&1 | grep -iE "endors|vote|commit|finaliz|EndorsementFilter|Suspending|Channel closed|generat" | tail -25 | sed 's/^/    /' | tee -a "$OUT"
+
+          echo "" | tee -a "$OUT"
+          echo "############## COMMIT TX LANDING (are gen commits on-chain?) ##############" | tee -a "$OUT"
+          R "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/blocks/height" 2>/dev/null | tee -a "$OUT"
+          echo "  (look above for whether gen-1's CommitToGeneration txs are being included)" | tee -a "$OUT"
+
+          echo "===== BEGIN DIAG ====="; cat "$OUT"; echo "===== END DIAG ====="
+          rm -f /tmp/id_rsa
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: deep-finality-diag
+          path: /tmp/diag.txt
+          retention-days: 3
