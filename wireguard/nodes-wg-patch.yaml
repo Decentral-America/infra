@@ -1,0 +1,121 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# LKE StatefulSet WireGuard patch  (DRAFT — apply by hand-merging into nodes.yaml)
+#
+# RECOMMENDATION: per-pod WG sidecar/initContainer, and DROP hostNetwork on the
+# gen pods.  Rationale (see the accompanying plan for the full evaluation):
+#
+#   * The GOAL requires each gen its OWN WG IP (10.66.0.11/12/13). All 3 pods
+#     currently run hostNetwork:true and are co-located on ONE node, i.e. they
+#     share ONE network namespace. A per-pod WG sidecar there would have to create
+#     3 wg interfaces in the SAME netns with OVERLAPPING /32 AllowedIPs -> conflicting
+#     routes -> broken. And node-level WG (option b) gives the NODE one WG IP, which
+#     collapses the 3 gens back to a shared IP — exactly what WG is meant to remove.
+#   * Giving each pod its OWN netns (hostNetwork:false) + a WG interface in that netns
+#     is the only clean way to get 3 distinct WG identities on 1 node. It is also
+#     GitOps-native (key in a SOPS Secret, no host mutation, survives node recycle)
+#     and forward-compatible with the mainnet multi-node future.
+#
+# What changes per StatefulSet (shown for dcc-gen-0; repeat for gen-1/val-0 with the
+# matching Address 10.66.0.12 / 10.66.0.13 and Secret name gen-1-wg / val-0-wg):
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ===== spec.template.spec (dcc-gen-0) — REPLACE these fields =====================
+#
+#   REMOVE:  hostNetwork: true
+#   CHANGE:  dnsPolicy: ClusterFirstWithHostNet   ->   dnsPolicy: ClusterFirst
+#   KEEP:    the pod-level securityContext (runAsNonRoot 999 etc.) — the WG containers
+#            below OVERRIDE it at container scope (root + NET_ADMIN, scoped to WG only).
+#   The `node` container is UNCHANGED except it no longer needs hostPort (P2P now lives
+#   inside the pod netns behind wg0; keep containerPort for documentation).
+#
+# ── initContainer: bring wg0 up BEFORE node-scala starts ───────────────────────
+# The interface is created in the POD netns and PERSISTS for the pod's life (kernel
+# WireGuard), so an initContainer is enough for ordering; the sidecar below only
+# monitors. LKE Ubuntu kernels (>=5.6) ship WireGuard in-tree.
+      initContainers:
+        - name: wg-up
+          image: docker.io/alpine:3.20   # TODO: bake+pin an internal image with wireguard-tools+iproute2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              apk add --no-cache wireguard-tools iproute2 >/dev/null
+              # kernel-WG path; if `ip link add type wireguard` fails, fall back to
+              # userspace: `wireguard-go wg0` (needs /dev/net/tun) then the same wg set.
+              ip link add dev wg0 type wireguard
+              wg set wg0 \
+                private-key /etc/wireguard/privatekey \
+                peer "$MAIN_WG_PUBKEY" \
+                  endpoint 66.228.55.154:51820 \
+                  allowed-ips 10.66.0.0/24 \
+                  persistent-keepalive 25
+              ip -4 address add 10.66.0.11/32 dev wg0      # <-- per node: .12 / .13
+              ip link set mtu 1420 up dev wg0
+              ip -4 route add 10.66.0.0/24 dev wg0
+              wg show wg0
+          env:
+            - name: MAIN_WG_PUBKEY
+              value: "<paste main.pub>"                    # non-secret public key
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: true
+            capabilities:
+              drop: [ALL]
+              add: [NET_ADMIN]
+          volumeMounts:
+            - name: wg-key
+              mountPath: /etc/wireguard
+              readOnly: true
+
+# ── OPTIONAL sidecar: re-assert config + expose handshake age for probing ───────
+# Kernel WG keeps the tunnel up without a process, but this catches a wiped iface
+# (e.g. after `ip link del`) and lets you `kubectl exec ... -c wg-mon -- wg show`.
+      containers:
+        - name: wg-mon
+          image: docker.io/alpine:3.20
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              apk add --no-cache wireguard-tools iproute2 >/dev/null
+              while true; do
+                ip link show wg0 >/dev/null 2>&1 || echo "WARN wg0 missing"
+                wg show wg0 latest-handshakes || true
+                sleep 30
+              done
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            capabilities: { drop: [ALL], add: [NET_ADMIN] }
+          volumeMounts:
+            - name: wg-key
+              mountPath: /etc/wireguard
+              readOnly: true
+        # ... the existing `node` container stays here, UNCHANGED ...
+
+# ── volumes: add the WG key Secret alongside the existing `config` volume ───────
+      volumes:
+        - name: wg-key
+          secret:
+            secretName: gen-0-wg          # <-- per node: gen-1-wg / val-0-wg
+            defaultMode: 0400
+            items:
+              - key: privatekey
+                path: privatekey
+        # ... existing `config` configMap volume stays here ...
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SIDE EFFECTS of dropping hostNetwork (verify during rollout):
+#   * livenessProbe/readinessProbe httpGet host:127.0.0.1 now hits the POD loopback
+#     (node-scala rest-api binds 127.0.0.1) — still correct, no change needed.
+#   * The 3 Calico NetworkPolicies in nodes.yaml STOP being no-ops and now apply.
+#     `allow-egress` (egress: [{}]) permits the spoke's outbound UDP to main:51820;
+#     WG return traffic is conntrack-established. No new ingress rule is required
+#     (spokes never receive unsolicited inbound). `allow-p2p-ingress` (6863/4/5) is
+#     no longer needed for P2P but is harmless.
+#   * metrics-exporter (hostNetwork) scraping the gens' node REST changes — point it
+#     at the pod/Service instead, or scrape over the WG IPs.
+#   * Native sidecars (initContainer with restartPolicy: Always) need k8s >=1.29;
+#     if the cluster is >=1.29, prefer converting wg-mon to a native sidecar so its
+#     lifecycle is tied to the pod. Otherwise the plain sidecar above is fine.
+# ──────────────────────────────────────────────────────────────────────────────

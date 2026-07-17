@@ -1,0 +1,53 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# node-scala config edits to move P2P onto the WG IPs  (DRAFT — hand-merge)
+#
+# Only the `network { }` block changes. Do these AFTER the WG tunnels are up and
+# handshaking (see rollout). declared-address = own WG IP; peer set becomes static.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ══ RECOMMENDED (collision-safe) topology ═══════════════════════════════════════
+# Keep the CURRENT proven asymmetry, just re-IP'd onto WG: spokes dial the hub,
+# the hub dials nobody. This preserves the "single stable aggregator" that makes
+# feature-25/HotStuff finality tight (see the miner{} notes in nodes.yaml) and
+# avoids the simultaneous-initiation collision the existing comments document.
+
+# ── VPS  node-config/testnet/dcc.conf  → dcc.network ─────────────────────────────
+#   declared-address = "10.66.0.1:6868"     # was 66.228.55.154:6868
+#   known-peers = []                         # UNCHANGED — hub does not dial (anti-collision)
+#   enable-peers-exchange = no               # UNCHANGED — keep peer set static
+#   enable-blacklisting = no                 # UNCHANGED (per current)
+#   suspension-residence-time = 30s          # UNCHANGED
+#   # max-single-host-connections is now MOOT (each peer has its own WG /32) — you may
+#   # drop the override entirely; leaving 8 is harmless.
+
+# ── gen-0  gen-0-config ConfigMap  → dcc.network ─────────────────────────────────
+#   declared-address = "10.66.0.11:6863"     # was 172.105.64.89:6863
+#   known-peers = ["10.66.0.1:6868"]         # hub WG IP (was 66.228.55.154:6868)
+#   enable-peers-exchange = no               # ADD — currently absent (defaults yes!);
+#                                            #   without it a gen could LEARN a peer's
+#                                            #   non-WG public address and dial OFF-tunnel.
+#   blacklist-exempt = ["10.66.0.1","10.66.0.11","10.66.0.12","10.66.0.13"]  # WG IPs
+#   enable-blacklisting = no                 # UNCHANGED
+#   suspension-residence-time = 30s          # UNCHANGED
+# gen-1  → declared-address "10.66.0.12:6864", known-peers ["10.66.0.1:6868"], rest same
+# val-0  → declared-address "10.66.0.13:6865", known-peers ["10.66.0.1:6868"], rest same
+
+
+# ══ VARIANT you asked about: FULL logical mesh in known-peers ════════════════════
+# If you specifically want every node to list every other (full mesh), it is:
+#   main : known-peers = ["10.66.0.11:6863","10.66.0.12:6864","10.66.0.13:6865"]
+#   gen-0: known-peers = ["10.66.0.1:6868","10.66.0.12:6864","10.66.0.13:6865"]
+#   gen-1: known-peers = ["10.66.0.1:6868","10.66.0.11:6863","10.66.0.13:6865"]
+#   val-0: known-peers = ["10.66.0.1:6868","10.66.0.11:6863","10.66.0.12:6864"]
+#   (declared-address + enable-peers-exchange=no exactly as above.)
+#
+# ⚠ RISK — this is the change that halted the chain before. The dcc.conf/nodes.yaml
+#   comments document a simultaneous-initiation COLLISION: when BOTH ends of a pair
+#   dial each other, handshakes succeed then drop in a repeating cycle (main once
+#   logged an inbound + outbound handshake to the same nonce 6s apart, both closing).
+#   That fix was known-peers=[] on main + enable-peers-exchange=no. WG removes the
+#   SHARED-IP ambiguity (distinct /32s) but does NOT remove same-pair double-dialing,
+#   and node-scala has no endorsement retry to paper over a dropped finality link.
+#   Recommendation: ship the collision-safe topology above first; only try full mesh
+#   as a deliberate, monitored experiment (watch peers/connected stability + finalized
+#   height for >30 min), one edge at a time, with the concentrator config as rollback.

@@ -1,0 +1,30 @@
+# DRAFT — add these to resource "linode_firewall" "backend" in terraform/main.tf.
+# The VPS firewall is inbound_policy=DROP AND outbound_policy=DROP (whitelist), so
+# WireGuard needs BOTH an inbound and an outbound rule. Scope to the LKE egress IP.
+# (Team admin IPs can be added to the inbound ipv4 list if operators run wg locally.)
+
+  # ── WireGuard committee mesh — inbound handshake/data from the LKE spokes ─────
+  inbound {
+    label    = "allow-wireguard"
+    action   = "ACCEPT"
+    protocol = "UDP"
+    ports    = "51820"
+    ipv4     = ["172.105.64.89/32"]   # LKE egress IP (all 3 spokes NAT out here)
+  }
+
+  # ── WireGuard — hub-relayed / keepalive replies back to the spokes ────────────
+  # Spokes NAT out on ephemeral source ports, so allow all UDP to the egress IP.
+  outbound {
+    label    = "allow-wireguard-out"
+    action   = "ACCEPT"
+    protocol = "UDP"
+    ports    = "1-65535"
+    ipv4     = ["172.105.64.89/32"]
+  }
+
+# NOTE: LKE side needs NO firewall change — spokes only make OUTBOUND UDP to
+# main:51820, and linode_firewall.lke_nodes already has outbound_policy=ACCEPT.
+#
+# OPTIONAL hardening AFTER cutover is verified: once all P2P rides WG you may
+# tighten the public P2P rules (main inbound TCP 6868 -> source 172.105.64.89 only;
+# terraform/lke.tf 6863/6864/6865 -> DROP). Do this LAST and separately.

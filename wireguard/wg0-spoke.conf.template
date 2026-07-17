@@ -1,0 +1,24 @@
+# wg0 SPOKE template — gen-0 / gen-1 / val-0   [DRAFT / reference]
+#
+# Canonical description of each spoke's tunnel. On LKE the interface is built by
+# the initContainer in nodes-wg-patch.yaml using `ip`/`wg` (NOT wg-quick), reading
+# the private key from the mounted Secret; this file documents the equivalent config
+# and can be used with `wg-quick up ./wg0.conf` for a standalone smoke test.
+#
+# Per-node Address (the ONLY difference between spokes):
+#     gen-0 -> 10.66.0.11/32
+#     gen-1 -> 10.66.0.12/32
+#     val-0 -> 10.66.0.13/32
+
+[Interface]
+Address    = 10.66.0.11/32          # <-- change per node (11 / 12 / 13)
+PrivateKey = <node private key>     # from k8s Secret gen-0-wg (key: privatekey)
+MTU        = 1420
+
+# Single peer = the HUB. AllowedIPs = whole /24 so ALL mesh traffic (incl. the other
+# spokes) is routed to main, which relays it. No direct gen<->gen tunnel exists.
+[Peer]
+PublicKey           = ${MAIN_WG_PUBKEY}
+Endpoint            = 66.228.55.154:51820
+AllowedIPs          = 10.66.0.0/24
+PersistentKeepalive = 25
