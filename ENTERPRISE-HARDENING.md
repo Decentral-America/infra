@@ -39,7 +39,12 @@ Fleet is **digest-pinned** to the canonical build `be2dcfc0` (`sha256:9d7d4f31�
 
 ---
 
-## §1 — Committee HA (node spread + stake rebalance)
+## §1 — Committee HA (node spread + stake rebalance)  →  MAINNET-LAUNCH ITEM (no testnet action)
+
+**DECISION 2026-07-17:** leave the testnet LKE pool exactly as-is (1× g6-standard-4). Node type/sizing
+is already deployed and fine — the only lever is node *count*, and paying for extra nodes purely for
+committee redundancy is not warranted on testnet. **This is a mainnet-launch requirement, where HA is
+non-negotiable.** No testnet change. (Everything below applies at mainnet launch.)
 
 **Problem:** all 3 LKE pods run on ONE node (`192.168.168.125`) = single point of failure for the
 whole finality committee. Worse, with current stake (main 2.18e15, gen-0/gen-1 2.68e15 each; 2/3 =
