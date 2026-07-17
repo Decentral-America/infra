@@ -105,10 +105,20 @@ WG addrs + finality keeps advancing, one finality window between each. 4. (Later
 
 ---
 
-## §3 — Endorsement rebroadcast (re-decentralize block production)  →  branch `node-scala:feat/endorsement-rebroadcast`
+## §3 — Endorsement rebroadcast (re-decentralize block production)  →  ✅ DONE + LIVE (2026-07-17)
 
-**Goal:** re-enable ALL generators forging WITH tight finality (undo §0's main-only aggregation) by
-fixing the fire-once-endorsement gap.
+**DONE:** the endorsement-rebroadcast patch is built, validated on testnet, and LIVE. All 3 generators
+forge AND finality is tight+continuous (lag 100, verified 28/30 advances over a 26-min hands-off window;
+forgers main/gen-0/gen-1 balanced). Build: node-scala branch `feat/endorsement-rebroadcast` @ 84d1d98
+(= be2dcfc0 + patch) → image `node-scala-testnet-be2dcfc0-endorse` (`sha256:db44d52f`), pinned fleet-wide.
+Build fix: `publish-node-scala.yml` gained a `monorepo-ref` input; dispatch with the FULL 40-char SHA
+`2c886b76999e658bf4fa058a290eacb40b83c1d3` (protobuf-schemas 1.6.3 era). Rollback = re-pin `be2dcfc0`
+(`9d7d4f31`) + gens `enable=no`. **Ops lesson: judge finality on the SETTLED state after ~20min hands-off,
+never on post-roll churn — an initial post-deploy stall self-heals (this is why the first attempt was
+wrongly rolled back).** Follow-ups (non-blocking): merge the branch for provenance; fix the `v0.0.0`
+version label (tag the branch v*); add `NNodesRotatingFinalizationTestSuite` (node-it) as a regression guard.
+
+**Goal (achieved):** re-enable ALL generators forging WITH tight finality by fixing the fire-once-endorsement gap.
 
 **Design (Option A, implemented on the branch):** bounded, idempotent periodic rebroadcast of a
 node's OWN current-height endorsement, so a rotated aggregator still receives it in-window.
