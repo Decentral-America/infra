@@ -115,8 +115,14 @@ Build fix: `publish-node-scala.yml` gained a `monorepo-ref` input; dispatch with
 `2c886b76999e658bf4fa058a290eacb40b83c1d3` (protobuf-schemas 1.6.3 era). Rollback = re-pin `be2dcfc0`
 (`9d7d4f31`) + gens `enable=no`. **Ops lesson: judge finality on the SETTLED state after ~20min hands-off,
 never on post-roll churn — an initial post-deploy stall self-heals (this is why the first attempt was
-wrongly rolled back).** Follow-ups (non-blocking): merge the branch for provenance; fix the `v0.0.0`
-version label (tag the branch v*); add `NNodesRotatingFinalizationTestSuite` (node-it) as a regression guard.
+wrongly rolled back).** Follow-ups: DONE — provenance tag `testnet-be2dcfc0-endorse` @84d1d98 pushed; `v0.0.0` version-label fixed
+(publish-node-scala.yml checkout `fetch-depth: 0`, future builds); `NNodesRotatingFinalizationTestSuite`
+written + node-it CI harness authored (`node-scala/.github/workflows/node-it.yml`, registered on `main` via
+PR#20). REMAINING (separate cleanup, non-blocking): the node-it suite can't RUN yet — node-it's whole Test
+config has ~114 PRE-EXISTING compile errors at be2dcfc0 (20+ files out of sync with the branch's protobuf/gRPC
+API — the "check-pr/node-it debt"). Fixing that debt is its own task; the #3 patch is already live-validated,
+so the harness + guard sit ready for when node-it compiles. A formal merge of the branch into a maintained
+node-scala line is deferred (1180-commit divergence + reworked hotstuff-t2 has incompatible state-hash).
 
 **Goal (achieved):** re-enable ALL generators forging WITH tight finality by fixing the fire-once-endorsement gap.
 
