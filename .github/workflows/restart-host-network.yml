@@ -41,7 +41,7 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" '
             set -e
-            IMG="ghcr.io/decentral-america/node-scala@sha256:9d7d4f31ed297d52730d4a10b71341e89f4d5ec43b7b16b0988838fca12cc692"
+            IMG="ghcr.io/decentral-america/node-scala@sha256:db44d52f27e892cd2ece9aa82a1009d7ae130ff5006d8b9fed9414dc007d18ce"
             echo "=== Stop and remove bridge-mode container ==="
             docker stop node-scala-testnet 2>/dev/null || true
             docker rm node-scala-testnet 2>/dev/null || true
