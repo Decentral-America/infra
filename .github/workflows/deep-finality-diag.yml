@@ -28,7 +28,7 @@ jobs:
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
-          set -uo pipefail
+          set +e +o pipefail   # never abort on grep-zero-match / transient curl fail (this is a diagnostic)
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           SSHOPT="-i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=20"
           R() { ssh $SSHOPT "$SSH_USER@$SSH_HOST" "$@"; }
@@ -43,11 +43,11 @@ jobs:
 
           echo "" | tee -a "$OUT"
           echo "############## PER-NODE PEER + FINALITY VIEW ##############" | tee -a "$OUT"
-          echo "== main peers ==" | tee -a "$OUT"
-          R "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);p=d.get('peers',[]);print(len(p),'peers:',[(x.get('peerName'),x.get('address')) for x in p])" 2>/dev/null | tee -a "$OUT" || echo "  (main peers parse failed)" | tee -a "$OUT"
+          echo "== main peers (raw) ==" | tee -a "$OUT"
+          R "docker exec node-scala-testnet wget -qO- http://127.0.0.1:6869/peers/connected" 2>/dev/null | head -c 600 | tee -a "$OUT"; echo | tee -a "$OUT"
           for pod in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do
-            echo "== $pod peers ==" | tee -a "$OUT"
-            kubectl exec "$pod" -n dcc -- wget -qO- http://127.0.0.1:6869/peers/connected 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);p=d.get('peers',[]);print(len(p),'peers:',[(x.get('peerName'),x.get('address')) for x in p])" 2>/dev/null | tee -a "$OUT" || echo "  ($pod peers parse failed)" | tee -a "$OUT"
+            echo "== $pod peers (raw) ==" | tee -a "$OUT"
+            kubectl exec "$pod" -n dcc -- wget -qO- http://127.0.0.1:6869/peers/connected 2>/dev/null | head -c 600 | tee -a "$OUT"; echo | tee -a "$OUT"
           done
 
           echo "" | tee -a "$OUT"
