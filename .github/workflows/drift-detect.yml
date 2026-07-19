@@ -94,20 +94,43 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up OpenTofu
+      # mainnet/stagenet aren't provisioned via this Terraform config yet — only
+      # testnet.tfvars is committed. Treat a missing tfvars file as "not yet
+      # provisioned" (informational) rather than a plan error, so the weekly
+      # schedule doesn't false-alarm every Monday. Once mainnet/stagenet.tfvars
+      # are added, this network starts getting checked automatically.
+      - name: Check network is provisioned
+        id: provisioned
         if: >-
           github.event_name != 'workflow_dispatch' ||
           inputs.network == 'all' ||
           inputs.network == matrix.network
+        run: |
+          if [ -f "${{ matrix.network }}.tfvars" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ matrix.network }}.tfvars does not exist — skipping (not provisioned yet)."
+          fi
+
+      - name: Set up OpenTofu
+        if: >-
+          steps.provisioned.outputs.exists == 'true' && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: '1.12.3'
 
       - name: Write backend config
         if: >-
-          github.event_name != 'workflow_dispatch' ||
-          inputs.network == 'all' ||
-          inputs.network == matrix.network
+          steps.provisioned.outputs.exists == 'true' && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
         run: |
           set -euo pipefail
           printf 'bucket   = "dcc-tofu-state"\n'                                        > backend.hcl
@@ -122,9 +145,11 @@ jobs:
 
       - name: OpenTofu Init
         if: >-
-          github.event_name != 'workflow_dispatch' ||
-          inputs.network == 'all' ||
-          inputs.network == matrix.network
+          steps.provisioned.outputs.exists == 'true' && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
         run: |
           set -euo pipefail
           tofu init -backend-config=backend.hcl -input=false
@@ -134,9 +159,11 @@ jobs:
 
       - name: Select workspace
         if: >-
-          github.event_name != 'workflow_dispatch' ||
-          inputs.network == 'all' ||
-          inputs.network == matrix.network
+          steps.provisioned.outputs.exists == 'true' && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
         run: tofu workspace select -or-create "${{ matrix.network }}"
         env:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
@@ -145,9 +172,11 @@ jobs:
       - name: OpenTofu Plan (drift detection)
         id: plan
         if: >-
-          github.event_name != 'workflow_dispatch' ||
-          inputs.network == 'all' ||
-          inputs.network == matrix.network
+          steps.provisioned.outputs.exists == 'true' && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
         # -detailed-exitcode:
         #   0 = no changes (clean)
         #   1 = error
@@ -202,11 +231,17 @@ jobs:
         run: |
           NETWORK="${{ matrix.network }}"
           STATUS="${{ steps.plan.outputs.status }}"
+          if [ "${{ steps.provisioned.outputs.exists }}" = "false" ]; then
+            STATUS="not-provisioned"
+          fi
 
           echo "## Drift Detection: $NETWORK" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           case "$STATUS" in
+            not-provisioned)
+              echo "⏭️ **Not provisioned** — \`$NETWORK.tfvars\` doesn't exist yet, skipped." >> "$GITHUB_STEP_SUMMARY"
+              ;;
             clean)
               echo "✅ **No drift detected** — live infrastructure matches the desired state." >> "$GITHUB_STEP_SUMMARY"
               ;;
@@ -230,6 +265,7 @@ jobs:
 
       - name: Fail if drift or error detected
         if: >-
+          steps.provisioned.outputs.exists == 'true' &&
           (steps.plan.outputs.status != 'clean' && steps.plan.outputs.status != '') &&
           (github.event_name != 'workflow_dispatch' ||
            inputs.network == 'all' ||
