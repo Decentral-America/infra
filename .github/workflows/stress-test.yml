@@ -1,13 +1,27 @@
 name: Stress Test — DCC Testnet
+run-name: Stress test (${{ inputs.target_tps || '100' }} TPS / ${{ inputs.duration || '120' }}s) — ${{ inputs.correlation_id }}
 
-# Runs the DCC load tester against testnet.
+# Runs the DCC load tester against testnet, in an isolated ephemeral runner —
+# the funded sender seed is pulled from GitHub Actions secrets here and never
+# touches the admin-dashboard container. Dispatched by the admin dashboard's
+# "Run Stress Test" button (control plane) via workflow_dispatch; this job
+# (data plane) does the actual work.
+#
 # Builds the Rust binary from source, runs a sustained TPS test, and reports
 # p50/p99/p99.9 latency + error rate.
 #
 # Conservative defaults: 100 TPS / 120s. Increase for capacity testing.
 # The gen-0 seed is the primary sender; use --sender-count to scale.
 #
-# Results are posted to the GitHub Step Summary for easy review.
+# `correlation_id` lets the dispatching caller find this exact run afterward —
+# GitHub's workflow_dispatch API doesn't return a run id synchronously, so the
+# caller matches on the templated run-name above instead.
+#
+# Results are posted to the GitHub Step Summary AND uploaded as a JSONL
+# artifact (one `{"event":...}` object per line — tick/phase_end/final, see
+# apps/load-tester/src/metrics.rs) for the dashboard to render the full
+# TPS-over-time chart once this run completes — GitHub's API does not expose
+# live logs for in-progress runs, so this is rendered after the fact, not live.
 on:
   workflow_dispatch:
     inputs:
@@ -31,9 +45,27 @@ on:
         required: false
         default: '3'
         type: string
+      target_node:
+        description: 'Node REST URL to target'
+        required: false
+        default: 'https://testnet-node.decentralchain.io'
+        type: string
+      chain_id:
+        description: 'Chain id character'
+        required: false
+        default: '!'
+        type: string
+      correlation_id:
+        description: 'Opaque id the dispatching caller uses to find this run'
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: stress-test
+  cancel-in-progress: false
 
 jobs:
   stress-test:
@@ -69,31 +101,38 @@ jobs:
         run: cargo build --release --quiet
 
       - name: Run stress test
+        id: loadtest
         env:
           DCC_PRIVATE_KEY: ${{ secrets.GEN_0_SEED_PHRASE }}
         working-directory: apps/load-tester
+        # `--json` (see src/cli.rs) emits one JSON object per line — tick
+        # every second, phase_end, then final — which is what the dashboard
+        # parses for its post-run TPS chart. `pipefail` is required: without
+        # it, `| tee`'s own exit code masks a real load-tester failure.
         run: |
+          set -o pipefail
           echo "## DCC Testnet Stress Test" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Config:** ${{ inputs.target_tps || '100' }} TPS / ${{ inputs.duration || '120' }}s / ${{ inputs.sender_count || '3' }} senders" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           ./target/release/load-tester \
-            --node https://testnet-node.decentralchain.io \
-            --chain-id "!" \
+            --json \
+            --node "${{ inputs.target_node || 'https://testnet-node.decentralchain.io' }}" \
+            --chain-id "${{ inputs.chain_id || '!' }}" \
             --workers "${{ inputs.workers || '50' }}" \
             --target-tps "${{ inputs.target_tps || '100' }}" \
             --duration "${{ inputs.duration || '120' }}" \
             --sender-count "${{ inputs.sender_count || '3' }}" \
-            2>&1 | tee /tmp/load-test-output.txt
+            2>&1 | tee /tmp/load-test-output.jsonl
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Node:** testnet-node.decentralchain.io | **Chain:** testnet (!)" >> $GITHUB_STEP_SUMMARY
+          echo "**Node:** ${{ inputs.target_node || 'https://testnet-node.decentralchain.io' }} | **Chain:** ${{ inputs.chain_id || '!' }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: load-test-results-${{ github.run_id }}
-          path: /tmp/load-test-output.txt
+          name: load-test-results-${{ inputs.correlation_id }}
+          path: /tmp/load-test-output.jsonl
           retention-days: 30

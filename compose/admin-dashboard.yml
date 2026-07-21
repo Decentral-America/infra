@@ -14,12 +14,9 @@ services:
     # requests to the DCC node URL which may resolve to the host's own IP.
     # PORT=3001 (set in env_file) avoids conflict with scanner on 3000.
     network_mode: host
-    environment:
-      # E2E test suite is not present on the VPS.  Setting this to a
-      # non-existent path makes spawn() fail immediately with ENOENT, which is
-      # caught by the child.once('error') handler in api.e2e.stream.ts and
-      # returned as a clean SSE exit event — no process crash.
-      E2E_SUITE_PATH: "/dev/null/disabled"
+    # E2E/stress-test execution happens in GitHub Actions (dispatched by
+    # api.e2e.stream.ts / api.load-test.stream.ts), not in this container —
+    # no local test suite path or load-tester binary needs to live here.
     env_file:
       - /opt/dcc/secrets/${NETWORK:-mainnet}.env
     healthcheck:

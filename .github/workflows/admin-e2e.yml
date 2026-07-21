@@ -1,13 +1,24 @@
 name: Admin Panel E2E Test Suite
+run-name: E2E (${{ inputs.suite || 'smoke' }}) — ${{ inputs.correlation_id }}
 
-# Runs the e2e-blockchain vitest specs directly against testnet.
+# Runs the e2e-blockchain vitest specs directly against testnet, in an isolated
+# ephemeral runner — the funded test seed and rate-limit bypass key are pulled
+# from GitHub Actions secrets here and never touch the admin-dashboard
+# container. Dispatched by the admin dashboard's "Run E2E" button (control
+# plane) via workflow_dispatch; this job (data plane) does the actual work.
+#
 # Tests live in DecentralChain/packages/e2e-blockchain/src/.
 # Smoke suite: network/node-api, transactions/transfer, network/peers (~5 min)
 # Full suite:  all spec files (~20 min)
+# Custom suite: an explicit list of spec paths (space-separated) via `specs`.
 #
-# NOTE: The admin panel /api/e2e/stream endpoint was designed for local VPS
-# execution where the DecentralChain codebase is at /opt/dcc/DecentralChain.
-# This workflow runs tests directly from the CI runner instead.
+# `correlation_id` lets the dispatching caller find this exact run afterward —
+# GitHub's workflow_dispatch API doesn't return a run id synchronously, so the
+# caller matches on the templated run-name above instead.
+#
+# Results are emitted as vitest's JSON reporter (structured, not scraped from
+# ANSI text) and uploaded as an artifact for the dashboard to fetch once this
+# run completes — GitHub's API does not expose live logs for in-progress runs.
 on:
   workflow_dispatch:
     inputs:
@@ -16,10 +27,23 @@ on:
         required: false
         default: 'smoke'
         type: choice
-        options: [smoke, full]
+        options: [smoke, full, custom]
+      specs:
+        description: 'Space-separated spec paths (only used when suite=custom)'
+        required: false
+        default: ''
+        type: string
+      correlation_id:
+        description: 'Opaque id the dispatching caller uses to find this run'
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: admin-e2e
+  cancel-in-progress: false
 
 jobs:
   e2e:
@@ -65,8 +89,24 @@ jobs:
         run: |
           pnpm --filter-prod "@decentralchain/transactions..." build
 
-      - name: Run E2E smoke suite
-        if: ${{ inputs.suite == 'smoke' || inputs.suite == '' }}
+      - name: Resolve spec set
+        id: specs
+        run: |
+          set -euo pipefail
+          case "${{ inputs.suite || 'smoke' }}" in
+            smoke)
+              echo "specs=src/network/node-api.spec.ts src/network/peers.spec.ts src/transactions/transfer.spec.ts" >> "$GITHUB_OUTPUT"
+              ;;
+            full)
+              echo "specs=" >> "$GITHUB_OUTPUT"
+              ;;
+            custom)
+              echo "specs=${{ inputs.specs }}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Run E2E suite
+        id: vitest
         env:
           DCC_TEST_NODE_URL: https://testnet-node.decentralchain.io
           DCC_TEST_CHAIN_ID: "!"
@@ -75,30 +115,24 @@ jobs:
           DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
           DCC_TEST_E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
         working-directory: packages/e2e-blockchain
+        # Two reporters: `verbose` for a human-readable step summary, `json`
+        # (to an absolute path) for the admin dashboard to parse structurally
+        # once this run completes — machine parsing, not regex-scraping ANSI
+        # text. `pipefail` is required: without it, `| tee`'s own exit code
+        # (~always 0) would mask a real vitest failure and report success.
         run: |
-          echo "## E2E Smoke Suite — testnet" >> $GITHUB_STEP_SUMMARY
+          set -o pipefail
+          echo "## E2E ${{ inputs.suite || 'smoke' }} suite — testnet" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          pnpm exec vitest run --reporter=verbose \
-            src/network/node-api.spec.ts \
-            src/network/peers.spec.ts \
-            src/transactions/transfer.spec.ts \
-            2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          pnpm exec vitest run --reporter=verbose --reporter=json --outputFile=/tmp/e2e-results.json \
+            ${{ steps.specs.outputs.specs }} \
+            2>&1 | tee -a $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Run E2E full suite
-        if: ${{ inputs.suite == 'full' }}
-        env:
-          DCC_TEST_NODE_URL: https://testnet-node.decentralchain.io
-          DCC_TEST_CHAIN_ID: "!"
-          DCC_TEST_MINER_SEED: ${{ secrets.GEN_0_SEED_PHRASE }}
-          DCC_TEST_DS_URL: https://testnet-data-service.decentralchain.io
-          DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
-          DCC_TEST_E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
-        working-directory: packages/e2e-blockchain
-        run: |
-          echo "## E2E Full Suite — testnet" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          pnpm exec vitest run --reporter=verbose 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: e2e-results-${{ inputs.correlation_id }}
+          path: /tmp/e2e-results.json
+          retention-days: 7
