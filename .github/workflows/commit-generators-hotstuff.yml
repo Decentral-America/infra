@@ -3,7 +3,18 @@ name: Commit Generators to HotStuff (T2 Activation)
 # The node's /transactions/sign endpoint auto-derives BLS keys from the
 # generator's Ed25519 private key and computes the Proof of Possession.
 # Run this once per generation period (every 100 blocks) to keep T2 active.
+#
+# This previously had NO automated trigger at all -- only workflow_dispatch/
+# workflow_call, meaning it only ever ran when someone manually clicked it
+# during an active debugging session. At ~30.3s/block, 100 blocks is ~50
+# minutes; with nobody manually re-triggering it, the committee silently
+# expired and both T0 (lag pinned at the max-rollback ceiling) and T2
+# (hotStuffFinalizedHeight stalled) broke again 15 days after the last
+# manual run (confirmed live 2026-07-22: last successful run was 2026-07-07).
+# The 20-minute cron gives >2x safety margin inside each ~50-minute period.
 on:
+  schedule:
+    - cron: '*/20 * * * *'
   workflow_call:
   workflow_dispatch: {}
 permissions:
