@@ -29,7 +29,7 @@ Full findings: see workflow run `wf_010a17fe-4c5` (deep-research), journal retai
 | Tier | Technique | Repo(s) | New or extend | Cadence |
 |---|---|---|---|---|
 | 0 | Unit tests | all | existing | every push |
-| 1 | Deterministic Simulation Testing (DST) | node-scala | **new** | every push |
+| 1 | Deterministic Simulation Testing (DST) | node-scala | **done** | every push |
 | 2 | Docker-based integration/E2E | node-scala `node-it`, matcher `dex-it`/`dex-integration-it`, DecentralChain `e2e-blockchain` | extend + wire into CI | PR to main |
 | 3 | Chaos/nemesis on real containers | node-scala + matcher (shared harness) | **new**, extends node-it/dex-it | nightly + manual |
 | 4 | Property/Operation fuzzing | node-scala tx pipeline, matcher fixed-point math | **new** | nightly |
@@ -90,7 +90,7 @@ Dedicated canary wallet, separate from existing faucet/load-test wallets. Schedu
 
 ## 5. Open questions carried into implementation
 
-1. Is node-scala's committee-membership change atomic (joint-consensus-style) or sequential? Direct code audit needed; shapes Tier 1 scope.
+1. ~~Is node-scala's committee-membership change atomic (joint-consensus-style) or sequential?~~ **Answered by Tier 1's code audit: sequential, not atomic.** `HotStuffCoordinator.Enabled.refreshCommittee()` re-reads the committee independently on every single event callback (onProposal/onVote/onQC/onLeaderTurn) with no requirement that all three phases of one view agree on one snapshot — structurally the same class of bug CockroachDB found and fixed via joint consensus in etcd/raft. Tier 1's Task 7 built an exploratory DST scenario specifically to probe this (committee stake change injected between PREPARE and PRE_COMMIT, timing empirically calibrated so ~45% of a 200-seed sweep genuinely lands after a PREPARE QC has already formed under the old committee). **Result: clean at 200 seeds — no `SafetyInvariants` violation found.** Per the harness's own honest framing, this does NOT prove the gap is safe, only that it wasn't hit at this sample size/fault intensity. Recommended follow-up: a larger nightly-tier sweep (Tier 3/7) with more seeds and richer fault injection before concluding this is a non-issue; if HotStuff is heading toward mainnet enablement, adding an actual atomic/joint-consensus-style committee transition to `HotStuffCoordinator` should be considered regardless of whether DST ever catches a live counterexample, since the structural gap is confirmed real even though no failure was observed yet.
 2. Why was matcher's `fullCheck` never wired into CI — was the "no release artifacts/live node in CI" blocker in the existing `ci.yml` comment ever revisited? Needs a decision before Tier 2 CI wiring.
 3. Contract testing and canary-monitoring conventions at comparable production blockchain/DEX systems were not found by the research pass — a targeted follow-up research pass is worth running before finalizing Tier 5/6 tooling choices, if higher assurance is wanted.
 
