@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "baseBranchPatterns": [
-    "dev"
+    "main"
   ],
   "extends": ["config:best-practices", ":semanticCommitTypeAll(chore)"],
   "labels": ["dependencies"],
