@@ -34,7 +34,7 @@ Full findings: see workflow run `wf_010a17fe-4c5` (deep-research), journal retai
 | 3 | Chaos/nemesis on real containers | node-scala + matcher (shared harness) | **done, code-verified; live-run pending CI hardware** | nightly + manual |
 | 4 | Property/Operation fuzzing | node-scala tx pipeline, matcher fixed-point math | **done** (transfer+lease scope; see note) | nightly |
 | 5 | Contract/schema conformance | matcher + node API vs TS SDK | **done; found real drift, see note** | every push touching API |
-| 6 | Live synthetic/canary monitoring | testnet, driven from infra | **code done; blocked on manual secret provisioning** | scheduled (hourly) |
+| 6 | Live synthetic/canary monitoring | testnet, driven from infra | **operational, verified live** | scheduled (every 15 min) |
 | 7 | CI orchestration / flake management | all repos | **mostly done** (see note) | — |
 
 ### Tier 1 — DST for node-scala finality [high confidence]
@@ -91,10 +91,14 @@ Generate matcher's OpenAPI/gRPC schema, node's gRPC/REST schema, and the TS SDK'
 
 Dedicated canary wallet, separate from existing faucet/load-test wallets. Scheduled workflow (hourly) submits one of each major transaction type plus one full DEX round-trip against live testnet, low-value, alerting via existing Grafana on failure or latency drift. Same confidence caveat as Tier 5.
 
-**Status (2026-07-25): code merged; not yet operational — needs a human with real secret access.** `.github/workflows/canary-transaction.yml` (scheduled every 15 min, self-transfer, alerts via the exact same GitHub-Issues convention `alert-webhook.py` already uses) and the `push-secrets.yml` provisioning code for a new `DCC_CANARY_SEED` are both merged. Deliberately NOT done in this session, and correctly self-limited rather than faked: this environment has no SOPS age/PGP decryption key, so the actual canary seed was never generated or written into the encrypted secrets file — doing so blind would mean fabricating a credential without being able to verify the encryption round-trips correctly. **Two manual steps remain, both requiring a human with real access, neither optional:**
-1. Someone with SOPS access generates a seed and adds `DCC_CANARY_SEED=<seed>` to `secrets/testnet.env` (`sops secrets/testnet.env`), matching the existing `DCC_FAUCET_SEED` pattern already in that file.
-2. **Separately** — a real gap in the original plan, found during review: `push-secrets.yml` only pushes decrypted secrets into the VPS's server-side `.env` file over SSH; it never creates a GitHub Actions secret. So even after step 1, `canary-transaction.yml`'s `${{ secrets.DCC_CANARY_SEED }}` reference stays empty until someone separately runs `gh secret set DCC_CANARY_SEED --env testnet --repo Decentral-America/infra` (or does the equivalent via the GitHub UI). The workflow fails safely (an explicit early-exit check, not a crash) until both steps are done — it will not silently misbehave, it just won't run yet.
-3. Fund the canary account with a small amount of testnet DCC from the existing faucet (also not done here — requires a real broadcast against production testnet infrastructure).
+**Status (2026-07-25): fully operational, verified against live testnet.** All three manual steps are done: a dedicated seed was generated (address `31LAqgqVTLySNCPuYqgLAYhcgS76wvBaLr9`), added to `secrets/testnet.env` via `sops`, pushed as the `DCC_CANARY_SEED` GitHub Actions secret (`testnet` environment), and funded with 1 DCC from the faucet (tx `5UbiDafAe813SVhR4WdJ1xuv8vN4qtnR1jEeEpaCCtyw`).
+
+Getting it green in real CI surfaced three genuine bugs the code-complete state above had never caught (nothing runs a workflow's `schedule:`/`workflow_dispatch` trigger before it's on the default branch, so none of this had ever actually executed):
+1. **`@decentralchain/protobuf-serialization@2.0.0` ships an ESM import with no file extension** (`import * as $protobuf from "protobufjs/minimal"`) — protobufjs has no `exports` map, so Node's ESM resolver (unlike CJS `require`) refuses to guess the extension. Every `import` of `@decentralchain/transactions` from a plain `npm install` crashes with `ERR_MODULE_NOT_FOUND`, on both Node 22 and 24 — this is an upstream bug (tracked at `github.com/Decentral-America/protobuf-serialization`), not specific to this workflow. Worked around with a `sed` patch step in `canary-transaction.yml` until a fix is published upstream.
+2. **The script was written to `/tmp/canary.mjs`** — Node's ESM resolver walks up from the importing file's own directory looking for `node_modules`, and `/tmp` has no ancestor that contains the one `npm install` just populated in the checkout. Fixed by writing the script inside the checkout instead.
+3. **The repo had no `alert`/`severity:*` labels** — the "open a GitHub Issue on failure" step (same convention as `alert-webhook.py`) would itself have failed with `could not add label: 'alert' not found` on the very first real failure. Created `alert`, `severity:critical`, `severity:high`, `severity:warning`, `severity:unknown` (the exact set `alerts.yml`/`alert-webhook.py` reference).
+
+Also merged the entire `feat/edge-hardening` branch (this spec's home for Tiers 1/5/6/7, 24 commits) into `main` — it's what unblocked any of this from being schedulable at all. Verified end: a manually-dispatched run on `main` completed green, with a real confirmed self-transfer (tx `FLYkntcSKMaBcVpM9L4MyTGuR5cuneqx1qGrYKjsr3dG`, height 79099). The `*/15 * * * *` schedule now runs for real.
 
 ### Tier 7 — CI cadence and orchestration
 
