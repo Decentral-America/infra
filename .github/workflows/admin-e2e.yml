@@ -1,5 +1,5 @@
 name: Admin Panel E2E Test Suite
-run-name: E2E (${{ inputs.suite || 'smoke' }}) — ${{ inputs.correlation_id }}
+run-name: E2E (${{ inputs.suite || 'full' }}) — ${{ inputs.correlation_id }}
 
 # Runs the e2e-blockchain vitest specs directly against testnet, in an isolated
 # ephemeral runner — the funded test seed and rate-limit bypass key are pulled
@@ -20,6 +20,8 @@ run-name: E2E (${{ inputs.suite || 'smoke' }}) — ${{ inputs.correlation_id }}
 # ANSI text) and uploaded as an artifact for the dashboard to fetch once this
 # run completes — GitHub's API does not expose live logs for in-progress runs.
 on:
+  schedule:
+    - cron: '0 4 * * *'  # nightly, off-peak: full suite against testnet
   workflow_dispatch:
     inputs:
       suite:
@@ -47,7 +49,7 @@ concurrency:
 
 jobs:
   e2e:
-    name: E2E (${{ inputs.suite || 'smoke' }}) vs testnet
+    name: E2E (${{ inputs.suite || 'full' }}) vs testnet
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -93,9 +95,9 @@ jobs:
         id: specs
         run: |
           set -euo pipefail
-          case "${{ inputs.suite || 'smoke' }}" in
+          case "${{ inputs.suite || 'full' }}" in
             smoke)
-              echo "specs=src/network/node-api.spec.ts src/network/peers.spec.ts src/transactions/transfer.spec.ts" >> "$GITHUB_OUTPUT"
+              echo "specs=src/network/node-api.spec.ts src/network/peers.spec.ts src/transactions/transfer.spec.ts src/transactions/exchange.spec.ts" >> "$GITHUB_OUTPUT"
               ;;
             full)
               echo "specs=" >> "$GITHUB_OUTPUT"
@@ -122,7 +124,7 @@ jobs:
         # (~always 0) would mask a real vitest failure and report success.
         run: |
           set -o pipefail
-          echo "## E2E ${{ inputs.suite || 'smoke' }} suite — testnet" >> $GITHUB_STEP_SUMMARY
+          echo "## E2E ${{ inputs.suite || 'full' }} suite — testnet" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           pnpm exec vitest run --reporter=verbose --reporter=json --outputFile=/tmp/e2e-results.json \
@@ -133,6 +135,6 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
-          name: e2e-results-${{ inputs.correlation_id }}
+          name: e2e-results-${{ inputs.correlation_id || github.run_id }}
           path: /tmp/e2e-results.json
           retention-days: 7
