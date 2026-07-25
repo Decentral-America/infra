@@ -74,7 +74,13 @@ jobs:
         env:
           DCC_CANARY_SEED: ${{ secrets.DCC_CANARY_SEED }}
         run: |
-          cat <<'EOF' > /tmp/canary.mjs
+          # Written inside the checkout (which has the node_modules from the
+          # install step above), not /tmp: Node's ESM resolver walks up from
+          # the importing file's own directory looking for node_modules, and
+          # /tmp has no ancestor that contains one, so `node /tmp/canary.mjs`
+          # fails with ERR_MODULE_NOT_FOUND even though the packages are
+          # installed — confirmed by a live run (2026-07-25).
+          cat <<'EOF' > canary.mjs
           import { transfer, broadcast, waitForTx } from '@decentralchain/transactions';
           import { address } from '@decentralchain/ts-lib-crypto';
 
@@ -104,7 +110,7 @@ jobs:
             process.exit(1);
           }
           EOF
-          node /tmp/canary.mjs
+          node canary.mjs
 
       - name: Open a GitHub Issue on failure (matches alert-webhook.py's issue format)
         if: failure()
