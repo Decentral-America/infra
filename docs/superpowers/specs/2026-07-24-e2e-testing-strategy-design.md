@@ -33,7 +33,7 @@ Full findings: see workflow run `wf_010a17fe-4c5` (deep-research), journal retai
 | 2 | Docker-based integration/E2E | node-scala `node-it`, matcher `dex-it`/`dex-integration-it`, DecentralChain `e2e-blockchain` | **mostly done** (see note) | PR to main |
 | 3 | Chaos/nemesis on real containers | node-scala + matcher (shared harness) | **done, code-verified; live-run pending CI hardware** | nightly + manual |
 | 4 | Property/Operation fuzzing | node-scala tx pipeline, matcher fixed-point math | **done** (transfer+lease scope; see note) | nightly |
-| 5 | Contract/schema conformance | matcher + node API vs TS SDK | **new** | every push touching API |
+| 5 | Contract/schema conformance | matcher + node API vs TS SDK | **done; found real drift, see note** | every push touching API |
 | 6 | Live synthetic/canary monitoring | testnet, driven from infra | **new** | scheduled (hourly) |
 | 7 | CI orchestration / flake management | all repos | reorganize existing workflows | — |
 
@@ -79,6 +79,13 @@ DST is in-process and never touches the real JVM GC, real Docker network, or rea
 ### Tier 5 — Contract/schema conformance [general practice, not source-verified]
 
 Generate matcher's OpenAPI/gRPC schema, node's gRPC/REST schema, and the TS SDK's client types from one source of truth where not already the case. Diff schemas in CI on any PR touching the API layer; fail the build on a breaking change without an explicit version bump. Flagged lower-confidence: the deep-research pass found no primary source clearing verification for this area (only vendor blog content, explicitly excluded) — treat as sound but not citation-backed, revisit with a targeted follow-up research pass if higher assurance is wanted before investing heavily.
+
+**Status (2026-07-25): done, and it already found real drift.** All three pieces merged to `main`: `oasdiff` breaking-change gates for matcher's and node-scala's (both node + ride-runner) OpenAPI specs, and a new path-existence check in DecentralChain comparing the TS SDK's `node-api` package's 94 real REST call sites against node-scala's spec.
+
+- **The path-existence check found 16 real, substantiated instances of drift on first run** (not script bugs — each individually verified against node-scala's actual route source and git history): **5 were fixed directly** (live, correctly-wired endpoints missing only from the spec — added: `/blocks/finalized/at/{height}`, `/generators/at/{height}`, `/eth/assets`, `/blocks/headers/finalized`, `/blocks/height/finalized`). **11 remain deliberately unfixed and need a product decision, not an automated one:**
+  - **9 dead-endpoint SDK functions** — `node-api` still exports functions calling REST routes node-scala has since deliberately removed (`/debug/portfolios/{address}`, `/debug/stateChanges/info/{txId}`, `/debug/stateChanges/address/{address}/limit/{limit}`, `/debug/rollback-to/{id}`, `/blocks/first` — all removed by node-scala's `NODE-2496`; `/consensus/generatingbalance/{address}`, `/consensus/basetarget`, `/consensus/algo` — the entire `/consensus` REST API was removed; `/utils/script/meta` — removed by `NODE-2203`). Calling any of these in production today would 404. Removing them is a **public SDK API surface change** — a real breaking-change/versioning decision — which is why this session did not do it unilaterally.
+  - **1 aspirational, never-implemented endpoint** — `finality/index.ts`'s `fetchFinalityInfo` calls `/blockchain/finality`, which has no corresponding route anywhere in node-scala (no `FinalityApiRoute` class, no `pathPrefix("blockchain")`). Plausibly written ahead of the HotStuff finality work landing server-side. Needs a decision: implement the route, or mark/remove the SDK function as not-yet-available.
+  - This CI check (`check-node-api-paths.mjs` in DecentralChain's `ci.yml`) will show **red on `main`** for these 10 remaining items until one of the above is decided and acted on — this is intentional, accurate signal per the plan's own explicit instruction not to hardcode an exclusion list to force a false-clean pass. Treat this as a real, prioritized punch-list, not a broken CI job.
 
 ### Tier 6 — Live synthetic/canary monitoring [general practice, not source-verified]
 
