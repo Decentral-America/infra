@@ -35,7 +35,7 @@ Full findings: see workflow run `wf_010a17fe-4c5` (deep-research), journal retai
 | 4 | Property/Operation fuzzing | node-scala tx pipeline, matcher fixed-point math | **done** (transfer+lease scope; see note) | nightly |
 | 5 | Contract/schema conformance | matcher + node API vs TS SDK | **done; found real drift, see note** | every push touching API |
 | 6 | Live synthetic/canary monitoring | testnet, driven from infra | **code done; blocked on manual secret provisioning** | scheduled (hourly) |
-| 7 | CI orchestration / flake management | all repos | reorganize existing workflows | — |
+| 7 | CI orchestration / flake management | all repos | **mostly done** (see note) | — |
 
 ### Tier 1 — DST for node-scala finality [high confidence]
 
@@ -103,6 +103,12 @@ Dedicated canary wallet, separate from existing faucet/load-test wallets. Schedu
 - **Nightly/scheduled**: DST multi-seed sweep (many more seeds than fit in a PR budget), chaos/nemesis (Tier 3), Operation fuzzing (Tier 4), live-testnet smoke E2E.
 - **Manual dispatch**: full chaos suite on demand, full live-testnet suite on demand.
 - Flake management: track flake rate per suite (no specific tool prescribed here — general practice, not source-verified); a suite crossing a flake-rate threshold gets quarantined from the merge-gate cadence and moved to nightly-only until fixed, rather than blocking merges on known-flaky tests.
+
+**Status (2026-07-25): mostly done.** node-scala and matcher merged to `main`; infra's piece deliberately deferred.
+
+- **node-scala**: Tier 4's Operation fuzzer (real per-block RocksDB appends, not free in-process simulation like DST) tagged `SlowTest` and excluded from the push-gated `node-tests/test` run; new `nightly-slow-tests.yml` runs it at a much larger seed count (2000 vs. 50) on its own schedule. `node-it.yml` (previously `workflow_dispatch`-only) now also runs nightly. Review caught and fixed a real bug in the second change: the `workflow_dispatch` input `monorepo-ref` (a version pin ensuring node-it's JVM deps match the node-scala ref under test) has no fallback for the new `schedule` trigger, which never populates `inputs.*` — without the fix, every nightly run would have silently checked out DecentralChain's default branch instead of the pinned compatibility SHA, defeating the pin's whole purpose. Fixed to match the pattern already used for the sibling `suite` input.
+- **matcher**: `@NetworkTests`-tagged suites (existing network-fault tests plus Tier 3's new `SettlementNemesisTestSuite`) excluded from the PR-gated `fullCheck` job via the existing `SCALATEST_EXCLUDE_TAGS` mechanism; new `nightly-network-tests.yml` runs them explicitly on its own schedule.
+- **infra (`admin-e2e.yml` nightly schedule): deliberately not done**, same reason as Tier 2's deferred smoke-list edit — this file already has substantial unrelated in-progress uncommitted work (a `custom`-suite/`correlation_id`/artifact-upload redesign) that this session should not commit on top of under an automated message. Revisit once that draft is committed.
 
 ## 4. Success criteria
 
