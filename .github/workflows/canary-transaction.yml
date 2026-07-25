@@ -2,8 +2,20 @@
 # Canary Transaction (Tier 6 synthetic monitoring)
 #
 # Submits a real, minimal-value transfer against the live testnet on a schedule,
-# using a dedicated canary wallet (DCC_CANARY_SEED, provisioned via SOPS + this
-# repo's push-secrets.yml — see secrets/testnet.env's DCC_CANARY_SEED entry).
+# using a dedicated canary wallet. This job reads DCC_CANARY_SEED from a GitHub
+# Actions secret (${{ secrets.DCC_CANARY_SEED }} below), which requires TWO
+# separate provisioning steps, not just one:
+#   1. The seed is stored SOPS-encrypted in secrets/testnet.env (see that file's
+#      DCC_CANARY_SEED entry) and pushed by this repo's push-secrets.yml — but
+#      that workflow only SSHes the decrypted value into the remote VPS's
+#      /opt/dcc/secrets/${NETWORK}.env for server-side Docker Compose. It never
+#      calls the GitHub API, so it cannot populate a GitHub Actions secret.
+#   2. Someone with repo admin access must ALSO run, once:
+#        gh secret set DCC_CANARY_SEED --env testnet --repo Decentral-America/infra
+#      (or use the GitHub UI: Settings → Environments → testnet → Secrets) to
+#      create the Actions secret this workflow actually reads. Without this
+#      separate step, `${{ secrets.DCC_CANARY_SEED }}` is empty even after step 1
+#      is complete.
 #
 # The transfer is a self-transfer: the canary account sends to its own address
 # (derived from its seed via @decentralchain/ts-lib-crypto's `address`), so no
