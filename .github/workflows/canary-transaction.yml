@@ -54,6 +54,21 @@ jobs:
       - name: Install signing/broadcast dependencies
         run: npm install --no-save @decentralchain/transactions@latest @decentralchain/ts-lib-crypto@latest
 
+      # @decentralchain/protobuf-serialization@2.0.0's pbjs-generated dist/index.js does
+      # `import * as $protobuf from "protobufjs/minimal"` with no file extension. protobufjs
+      # ships no "exports" map, so Node's ESM resolver (unlike CJS require()) requires the
+      # exact file path and refuses to guess ".js" — every `import` of @decentralchain/transactions
+      # crashes with ERR_MODULE_NOT_FOUND before this fix. Confirmed reproducing on both Node 22
+      # (this job's version) and Node 24 with a plain `npm install` of the published package,
+      # so this is not specific to this workflow's setup. Tracked upstream at
+      # github.com/Decentral-America/protobuf-serialization; this sed is the minimal workaround
+      # until a patched version is published there — remove once that lands and this step
+      # starts failing to find a match (i.e. once it's already fixed upstream).
+      - name: Work around missing .js extension in protobuf-serialization's ESM import
+        run: |
+          sed -i 's#"protobufjs/minimal"#"protobufjs/minimal.js"#' \
+            node_modules/@decentralchain/protobuf-serialization/dist/index.js
+
       - name: Sign, broadcast, and confirm a minimal canary transfer
         id: canary
         env:
