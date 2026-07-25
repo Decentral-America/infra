@@ -222,6 +222,20 @@ jobs:
                       window 1m
                   }
               }
+              # RIDE compile/evaluate endpoints are CPU-bound and unauthenticated on the node — cap them far
+              # tighter than the general 300/min so they can't be used as a cheap CPU-DoS. Both zones apply, so
+              # the effective limit is the tighter one.
+              @utils_script {
+                  path /utils/script/*
+                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
+              }
+              rate_limit @utils_script {
+                  zone utils_script_per_ip {
+                      key    {remote_host}
+                      events 30
+                      window 1m
+                  }
+              }
 
               @options method OPTIONS
               handle @options {
@@ -244,6 +258,38 @@ jobs:
               # (connect, clearblacklist) must not be callable either. Everything outside
               # this matcher falls through to the un-keyed proxy below, so the node's own
               # api-key auth returns 403 for protected routes.
+              # -- Defense-in-depth denylist -------------------------------------------
+              # Hard-404 the endpoints that must NEVER be public, regardless of the node's
+              # own api-key auth, so a single blank/mis-set api-key-hash cannot expose them.
+              # These are admin/secret/destructive; the explorer and DEX never call them.
+              # GET reads (balances, blocks, tx info) and POST /transactions/broadcast are
+              # deliberately NOT matched here.
+              @admin_paths path /debug/* /wallet/* /node/stop /addresses/seed/*
+              handle @admin_paths {
+                  respond "Not found" 404
+              }
+              @admin_sign {
+                  method POST
+                  path /transactions/sign /transactions/sign/*
+              }
+              handle @admin_sign {
+                  respond "Not found" 404
+              }
+              @admin_peers_write {
+                  method POST
+                  path /peers/connect /peers/clearblacklist
+              }
+              handle @admin_peers_write {
+                  respond "Not found" 404
+              }
+              @wallet_write {
+                  method POST DELETE PUT
+                  path /addresses /addresses/*
+              }
+              handle @wallet_write {
+                  respond "Not found" 404
+              }
+
               @protected {
                   method GET
                   path /peers/connected /peers/all /peers/blacklisted /peers/suspended
