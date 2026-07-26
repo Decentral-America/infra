@@ -92,7 +92,35 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
 ### Our status
 - ✅ Prometheus/Grafana/Alertmanager deployed; alerts: BlockProductionStalled, FinalizationStalled/NotAdvancing, HotStuffCommitNotAdvancing, ServiceDown (all services), Exporter health. Grafana locked down (SEC-2).
 - ✅ Keys backed up (SOPS + KeePassium) → the no-chain-backup posture is acceptable per the research.
-- ✅ Fault soak (crash/partition) passed.
+- ✅ **Crash/unavailability soak passed** (RUNBOOK.md Scenario E, run 29284578037, 2026-07-13): gen-0/gen-1
+  scaled down/restored via kubectl, `/node/status` sampled every 60s — chain never halted, feature-25
+  (authoritative) held then finalized normally, HotStuff (observational) paused and resumed cleanly.
+- ✅ **True network partition IS tested, and correctly found safe** (2026-07-26 correction of an earlier
+  draft of this entry, which incorrectly claimed `FourNodeHotStuffTestSuite` had been removed — it has not;
+  it is live at `node-it/.../sync/finalization/FourNodeHotStuffTestSuite.scala`). Its partition case uses
+  `Docker.disconnectFromNetwork` on the smallest-stake node in a real 4-node HotStuff cluster — nodes stay
+  up but unreachable, not killed — and asserts the majority's finalized height never regresses during
+  isolation, then reconverges on heal. This is genuinely sufficient for a partition under a SINGLE, FIXED
+  committee: any two ≥2/3-stake quorums of the same committee must share ≥1/3 of it (ordinary BFT quorum-
+  intersection math), so no partition can ever produce two independent quorums for different blocks under
+  one unchanging committee — not something a bigger seed sweep or a different split ratio would add
+  confidence to.
+- 🔴 **Real, precisely-characterized residual gap: cross-committee-epoch fork.** The quorum-intersection
+  guarantee above provably does NOT extend across two DIFFERENT committees (e.g. a full validator-set
+  rotation between committed-generators periods). `node-scala`'s
+  `HotStuffCrossEpochForkSpecification` (`node/tests/.../consensus/hotstuff/`, added 2026-07-26) proves
+  this concretely: two committees sharing zero members can each independently reach their own 2/3-stake
+  quorum for a DIFFERENT block at an identical (view, height), using entirely disjoint, entirely honest
+  single-signers — a real fork, invisible to `HotStuffSafety.equivocators` (which only catches a single
+  voter double-signing). Root cause: `HotStuffQuorum`'s vote/QC wire format never binds committee identity
+  into the signed content. Closing this needs a real protocol-design decision — either (a) bind committee
+  identity into the signed vote/QC bytes plus a coordinator-level rule rejecting proposals whose committee
+  epoch hasn't been reached via a properly-finalized transition, or (b) a full joint-consensus two-phase
+  membership-change protocol — deliberately not attempted without dedicated multi-round adversarial review
+  (the same process the `HotStuffVotePool` committee-rollover fix went through, twice, after its first
+  attempt was found unsafe by review). Separately, a genuine Twins-style equivocating-validator test at the
+  `node-it` real-container layer (one node double-voting into two live partitions) remains future work —
+  needs a purpose-built fault-injection node image, per `FourNodeHotStuffTestSuite`'s own doc comment.
 - 🟡 Missing: finality committed-stake **headroom** signal; formal incident-response runbooks (chain halt, finality stall, key compromise, fork).
 
 ### Actions
