@@ -1,4 +1,8 @@
 name: Restart Main Node with Host Networking
+# WARNING: this workflow hardcodes its own node-scala image digest below (IMG=).
+# That digest MUST match update-node-image.yml and deploy-node-config.yml, or a
+# later run of this workflow will silently revert Newark to a stale image (tag-drift
+# bomb, cf. PR#88, recurred 2026-08-03). When bumping the image, update ALL THREE files.
 on:
   workflow_call:
   workflow_dispatch:
@@ -41,7 +45,7 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" '
             set -e
-            IMG="ghcr.io/decentral-america/node-scala@sha256:db44d52f27e892cd2ece9aa82a1009d7ae130ff5006d8b9fed9414dc007d18ce"
+            IMG="ghcr.io/decentral-america/node-scala@sha256:34ec8433fd4442ab096a8d3cb347a31e4d017251720f57b2613fb3fefc8f3317" # sha-304bd0e -- KEEP IN SYNC with update-node-image.yml and deploy-node-config.yml (see PR#88 "tag-drift bomb"; recurred 2026-08-03)
             echo "=== Stop and remove bridge-mode container ==="
             docker stop node-scala-testnet 2>/dev/null || true
             docker rm node-scala-testnet 2>/dev/null || true
