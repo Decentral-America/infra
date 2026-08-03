@@ -40,7 +40,7 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             "set +e
-             IMG=ghcr.io/decentral-america/node-scala@sha256:34ec8433fd4442ab096a8d3cb347a31e4d017251720f57b2613fb3fefc8f3317 # sha-304bd0e (2026-08-03 session: HotStuff pacemaker rework, votepool bound, lockedQC persistence, authoritative-finality opt-in flag [default off])
+             IMG=ghcr.io/decentral-america/node-scala@sha256:34ec8433fd4442ab096a8d3cb347a31e4d017251720f57b2613fb3fefc8f3317 # sha-304bd0e -- KEEP IN SYNC with deploy-node-config.yml and restart-host-network.yml (2026-08-03 session: HotStuff pacemaker rework, votepool bound, lockedQC persistence, authoritative-finality opt-in flag [default off]; see PR#88 "tag-drift bomb")
 
              echo '=== Current node state ==='
              docker ps | grep node-scala

@@ -1,5 +1,9 @@
 name: Deploy Node Config to VPS
 # Copies dcc.conf from this repo to the VPS and restarts the node (no data wipe)
+# WARNING: this workflow hardcodes its own node-scala image digest below (docker run).
+# That digest MUST match update-node-image.yml and restart-host-network.yml, or a
+# later run of this workflow will silently revert Newark to a stale image (tag-drift
+# bomb, cf. PR#88, recurred 2026-08-03). When bumping the image, update ALL THREE files.
 on:
   workflow_call:
   workflow_dispatch: {}
@@ -54,7 +58,7 @@ jobs:
                -e DCC_NETWORK=testnet \
                -e DCC_HEAP_SIZE=2g \
                -e DCC_REST_API_BIND=0.0.0.0 \
-               ghcr.io/decentral-america/node-scala@sha256:db44d52f27e892cd2ece9aa82a1009d7ae130ff5006d8b9fed9414dc007d18ce
+               ghcr.io/decentral-america/node-scala@sha256:34ec8433fd4442ab096a8d3cb347a31e4d017251720f57b2613fb3fefc8f3317 # sha-304bd0e -- KEEP IN SYNC with update-node-image.yml and restart-host-network.yml (see PR#88 "tag-drift bomb"; recurred 2026-08-03, cf. PR fixing this comment)
              sleep 20
              echo "=== Node status ==="
              docker ps | grep node-scala
