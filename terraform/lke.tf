@@ -153,6 +153,31 @@ resource "linode_firewall" "lke_nodes" {
     ipv6     = ["::/0"]
   }
 
+  # ── Cross-site Prometheus federation (Task 13, monitoring/cross-site-federation) ──
+  # Exposes the in-cluster kube-prometheus-stack Prometheus (its /federate
+  # endpoint) so Newark's Prometheus — the instance on-call actually watches
+  # in Grafana — can pull LKE's chain metrics-exporter (:9200) and
+  # kube-state-metrics series into one dashboard. See
+  # clusters/testnet/monitoring/kube-prometheus-stack.yaml's
+  # prometheus.service NodePort override (32090) and
+  # monitoring/prometheus.yml's federate-lke job.
+  # Restricted to Newark's IP only, unlike allow-grafana-nodeport above:
+  # Grafana anon-viewer needs public reach, but this NodePort exposes the
+  # full Prometheus HTTP API (not just /federate), so it must stay narrow.
+  #
+  # DEPLOY-TIME ACTION REQUIRED: this firewall rule only opens the network
+  # path. It has no effect until clusters/testnet/monitoring/kube-prometheus-stack.yaml's
+  # prometheus.service.{type,nodePort} change is reconciled by Flux (or applied
+  # manually) AND `terraform apply` runs this firewall change. Neither is done
+  # by authoring this file — an operator must run both at deploy time.
+  inbound {
+    label    = "allow-prom-federate-nodeport"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "32090"
+    ipv4     = var.lke_federate_allowed_ips
+  }
+
   tags = local.tags
 
   # Attach to all nodes in the LKE pool

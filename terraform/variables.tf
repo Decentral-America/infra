@@ -192,3 +192,22 @@ variable "lke_ssh_allowed_ips" {
     error_message = "lke_ssh_allowed_ips must contain at least one CIDR. Never use 0.0.0.0/0."
   }
 }
+
+variable "lke_federate_allowed_ips" {
+  description = <<-EOT
+    IPv4 CIDRs allowed to reach the in-cluster kube-prometheus-stack Prometheus
+    NodePort (see clusters/testnet/monitoring/kube-prometheus-stack.yaml's
+    prometheus.service NodePort override) for cross-site federation into
+    Newark's Prometheus (infra/monitoring/prometheus.yml's federate-lke job).
+    Should be
+    Newark's static IP only — this exposes the full Prometheus HTTP API
+    (not just /federate), so keep this narrower than lke_ssh_allowed_ips'
+    public Grafana-nodeport counterpart. Must not be 0.0.0.0/0.
+  EOT
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = length(var.lke_federate_allowed_ips) > 0
+    error_message = "lke_federate_allowed_ips must contain at least one CIDR. Never use 0.0.0.0/0."
+  }
+}
