@@ -171,7 +171,7 @@ resource "linode_firewall" "lke_nodes" {
   # manually) AND `terraform apply` runs this firewall change. Neither is done
   # by authoring this file — an operator must run both at deploy time.
   inbound {
-    label    = "allow-prometheus-federate-nodeport"
+    label    = "allow-prom-federate-nodeport"
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "32090"
