@@ -144,7 +144,12 @@ data:
         }
       }
       hotstuff {
+        # T2 HotStuff made authoritative on testnet 2026-08-03 -- ahead of external audit, by
+        # explicit human decision, testnet-only; see docs/superpowers/plans/2026-08-02-launch-readiness.md
+        # Task 10 and node-scala's docs/consensus-upgrade-plan.md. Monotonic max()-merge safety design:
+        # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
+        authoritative = true
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -255,7 +260,12 @@ data:
         }
       }
       hotstuff {
+        # T2 HotStuff made authoritative on testnet 2026-08-03 -- ahead of external audit, by
+        # explicit human decision, testnet-only; see docs/superpowers/plans/2026-08-02-launch-readiness.md
+        # Task 10 and node-scala's docs/consensus-upgrade-plan.md. Monotonic max()-merge safety design:
+        # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
+        authoritative = true
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -362,7 +372,12 @@ data:
         }
       }
       hotstuff {
+        # T2 HotStuff made authoritative on testnet 2026-08-03 -- ahead of external audit, by
+        # explicit human decision, testnet-only; see docs/superpowers/plans/2026-08-02-launch-readiness.md
+        # Task 10 and node-scala's docs/consensus-upgrade-plan.md. Monotonic max()-merge safety design:
+        # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
+        authoritative = true
         round-timeout = 1200ms
         settled-depth = 3
       }
