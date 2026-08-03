@@ -48,3 +48,8 @@ lke_node_count  = 1
 lke_ha          = false # Standard control plane (free). Mainnet uses true.
 # SSH access restricted to team IPs. Add VPN egress or office CIDR here.
 lke_ssh_allowed_ips = ["201.182.55.117/32"]
+# Cross-site Prometheus federation: only Newark (66.228.55.154, the main node
+# host that also runs the Prometheus/Grafana on-call actually watches) may
+# reach the in-cluster Prometheus NodePort. See variables.tf for why this is
+# narrower than the public grafana-nodeport rule.
+lke_federate_allowed_ips = ["66.228.55.154/32"]

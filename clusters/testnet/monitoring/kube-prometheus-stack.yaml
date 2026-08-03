@@ -118,6 +118,24 @@ spec:
           memory: 256Mi
 
     prometheus:
+      # ── Cross-site federation (Task 13) ────────────────────────────────────
+      # Exposes this Prometheus's own Service (normally ClusterIP-only) as a
+      # NodePort so Newark's Prometheus can reach /federate across sites (see
+      # monitoring/prometheus.yml's federate-lke job and terraform/lke.tf's
+      # allow-prometheus-federate-nodeport firewall rule). Using the chart's
+      # own prometheus.service.{type,nodePort} values (rather than hand-rolling
+      # a second Service with a guessed pod-label selector) keeps this
+      # deterministic — no risk of the selector drifting from whatever
+      # prometheus-operator labels the generated Pods with on a future chart
+      # bump.
+      #
+      # DEPLOY-TIME ACTION REQUIRED: Flux must reconcile this HelmRelease (or
+      # an operator applies `helm upgrade`) AND the matching Linode firewall
+      # rule (terraform/lke.tf allow-prometheus-federate-nodeport) must be
+      # terraform-applied. Authoring this file alone does not open the path.
+      service:
+        type: NodePort
+        nodePort: 32090
       prometheusSpec:
         # Scrape all ServiceMonitors and PodMonitors across all namespaces
         serviceMonitorSelectorNilUsesHelmValues: false

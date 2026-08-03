@@ -105,8 +105,8 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Finality Lag",
-      "description": "Blocks behind the tip not yet finalized (feature-25 Deterministic Finality; authoritative). HotStuff commit is observational and exposes no separate metric.",
+      "title": "T0 Lag (Deterministic Finality)",
+      "description": "Blocks behind the tip not yet finalized (feature-25 Deterministic Finality; authoritative T0). See the separate T2 Lag panel below for the observational HotStuff commit lag (dcc_hotstuff_lag).",
       "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": {
@@ -193,6 +193,82 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "dcc_peers_connected",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "T2 Lag (HotStuff, observational)",
+      "description": "Blocks the observational T2 HotStuff commit is behind the chain tip (dcc_hotstuff_lag). Only present when hotstuff.enabled and it has committed >=1 block; feature-25 Deterministic Finality (T0 Lag panel above) remains authoritative. See docs/hotstuff-step5-findings-and-rework.md — T2 is not yet a finality guarantee.",
+      "gridPos": { "x": 0, "y": 44, "w": 12, "h": 8 },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "none",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 50 }] },
+          "noValue": "no HotStuff commit yet"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dcc_hotstuff_lag",
+          "legendFormat": "T2 lag {{node}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Generators Active",
+      "description": "Count of gen-* nodes that produced a block in the last 60s (dcc_blockchain_height_age_seconds < 60), federated in from the LKE in-cluster metrics-exporter (Task 13 cross-site federation — clusters/testnet/monitoring/metrics-exporter.yaml). Expect 2 (gen-0, gen-1) on testnet.",
+      "gridPos": { "x": 0, "y": 52, "w": 6, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 2 }
+            ]
+          },
+          "unit": "none",
+          "noValue": "—"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(dcc_blockchain_height_age_seconds{node=~\"gen-.*\"} < 60) OR on() vector(0)",
+          "legendFormat": "generators active"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Per-Node Block Height (gen-0 / gen-1 / val-0)",
+      "description": "Federated from the LKE in-cluster metrics-exporter (:9200 — Task 13). Complements the 'Block Height Over Time' panel above, which shows dcc_block_height for whichever node is behind the public main-node endpoint; this panel shows all three LKE-hosted nodes individually.",
+      "gridPos": { "x": 6, "y": 52, "w": 6, "h": 8 },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dcc_block_height{node=~\"gen-.*|val-.*\"}",
           "legendFormat": "{{node}}"
         }
       ]
