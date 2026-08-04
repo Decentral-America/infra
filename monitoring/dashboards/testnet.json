@@ -201,7 +201,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "T2 Lag (HotStuff, observational)",
-      "description": "Blocks the observational T2 HotStuff commit is behind the chain tip (dcc_hotstuff_lag). Only present when hotstuff.enabled and it has committed >=1 block; feature-25 Deterministic Finality (T0 Lag panel above) remains authoritative. See docs/hotstuff-step5-findings-and-rework.md — T2 is not yet a finality guarantee.",
+      "description": "Blocks the observational T2 HotStuff commit is behind the chain tip (dcc_hotstuff_lag). Only present when hotstuff.enabled and it has committed >=1 block; feature-25 Deterministic Finality (T0 Lag panel above) remains authoritative. See node-scala/docs/hotstuff-step5-findings-and-rework.md — T2 is not yet a finality guarantee.",
       "gridPos": { "x": 0, "y": 44, "w": 12, "h": 8 },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": {
