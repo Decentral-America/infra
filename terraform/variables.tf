@@ -199,10 +199,10 @@ variable "lke_federate_allowed_ips" {
     NodePort (see clusters/testnet/monitoring/kube-prometheus-stack.yaml's
     prometheus.service NodePort override) for cross-site federation into
     Newark's Prometheus (infra/monitoring/prometheus.yml's federate-lke job).
-    Should be
-    Newark's static IP only — this exposes the full Prometheus HTTP API
-    (not just /federate), so keep this narrower than lke_ssh_allowed_ips'
-    public Grafana-nodeport counterpart. Must not be 0.0.0.0/0.
+    Keep this narrow — only Newark's static IP should be listed here, unlike
+    the hardcoded 0.0.0.0/0 Grafana NodePort rule (allow-grafana-nodeport)
+    elsewhere in this file. This variable exposes the full Prometheus HTTP
+    API (not just /federate), so it must not be 0.0.0.0/0.
   EOT
   type        = list(string)
   default     = []
