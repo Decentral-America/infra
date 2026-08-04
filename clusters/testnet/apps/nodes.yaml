@@ -100,6 +100,15 @@ data:
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
         enable-blacklisting = no
         suspension-residence-time = 30s
+        # All 3 LKE gen/val nodes share ONE egress IP (172.105.64.89); main's own dcc.conf already
+        # bumped this to 8 for the identical reason (default cap of 3 leaves zero headroom for
+        # reconnect transients from that shared IP). Mirrored here 2026-08-04 during the gen-0/gen-1
+        # churn investigation: this node's own config never got the same override, so any inbound
+        # connection this node ever sees from 172.105.64.89 (another LKE node, e.g. if peer-exchange
+        # is ever re-enabled) would hit the tighter default first. No active bug found — known-peers
+        # + main's enable-peers-exchange=no mean gen-0 and gen-1 don't actually dial each other today
+        # — but this closes the latent asymmetry preemptively, same fix class as RC#2.
+        max-single-host-connections = 8
       }
 
       wallet {
@@ -227,6 +236,9 @@ data:
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
         enable-blacklisting = no
         suspension-residence-time = 30s
+        # Mirrors main's dcc.conf override — see the matching comment on gen-0's network block above
+        # (2026-08-04 gen-0/gen-1 churn investigation): closes a latent asymmetry, not an active bug.
+        max-single-host-connections = 8
       }
 
       wallet {
@@ -343,6 +355,9 @@ data:
         blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
         enable-blacklisting = no
         suspension-residence-time = 30s
+        # Mirrors main's dcc.conf override — see the matching comment on gen-0's network block
+        # (2026-08-04 gen-0/gen-1 churn investigation): closes a latent asymmetry, not an active bug.
+        max-single-host-connections = 8
       }
 
       wallet {
