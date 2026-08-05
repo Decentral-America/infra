@@ -1,6 +1,6 @@
 # Runbook — Mainnet Edge Provisioning (R3) & REST API-Key Rotation (R5)
 
-From the T2 finality audit (`Ecosystem/AUDIT-T2-FINALITY.md`). These two items require infrastructure/cluster access that does not exist yet (no mainnet), so they are **operator runbooks**, not code changes. The node/edge *code* hardening (R1 denylist, R4 rate-limit) is already merged; this covers the launch-time steps that can only run against real mainnet infra.
+Findings R1–R5 (edge defense-in-depth, API-key rotation) originated in the now-retired `Ecosystem/AUDIT-T2-FINALITY.md` working doc; that doc has been superseded by the versioned, actively-maintained HotStuff audit material in `node-scala/docs/hotstuff-audit-readiness.md` (external-audit scope/evidence) and `node-scala/docs/hotstuff-security-review.md` (internal findings) — those R1–R5 edge/RPC items themselves are not consensus-specific and are not restated verbatim there, so this runbook is their sole remaining record. These two items require infrastructure/cluster access that does not exist yet (no mainnet), so they are **operator runbooks**, not code changes. The node/edge *code* hardening (R1 denylist, R4 rate-limit) is already merged; this covers the launch-time steps that can only run against real mainnet infra.
 
 ---
 
