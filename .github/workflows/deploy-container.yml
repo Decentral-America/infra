@@ -95,7 +95,7 @@ jobs:
     steps:
       - name: Checkout infra repository
         # Required to make .trivyignore available in the working directory.
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: Decentral-America/infra
           persist-credentials: false
@@ -151,7 +151,7 @@ jobs:
         # Checks out THIS (infra) repo so we can upload the latest compose file.
         # This ensures the compose file on the server is always in sync with the
         # version in git — no manual copying required.
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Explicit repo required: when called via workflow_call from another repo,
           # actions/checkout defaults to the CALLER's repo, not infra's.
