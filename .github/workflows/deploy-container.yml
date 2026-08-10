@@ -119,7 +119,7 @@ jobs:
           exit-code:      '1'
           ignore-unfixed:              true
           scanners:                    'vuln'
-          version:                     'v0.71.0'
+          version:                     'v0.73.0'
           # CVEs in OS packages pending Debian 12 backport — not exploitable via
           # our attack surface. See .trivyignore at root of this repo for details.
           trivyignores: '.trivyignore'
