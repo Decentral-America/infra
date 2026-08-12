@@ -1,0 +1,50 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Live StateHash Divergence Dump — on-demand, full (untruncated) InvalidStateHash
+# log lines from gen-0, so the exact block signatures / heights / expected-vs-
+# computed hashes can be extracted for a live root-cause investigation. Read-only
+# GET/kubectl logs, safe to run anytime.
+# ──────────────────────────────────────────────────────────────────────────────
+name: Live StateHash Divergence Dump
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testnet
+    steps:
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+
+      - name: Get LKE kubeconfig
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label | test("testnet")) | .id' | head -1)
+          RAW=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | \
+            jq -r '.kubeconfig')
+          echo "$RAW" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Full untruncated InvalidStateHash lines from gen-0 and gen-1
+        run: |
+          set +e
+          for POD in dcc-gen-0-0 dcc-gen-1-0; do
+            echo "===== $POD: full log lines mentioning InvalidStateHash or 'Can't process fork' ====="
+            kubectl logs -n dcc "$POD" --tail=3000 2>/dev/null | grep -iE "InvalidStateHash|Can't process fork|Error appending extension" | tail -20
+            echo
+          done
+          echo "===== gen-0 current height ====="
+          kubectl port-forward -n dcc dcc-gen-0-0 16869:6869 >/dev/null 2>&1 &
+          PF=$!; sleep 4
+          curl -s http://127.0.0.1:16869/blocks/height
+          echo
+          kill $PF 2>/dev/null || true
