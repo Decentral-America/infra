@@ -121,7 +121,10 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
   attempt was found unsafe by review). Separately, a genuine Twins-style equivocating-validator test at the
   `node-it` real-container layer (one node double-voting into two live partitions) remains future work —
   needs a purpose-built fault-injection node image, per `FourNodeHotStuffTestSuite`'s own doc comment.
-- 🟡 Missing: finality committed-stake **headroom** signal; formal incident-response runbooks (chain halt, finality stall, key compromise, fork).
+- ✅ **Incident-response runbooks now exist** — `clusters/testnet/RUNBOOK.md` §Incident Response, IR-1
+  through IR-6, covering chain halt, finality stall, key compromise, fork/reorg, gen-node sync failure,
+  and peer-connectivity loops. Item 7 below is resolved.
+- 🟡 Missing: finality committed-stake **headroom** signal.
 
 ### Actions
 1. 🔴 **Add committed-stake-fraction / finality-headroom metric + alert** (actionable now).
@@ -140,7 +143,7 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
 | 4 | Re-enable P2P blacklisting + curated known-peers | 3 | 🔴 High | test vs RC#2 loop first |
 | 5 | Sentry-node topology (private generators) | 3 | 🟠 Med | 🧊 mainnet |
 | 6 | Governance/height feature activation at mainnet genesis | 2 | 🟠 Med | 🧊 mainnet genesis |
-| 7 | Incident-response runbooks | 4 | 🟠 Med | doc |
+| ~~7~~ | ~~Incident-response runbooks~~ | 4 | ✅ Done | `RUNBOOK.md` IR-1..6 |
 | 8 | Waves-compatible remote signer / HSM | 1 | 🟡 Low | 🧊 roadmap (custom) |
 
 ## Sources (primary unless noted)

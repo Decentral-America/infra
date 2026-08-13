@@ -363,6 +363,42 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
 - **If a gen self-forks during recovery:** with `quorum=1`, three gen nodes can satisfy quorum among themselves and forge their own chain when they can't see main (feature-25 then finalizes it → irreversible). Set gen `miner.enable=no` during any catch-up, then re-enable only once the node is AT the tip (via snapshot). Nodes coming up from a snapshot are already at the tip, so this is moot for the snapshot path.
 - **Verify:** all nodes at the same height with `restarts=0`; finality lag drops from ~100 (main-solo) to ~1–3 (committee endorsing); over time gen addresses (`31Pm…`=gen-0, `31dL…`=gen-1) appear in the block-generator distribution.
 
+### IR-6 — Peer connectivity loops / "0 connected peers" / stuck at 1 active generator
+- **Detect:** admin-dashboard "Active Generators" stuck at 1 (it counts distinct generators over the
+  last `min(500,height)` blocks); `/peers/connected` shows 0 on a gen node; it briefly appears then
+  vanishes with no error logged; `cluster-diagnostics.yml` shows a repeating connect→handshake-ok→close
+  cycle on a fixed period (often exactly `suspension-residence-time`).
+- **This has had at least five distinct root causes over time** — check each rather than assuming the
+  last one recurred:
+  1. **Handshake-timeout misconfiguration** (node-scala PR #16, 2026-07-08) — outbound handshake
+     timeout accidentally 1s instead of the configured 30s specifically when reconnecting after
+     losing all peers; self-reinforcing loop under cross-region latency.
+  2. **Chain fork** — main diverged from the gen mesh, allowed to persist by `quorum=0`; reconciled by
+     transplanting main's canonical RocksDB state onto the gen pods (same mechanism as IR-5's
+     `migrate-state-snapshot.yml`, different original cause).
+  3. **Stale-entry dedup race in `HandshakeHandler`** (node-scala PR #11) — the dedup closed the *new*
+     channel whenever an entry already existed for `(address, nonce)`, even if that entry was a dead
+     channel whose cleanup listener hadn't run yet. Logged only at `debug`, hence invisible. Fixed:
+     evict inactive previous entries instead of closing the new one.
+  4. **Peer-exchange gossip** (`enable-peers-exchange`) recreating the same collision via a path
+     `known-peers=[]` didn't cover — fixed by disabling peer-exchange on main (infra PR #38).
+  5. **Suspend-on-any-close bug** (node-scala PR #58, 2026-08-13) — `NetworkServer.scala` suspended the
+     remote peer on *any* outgoing channel close, including a completely benign graceful one, not just
+     genuine failures. Since gen-0/gen-1's only known-peer is main, every ordinary reconnect (most
+     likely triggered by `HandshakeHandler`'s own duplicate-connection dedup, which keys on
+     `(host, nonce)` not direction) became a 30s penalty box — see the T2 HotStuff rollout history note
+     in Scenario E above for the fix + recovery detail; not repeated here.
+- **Mitigate/Recover (generic):** if a gen node has fallen far enough behind that connectivity alone
+  won't let it catch up in reasonable time, use `migrate-state-snapshot.yml` (IR-5) rather than waiting
+  it out or wiping — this chain is not resyncable from genesis.
+- **Verify:** stable connections with zero suspend-loop recurrence across multiple
+  `cluster-diagnostics.yml` runs; heights converge; over time all generator addresses (not just main)
+  appear in the block-generator distribution again.
+- History: this incident class was first closed 2026-07-08 (causes 1-4 above), had an unconfirmed
+  2026-08-12 recurrence (symptoms logged but self-quieted before root-causing), then a real recurrence
+  2026-08-13 (cause 5) confirmed and fixed. If this signature reappears again, causes 1-5 are all worth
+  re-checking before assuming a sixth new cause.
+
 ### Escalation & contacts
 - Secrets/keys: `Ecosystem/KEEWEB_BACKUP.md` (KeePassium) — main #1, gen-0 #2, gen-1 #3, API keys #11–13, AGE (testnet) #16, faucet #26, treasury #27. Stagenet/mainnet age keys are held by the operator (not in the export).
 - Deploy substrates & release flow: `clusters/testnet/TOPOLOGY.md`. Node image cutover: `deploy-testnet-release.yml`.
