@@ -8,7 +8,16 @@
 > `/opt/dcc/secrets/<network>.env` files. Public infra repos are standard practice
 > in the industry (HashiCorp, Cloudflare, etc. all follow this pattern).
 >
-> **Canonical ecosystem deploy runbook:** see [../DEPLOY.md](../DEPLOY.md). This README stays focused on infra-repo internals.
+> **Canonical ecosystem deploy runbook:** see [DEPLOY.md](DEPLOY.md). This README stays focused on infra-repo internals.
+>
+> **Known overlap, not yet reconciled (2026-08-13):** this README's "Master secrets inventory" and
+> "Per-secret reference" sections below cover much of the same ground as `DEPLOY.md`'s Sections A/C/D
+> (org secrets, infra repo secrets, deploy secrets) — the two have already drifted (e.g. this README
+> notes the resolved `CENTRAL_USERNAME`/`CENTRAL_PASSWORD` → `MAVEN_CENTRAL_*` rename; `DEPLOY.md`'s
+> table doesn't mention it at all). `DEPLOY.md` is the broader, 168-item cross-repo canonical inventory;
+> treat this README's tables as a lighter-weight subset until someone does a full line-by-line
+> reconciliation — don't trust either blindly for a specific secret's current status without checking
+> the actual GitHub/SOPS source.
 
 ---
 
@@ -25,6 +34,17 @@
 - [Activation](#activation)
 - [How to deploy](#how-to-deploy)
 - [Operations](#operations)
+
+---
+
+## Ecosystem repos
+
+| Repo | Purpose |
+|------|---------|
+| `Decentral-America/infra` | OpenTofu, Flux manifests, node configs, CI/CD workflows (this repo) |
+| `Decentral-America/node-scala` | L1 blockchain node |
+| `Decentral-America/DecentralChain` | Frontend monorepo (scanner, exchange, admin-dashboard, wallet, BPS, SDKs) |
+| `Decentral-America/matcher` | DEX order matching engine |
 
 ---
 

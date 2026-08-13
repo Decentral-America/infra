@@ -63,7 +63,7 @@ Implement (2) + populate known-peers, then **validate on testnet** in a watched 
 - Run the fault **soak** (RUNBOOK Scenario E) on the mainnet-config chain: generator down / partition / restore, confirming finality degrades gracefully and recovers.
 - Confirm all `ServiceDown` / finality / block-production alerts fire correctly; dashboards populated.
 - Walk the **incident-response runbooks** (RUNBOOK §Incident Response) as tabletop: chain halt, finality stall, key compromise, fork.
-- External consensus/security audit sign-off (esp. if HotStuff is ever made authoritative — today it's observational).
+- External consensus/security audit sign-off (esp. for HotStuff — `dcc.hotstuff.authoritative = true` is now live on **testnet only** since 2026-08-03, by explicit human decision ahead of this audit; mainnet stays observational until it closes — see `node-scala/docs/hotstuff-audit-readiness.md` §8).
 
 ## Launch gate checklist
 - [ ] Genesis + distribution published; mainnet chain-id (`?`) + params locked.
@@ -75,9 +75,29 @@ Implement (2) + populate known-peers, then **validate on testnet** in a watched 
 - [ ] RC#2 resolved; blacklisting on; curated known-peers.
 - [ ] Soak passed on mainnet config; alerts + dashboards + IR runbooks validated.
 - [ ] Secrets: all cold/hot keys in KeePassium + SOPS as appropriate; age keys for all networks custodied.
+  Testnet API-key rotation status/procedure lives in `SECURITY.md` §"Known Issues" — same discipline
+  (never let a real key transit an unencrypted diff) applies to mainnet key generation from day one.
 - [ ] External audit sign-off.
+- [ ] **Mainnet LKE: `lke_ha = true` + dedicated CPU nodes + ≥2 node pool size.** Currently
+  `lke_ha=false`, shared CPU, single node (`terraform/lke.tf:11-12`) — acceptable for testnet only.
+  Pod anti-affinity (`preferredDuringSchedulingIgnoredDuringExecution`) is already present in
+  `clusters/testnet/apps/nodes.yaml` but only takes effect with ≥2 nodes.
+- [ ] **T0 DeterministicFinality 60-day mainnet-config stabilization soak** — not yet started; clock
+  starts once a mainnet-config soak run begins (see Phase 5).
+- [ ] **Mainnet operator notice** — 8 weeks' advance notice to node operators before activating feature
+  #25, once T0 soak clock has run.
+- [ ] **Stagenet validation run** — legacy → modern node handoff at 10k blocks, verify no chain splits.
+  Not yet run.
 
 ---
-_Status of the pieces (2026-07-16): security/monitoring hardening + IR runbooks + leasing design & rehearsal
-are DONE on testnet. The items above are the launch-time execution, gated on cold keys, the RC#2 fix, and the
-mainnet genesis. See `MAINNET-READINESS.md` for the full findings + citations._
+_Status of the pieces (2026-08-13, supersedes the 2026-07-16 note below): security/monitoring hardening
++ IR runbooks + leasing design & rehearsal remain DONE on testnet. T2 HotStuff's shell rework (the
+`view=block-height`-on-an-NG-chain fix `docs/hotstuff-step5-findings-and-rework.md` called for) is now
+also DONE and live authoritative on **testnet only** since 2026-08-03 — narrowed but not fully closed
+(no live multi-node evidence of an actual committee-epoch transition yet, unit/DST-simulation only). The
+items above remain the launch-time execution, gated on cold keys, the RC#2 fix, and the mainnet genesis._
+
+_Status of the pieces (2026-07-16, kept for history): security/monitoring hardening + IR runbooks +
+leasing design & rehearsal are DONE on testnet. The items above are the launch-time execution, gated on
+cold keys, the RC#2 fix, and the mainnet genesis. See `MAINNET-READINESS.md` for the full findings +
+citations._

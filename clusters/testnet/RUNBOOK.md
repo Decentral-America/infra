@@ -179,12 +179,27 @@ echo "tip=$TIP finalized=$FIN lag=$((TIP-FIN)) hotStuffFinalized=$HSF"
 # Healthy: FIN advancing; HSF ≈ TIP − settled-depth(3) and advancing.
 ```
 
-**Prometheus alerts active** (deployed via `deploy-monitoring-stack.yml`; source `monitoring/alerts.yml`):
+**Prometheus alerts active** (deployed via `deploy-monitoring-stack.yml`; source `monitoring/alerts.yml`
+— verified against the actual alert names in that file 2026-08-13, all 7 present):
 - `BlockProductionStalled` — no block in 5 min (CRITICAL)
 - `FinalizationStalled` — `dcc_finality_lag > 250` for 15 min (HIGH, authoritative feature-25)
 - `FinalizationNotAdvancing` — `dcc_finalized_height` static 30 min (HIGH)
 - `HotStuffCommitNotAdvancing` — `dcc_hotstuff_finalized_height` static 30 min while chain advances
   (WARNING only — observational; feature-25 unaffected)
+- `ExporterScrapeError` / `ExporterDown` — the chain metrics exporter itself is failing/unreachable
+- `ServiceDown` — a monitored service (node/BPS/matcher) is down
+
+**T2 HotStuff rollout history** (kept here per this scenario's own "record real results" convention):
+by 2026-08-03/04, `dcc.hotstuff.authoritative = true` went live on all 4 testnet nodes — HotStuff commits
+now genuinely raise the authoritative `finalizedHeight` (feature-25), not just an observational value.
+A cross-committee-epoch fork hazard (T10: two committees each honestly forming a QC for a different block
+at the same view/height) was found and fixed the same window (`committeeEpoch` bound into vote/QC bytes,
+protobuf-schemas 1.6.5). On 2026-08-13, a separate connectivity bug (`NetworkServer.scala` suspending
+peers on benign graceful closes — see `docs/incidents/INCIDENT-GEN0-PEERS.md` follow-up) had stalled
+`hotStuffFinalizedHeight` for hours by starving gen-0/gen-1 of a stable connection to main; fixed
+(node-scala PR #58) and recovered via `migrate-state-snapshot.yml`. Full audit-scope detail, threat
+model, and the mainnet enable-gate checklist live in `node-scala/docs/hotstuff-audit-readiness.md` — not
+duplicated here.
 
 ---
 
@@ -349,5 +364,39 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
 - **Verify:** all nodes at the same height with `restarts=0`; finality lag drops from ~100 (main-solo) to ~1–3 (committee endorsing); over time gen addresses (`31Pm…`=gen-0, `31dL…`=gen-1) appear in the block-generator distribution.
 
 ### Escalation & contacts
-- Secrets/keys: `Ecosystem/KEEWEB_BACKUP.md` (KeePassium) — main #1, gen-0 #2, gen-1 #3, API keys #11–13, AGE (testnet) #16, faucet #26. Stagenet/mainnet age keys are held by the operator (not in the export).
+- Secrets/keys: `Ecosystem/KEEWEB_BACKUP.md` (KeePassium) — main #1, gen-0 #2, gen-1 #3, API keys #11–13, AGE (testnet) #16, faucet #26, treasury #27. Stagenet/mainnet age keys are held by the operator (not in the export).
 - Deploy substrates & release flow: `clusters/testnet/TOPOLOGY.md`. Node image cutover: `deploy-testnet-release.yml`.
+
+---
+
+## Known CI Non-Issues (investigated, deliberately not "fixed")
+
+> Forcing these would be reckless, not thorough. Recorded so nobody re-investigates the same dead end.
+
+- **matcher's kanela NPE storm** under full-suite unit-test load (thousands of log lines, 0 actual test
+  failures) — root cause understood (sbt2 worker-JVM reuse causes non-deterministic partial
+  Kamon/Pekko instrumentation retransformation), but kanela is deliberately attached to the test JVM
+  and the existing `KanelaWorkerClasspathFix` workaround is already fragile, battle-tested reflection
+  code. A real fix needs dedicated design work, not a blind patch.
+- **node-scala Check-PR's occasional timing-test flakes** — reproduced under 4 escalating
+  CPU-starvation techniques (up to 246 competing processes) and could NOT be reproduced; no fix was
+  invented for a failure that didn't recur locally.
+- **Org-wide dead-code sweep** only covers node-scala (proven zero dead code by construction,
+  `-Wunused:all` + `-Werror` already gates every merge) and matcher's known removals (a real dev-branch
+  cleanup already landed). Matcher's own `-Wunused` retrofit and a DecentralChain Nx/TS monorepo sweep
+  are real, separate initiatives, not attempted as part of this.
+- **matcher billing**: was ~97% one thing — the 8-shard `dex-it` integration suite running on every push
+  to `main`. Fixed by moving it to nightly + release tags only (~$105/mo saved, same 148-suite coverage,
+  shards unchanged). matcher is the only private/billed repo of the 4; the rest are public (free Actions).
+
+---
+
+## Gotchas — What NOT to Do
+
+- `restart-host-network.yml` **WIPES chain data** — use `update-node-image.yml` instead.
+- `peer-watchdog.yml` **SIGKILLs the node** — emergency tool only; causes a BPS crash + effective chain reset for that node.
+- Do not use Docker bridge mode for the main node — causes TCP failures reaching it from LKE.
+- Do not write matcher's `local.conf` to `/opt/dcc/data/matcher-testnet/config/` — silently ignored; it must go to `/opt/dcc/config/matcher-testnet/local.conf`.
+- blockchain-postgres-sync (BPS) crashes after a node restart — restart it too: `docker start blockchain-postgres-sync-testnet` on Newark.
+- Do not use `gh run watch` — burns the GitHub REST rate limit (1200/hr for the whole org). Use the `/monitor-ci` pattern (GraphQL polling + artifact download) instead.
+- Do not recall credentials from memory — always read `Ecosystem/KEEWEB_BACKUP.md` first; it's updated when secrets rotate, your memory isn't.
