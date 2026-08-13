@@ -97,11 +97,18 @@ jobs:
           # Shared CORS origin allowlist for credentialed endpoints (node, matcher).
           # Reflecting Origin unconditionally alongside Allow-Credentials: true lets
           # any website make authenticated cross-origin requests on a visitor's
-          # behalf (CWE-942) — @cors_allowed_origin only matches decentralchain.io
-          # and its direct subdomains, the same trust boundary already used in the
-          # scanner app's own CSP connect-src above.
+          # behalf (CWE-942) — @cors_allowed_origin matches the three domains the
+          # actual first-party apps are deployed under: decentralchain.io (data
+          # service, websocket, admin), decentralscan.com (scanner — its own
+          # scanner_domain in testnet.tfvars is testnet.decentralscan.com, NOT a
+          # decentralchain.io subdomain), and decentral.exchange (exchange, deployed
+          # via Cloudflare Pages — see DecentralChain's deploy-exchange.yml). Missing
+          # the latter two meant every scanner/exchange page load got zero CORS
+          # headers back from the node/matcher, silently failing every direct
+          # client-side fetch (empty height/version/last-block on the scanner's
+          # Network Overview, confirmed live 2026-08-13).
           (cors_allowlist) {
-              @cors_allowed_origin header_regexp Origin ^https://([a-z0-9-]+\.)?decentralchain\.io$
+              @cors_allowed_origin header_regexp Origin ^https://([a-z0-9-]+\.)?(decentralchain\.io|decentralscan\.com|decentral\.exchange)$
           }
 
           ${SCANNER} {
