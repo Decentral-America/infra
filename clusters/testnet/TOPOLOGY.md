@@ -1,5 +1,11 @@
 # Testnet Topology & Deploy Paths (READ BEFORE ANY NODE CHANGE)
 
+**What DCC is:** a sovereign Layer-1 with its own token (DCC), consensus, and genesis — not connected
+to any external chain. Testnet chain ID `!` (byte 33), total supply 100,000,000 DCC, ~30s average block
+time (min 5s), FairPoS V2 + LPoS consensus, finality via T0 DeterministicFinality (feature 25,
+authoritative) + T2 HotStuff (authoritative on testnet only, see `RUNBOOK.md` Scenario E). P2P port 6868
+(Newark) / 6863-6865 (Frankfurt LKE); REST API port 6869 per node (gen-1 uses 6870).
+
 The testnet is **not** a single substrate. Treating "the 3 nodes in `nodes.yaml`" as the whole network is
 the exact mistake that causes half-deploys and mixed protocol versions. Full inventory:
 
@@ -12,6 +18,38 @@ the exact mistake that causes half-deploys and mixed protocol versions. Full inv
 
 > The **Main node is a committed generator** — its stake counts toward the 2/3 finality/HotStuff quorum.
 > Any consensus change (e.g. enabling HotStuff) that skips it will fail to reach quorum network-wide.
+
+**Plugin JARs** (`/opt/dcc/plugins/testnet/`, built from source at `Ecosystem/matcher`): `ext.jar`
+(registers BlockchainUpdates + DEXExtension) and `grpc.jar` (`DccBlockchainApiGrpc` stubs + DEX gRPC +
+14-field `Block$Header`).
+
+**Main node specifics:** host `66.228.55.154`, P2P port `6868`, REST via Caddy at
+`https://testnet-node.decentralchain.io`. SSH: `ssh -i <deploy_key> deploy@66.228.55.154`
+(verified 2026-08-13 — login user is `deploy`, not `root`). Config: `/opt/dcc/config/node-testnet/dcc.conf`.
+Compose: `/opt/dcc/compose/node-scala.yml`. Newark is **not** GitOps — use `deploy-node-config.yml` for
+config changes, never hand-edit on the host. **Never use `restart-host-network.yml`** — it wipes chain
+data; use `update-node-image.yml` (or `deploy-testnet-release.yml`, see below) instead.
+
+**Public endpoints:**
+
+| Service | URL |
+|---------|-----|
+| Node REST API | `https://testnet-node.decentralchain.io` |
+| Block explorer | `https://testnet.decentralscan.com` |
+| Data service | `https://testnet-data-service.decentralchain.io` |
+| DEX Matcher | `https://testnet-matcher.decentralchain.io` |
+| Exchange | `https://testnet.decentral.exchange` |
+| Admin dashboard | `https://testnet-admin.decentralchain.io` |
+
+**Token distribution (generators + faucet):**
+
+| Address | Label | Balance (approx., drifts with fees/txs) |
+|---------|-------|------|
+| `31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6` | Main node (Newark) | ~26.7M DCC |
+| `31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD` | gen-0 (Frankfurt) | ~26.7M DCC |
+| `31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV` | gen-1 (Frankfurt) | ~26.7M DCC |
+| `31XRiENNF6qbyHBQssRNP4GwTR4KTAokYGC` | Faucet (Newark) | ~1M DCC |
+| `31cs1eQss3CWFuYrDHpgct3FwMAFkWzSe3T` | Treasury (admin-dashboard Load Test, created 2026-08-13) | 50,000 DCC |
 
 ## The rule: image changes go through ONE workflow
 **`deploy-testnet-release.yml`** is a thin orchestrator that **calls the existing battle-tested

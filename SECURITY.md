@@ -50,6 +50,17 @@ Key security boundaries:
 Node REST API keys are present in git history of this repository (commits Jun 25–27, 2026).
 **All API keys must be rotated before mainnet launch.**
 
+**Status (2026-08-02): STAGED, NOT ROLLED OUT.** New keys generated + hashed (`secureHash =
+Keccak256(Blake2b256(key))`, Base58-encoded, verified byte-for-byte against the live node's hash
+algorithm) and staged on infra branch `security/rotate-api-keys` (unpushed as of this writing) —
+`secrets/testnet.env` (SOPS-encrypted raw keys), `clusters/testnet/apps/nodes.yaml` (gen-0/gen-1/val-0
+`api-key-hash`), `node-config/testnet/dcc.conf` (main node `api-key-hash`) all updated. Old keys remain
+live/accepted; rollout (push the branch, update GitHub Actions secrets, Flux reconcile, run
+`verify-api-keys.yml` to confirm every node accepts the new key and rejects the old) is a deliberate
+human-triggered deploy step, intentionally not automated as part of staging. Because git history
+retains the old keys forever regardless, rotation — not history-rewrite — remains the only real fix,
+and the old keys become permanently dead only once rollout completes.
+
 Rotation procedure:
 
 1. Generate new API keys (random alphanumeric, 32+ chars).
