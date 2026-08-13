@@ -65,7 +65,7 @@ jobs:
 
           # ── Read MAIN_NODE_REST_API_KEY from SOPS ─────────────────────────────────
           SOPS_VERSION="v3.13.3"
-          SOPS_SHA256="154dfe4cd70554bdd82b98e4cd4acf191d43d01ead6f00a73477aa44c4ac42ef"
+          SOPS_SHA256="e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b"
           curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" -o /tmp/sops-bin
           echo "${SOPS_SHA256}  /tmp/sops-bin" | sha256sum --check --status
           install -m 755 /tmp/sops-bin /usr/local/bin/sops
