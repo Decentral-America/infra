@@ -25,7 +25,7 @@ name: Resync testnet main node chain data from a live peer
 # for the current state of that investigation.
 #
 # So: full genesis replay is NOT yet possible end-to-end. Confirmed live
-# during the 2026-07-07 incident (see ../../INCIDENT-GEN0-PEERS.md) and
+# during the 2026-07-07 incident (see ../../docs/incidents/INCIDENT-GEN0-PEERS.md) and
 # re-confirmed 2026-08-06. Until height 3325 is solved, the only way to
 # reset main's chain data that actually works is to copy an already-valid
 # state directory from a peer that's been running continuously (gen-0/
