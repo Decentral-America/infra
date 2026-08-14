@@ -1,0 +1,126 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chart-ingress
+  namespace: exchange
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: charts.decentral.exchange
+    http:
+      paths:
+      - backend:
+          service:
+            name: chart
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - charts.decentral.exchange
+    secretName: charts.decentral.exchange-kubernetes-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: data-service-docs-ingress
+  namespace: exchange
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: data-service.decentralchain.io
+    http:
+      paths:
+      - backend:
+          service:
+            name: data-service-docs
+            port:
+              number: 8080
+        path: /docs
+        pathType: Prefix
+  tls:
+  - hosts:
+    - data-service.decentralchain.io
+    secretName: data-services-kubernetes-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: explorer-ingress
+  namespace: exchange
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: decentralscan.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: explorer
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - decentralscan.com
+    secretName: hello-kubernetes-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: front-end-ingress
+  namespace: exchange
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: 'true'
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: data-service.decentralchain.io
+    http:
+      paths:
+      - backend:
+          service:
+            name: frontend
+            port:
+              number: 11004
+        path: /v0(/|$)(.*)
+        pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - data-service.decentralchain.io
+    secretName: data-services-kubernetes-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wallet-ingress
+  namespace: exchange
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: decentral.exchange
+    http:
+      paths:
+      - backend:
+          service:
+            name: wallet
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - decentral.exchange
+    secretName: decentral.exchange-kubernetes-tls

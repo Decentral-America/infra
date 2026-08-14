@@ -1,0 +1,378 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: exchange
+  labels:
+    app: backend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-deployment
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: backend-deployment
+        v: 0.0.1
+    spec:
+      containers:
+      - env:
+        - name: DEFAULT_MATCHER
+          value: BWK6Avs2WV1Tj8YMifGYZ5iChvw3wqwepjvxp6np57T1
+        - name: MIGRATE
+          value: 'true'
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGUSER
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPASSWORD
+        - name: PGHOST
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGHOST
+        - name: PGPORT
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPORT
+        - name: PGDATABASE
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGDATABASE
+        - name: NODE_ADDRESS
+          value: http://172.233.108.19:6869
+        image: blockchaincostarica/postgres-sync:0.0.14
+        imagePullPolicy: IfNotPresent
+        name: backend-deployment
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: candles
+  namespace: exchange
+  labels:
+    app: candles
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: candles
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: candles
+    spec:
+      containers:
+      - command:
+        - node
+        - --max-old-space-size=6144
+        - dist/daemons/candles/index.js
+        env:
+        - name: DEFAULT_MATCHER
+          value: 3Dg6sFQ9QkQZnXe2LABzAeM3tdwNxuqf5kP
+        - name: PGDATABASE
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGDATABASE
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPASSWORD
+        - name: DEFAULT_TIMEOUT
+          value: '3000'
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGUSER
+        - name: PGHOST
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGHOST
+        - name: PGPORT
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPORT
+        - name: CANDLES_UPDATE_TIMEOUT
+          value: '60000'
+        - name: CANDLES_UPDATE_INTERVAL
+          value: '2500'
+        image: blockchaincostarica/data-service:0.0.1
+        imagePullPolicy: IfNotPresent
+        name: data-service-candles
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chart
+  namespace: exchange
+  labels:
+    app: chart
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chart
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: chart
+    spec:
+      containers:
+      - image: blockchaincostarica/tradeview:0.0.1
+        imagePullPolicy: IfNotPresent
+        name: chart
+        ports:
+        - containerPort: 80
+          name: ui
+          protocol: TCP
+      imagePullSecrets:
+      - name: regcred
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-service-docs
+  namespace: exchange
+  labels:
+    app: data-service-docs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-service-docs
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: data-service-docs
+    spec:
+      containers:
+      - env:
+        - name: SWAGGER_JSON
+          value: /app/openapi.json
+        image: blockchaincostarica/data-service-docs:0.0.2
+        imagePullPolicy: IfNotPresent
+        name: docs
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: explorer
+  namespace: exchange
+  labels:
+    app: explorer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: explorer
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: explorer
+    spec:
+      containers:
+      - image: blockchaincostarica/explorer:3.2.8
+        imagePullPolicy: IfNotPresent
+        name: explorer
+        ports:
+        - containerPort: 8080
+          name: ui
+          protocol: TCP
+      imagePullSecrets:
+      - name: regcred
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: exchange
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - env:
+        - name: DEFAULT_MATCHER
+          value: 3Dg6sFQ9QkQZnXe2LABzAeM3tdwNxuqf5kP
+        - name: PGDATABASE
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGDATABASE
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPASSWORD
+        - name: DEFAULT_TIMEOUT
+          value: '3000'
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGUSER
+        - name: PGHOST
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGHOST
+        - name: PGPORT
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPORT
+        image: blockchaincostarica/data-service:0.0.1
+        imagePullPolicy: IfNotPresent
+        name: data-service
+        ports:
+        - containerPort: 3000
+          name: ui
+          protocol: TCP
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pairs
+  namespace: exchange
+  labels:
+    app: pairs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pairs
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: pairs
+    spec:
+      containers:
+      - command:
+        - node
+        - --max-old-space-size=4096
+        - dist/daemons/pairs/index.js
+        env:
+        - name: DEFAULT_MATCHER
+          value: 3Dg6sFQ9QkQZnXe2LABzAeM3tdwNxuqf5kP
+        - name: PGDATABASE
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGDATABASE
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPASSWORD
+        - name: DEFAULT_TIMEOUT
+          value: '3000'
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGUSER
+        - name: PGHOST
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGHOST
+        - name: PGPORT
+          valueFrom:
+            secretKeyRef:
+              name: exchange-postgres
+              key: PGPORT
+        image: blockchaincostarica/data-service:0.0.1
+        imagePullPolicy: IfNotPresent
+        name: data-service-pairs
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet
+  namespace: exchange
+  labels:
+    app: wallet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wallet
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wallet
+    spec:
+      containers:
+      - image: blockchaincostarica/wallet:0.7.0
+        imagePullPolicy: IfNotPresent
+        name: wallet
+        ports:
+        - containerPort: 80
+          name: ui
+          protocol: TCP
+      imagePullSecrets:
+      - name: regcred
+      terminationGracePeriodSeconds: 30
