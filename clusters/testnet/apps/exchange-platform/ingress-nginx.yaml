@@ -43,5 +43,18 @@ spec:
         role: exchange
       service:
         type: LoadBalancer
+      # Disabled 2026-08-14 after ~3h of failed reconciles: the API server
+      # (Linode's managed control plane) could not reach this webhook's
+      # Service even though pod-to-pod curl to the exact same Service worked
+      # fine from inside the cluster the whole time - a control-plane-to-new-
+      # node-pool routing gap, not a DNS/propagation blip (that class self-
+      # healed in ~5m earlier for cert-manager's webhook; this one never did).
+      # Likely specific to this being a SECOND node pool added to an existing
+      # cluster rather than a fresh cluster - worth a Linode support ticket,
+      # not something fixable from inside the cluster. The webhook is
+      # optional defense-in-depth (pre-admission validation); the k8s API's
+      # own OpenAPI schema check and nginx's own reload-time config check
+      # still catch malformed Ingress objects, just post- rather than pre-
+      # admission.
       admissionWebhooks:
-        enabled: true
+        enabled: false
