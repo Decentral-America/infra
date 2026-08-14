@@ -1,0 +1,27 @@
+# Flux Kustomization — ingress-nginx + cert-manager for the exchange stack,
+# on the dedicated role=exchange node pool (946807) only. Deliberately
+# separate from apps.yaml (the chain-node Kustomization) for failure
+# isolation, and separate from exchange.yaml (the app workloads) so the
+# latter's dependsOn below can gate on this one actually being healthy —
+# not just "manifests applied" — before ClusterIssuer/Deployments apply.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: exchange-platform
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./clusters/testnet/apps/exchange-platform
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: ingress-nginx
+      namespace: exchange
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: cert-manager
+      namespace: exchange

@@ -1,0 +1,20 @@
+# Cluster-scoped — belongs in the "exchange" Kustomization (not
+# exchange-platform) because it depends on cert-manager's CRDs already being
+# installed, and the Flux Kustomization dependsOn (see clusters/testnet/exchange.yaml)
+# only proceeds once exchange-platform's HelmReleases report Ready.
+# Mirrors 513120's letsencrypt-prod ClusterIssuer exactly (same ACME account
+# email, same http01/nginx solver).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    email: info@decentralchain.io
+    privateKeySecretRef:
+      name: letsencrypt-prod-private-key
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+      - http01:
+          ingress:
+            class: nginx

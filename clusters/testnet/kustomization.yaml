@@ -10,3 +10,5 @@ resources:
   - apps.yaml
   - monitoring.yaml
   - policy.yaml
+  - exchange-platform.yaml
+  - exchange.yaml

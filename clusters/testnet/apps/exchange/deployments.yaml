@@ -54,7 +54,16 @@ spec:
         image: blockchaincostarica/postgres-sync:0.0.14
         imagePullPolicy: IfNotPresent
         name: backend-deployment
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -120,7 +129,16 @@ spec:
         image: blockchaincostarica/data-service:0.0.1
         imagePullPolicy: IfNotPresent
         name: data-service-candles
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -152,9 +170,18 @@ spec:
         - containerPort: 80
           name: ui
           protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       imagePullSecrets:
       - name: regcred
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -189,7 +216,16 @@ spec:
         - containerPort: 8080
           name: http
           protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -218,9 +254,18 @@ spec:
         - containerPort: 8080
           name: ui
           protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       imagePullSecrets:
       - name: regcred
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -282,7 +327,16 @@ spec:
         - containerPort: 3000
           name: ui
           protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -344,7 +398,16 @@ spec:
         image: blockchaincostarica/data-service:0.0.1
         imagePullPolicy: IfNotPresent
         name: data-service-pairs
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -373,6 +436,15 @@ spec:
         - containerPort: 80
           name: ui
           protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       imagePullSecrets:
       - name: regcred
       terminationGracePeriodSeconds: 30
+      nodeSelector:
+        role: exchange

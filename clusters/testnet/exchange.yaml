@@ -1,0 +1,21 @@
+# Flux Kustomization — the exchange app workloads themselves. dependsOn
+# exchange-platform so this never applies (in particular, cluster-issuer.yaml)
+# until ingress-nginx + cert-manager are confirmed Ready, not just applied.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: exchange
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: exchange-platform
+  interval: 5m
+  path: ./clusters/testnet/apps/exchange
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
