@@ -1,9 +1,27 @@
-# Cluster-scoped — belongs in the "exchange" Kustomization (not
-# exchange-platform) because it depends on cert-manager's CRDs already being
-# installed, and the Flux Kustomization dependsOn (see clusters/testnet/exchange.yaml)
-# only proceeds once exchange-platform's HelmReleases report Ready.
-# Mirrors 513120's letsencrypt-prod ClusterIssuer exactly (same ACME account
-# email, same http01/nginx solver).
+# NOT currently applied — deliberately excluded from
+# clusters/testnet/apps/exchange/kustomization.yaml.
+#
+# 2026-08-14: confirmed the API server on this cluster (615553) cannot reach
+# cert-manager's own validating webhook at all, regardless of which node pool
+# (new role=exchange pool OR the original 63-day-old pool) the webhook pod
+# runs on. Verified with a plain `kubectl apply -f` (not just Flux/
+# kustomize-controller's dry-run) — it hangs and times out the same way. Pod-
+# to-pod curl to the exact same Service succeeds instantly the whole time, so
+# this is specifically the control plane's own network path to Service
+# ClusterIPs on this cluster, not a DNS/propagation issue and not something
+# fixable by moving pods around. Needs a Linode support ticket (see
+# AUDIT-REPORT.md item 03) — cert-manager's webhook cannot be disabled the
+# way ingress-nginx's optional one was (see ingress-nginx.yaml), since it's
+# required for defaulting/validation of cert-manager's own CRDs.
+#
+# Once that's resolved: re-add "cluster-issuer.yaml" to
+# clusters/testnet/apps/exchange/kustomization.yaml's resources list. Belongs
+# in the "exchange" Kustomization (not exchange-platform) because it depends
+# on cert-manager's CRDs already being installed, and the Flux Kustomization
+# dependsOn (see clusters/testnet/exchange.yaml) only proceeds once
+# exchange-platform's HelmReleases report Ready. Mirrors 513120's
+# letsencrypt-prod ClusterIssuer exactly (same ACME account email, same
+# http01/nginx solver).
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:

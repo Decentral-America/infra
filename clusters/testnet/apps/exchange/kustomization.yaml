@@ -1,9 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# cluster-issuer.yaml deliberately excluded for now - see its own file header
+# for why (control-plane cannot reach cert-manager's webhook on this cluster,
+# confirmed via a plain `kubectl apply` hang, not a Flux-specific issue).
 resources:
   - namespace.yaml
   - postgres.secret.yaml
-  - cluster-issuer.yaml
   - deployments.yaml
   - services.yaml
   - ingress.yaml
