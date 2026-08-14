@@ -28,10 +28,17 @@
 >   (live since 2026-08-03, `dcc.hotstuff.authoritative = true`, confirmed genuinely raising
 >   `finalizedHeight` — 2026-08-04 live check: `blockchainHeight` 108,096, `hotStuffFinalizedHeight`
 >   107,697). See `HANDOFF.md` §"T2 HotStuff Summary" and `node-scala/docs/hotstuff-audit-readiness.md`.
-> - **Version/image references were stale, now corrected** — `v1.6.3-be2dcfc0` was the 2026-06-30 image;
->   live node version is now **`DecentralChain v1.7.0`**, image `sha-9c49632`
+> - **Version/image references were stale, now corrected (as of 2026-08-04)** — `v1.6.3-be2dcfc0` was
+>   the 2026-06-30 image; live node version was then **`DecentralChain v1.7.0`**, image `sha-9c49632`
 >   (`ghcr.io/decentral-america/node-scala@sha256:8a1c9d17e03a305ca763b0c53c1e2c080e891c64d8cd6946abd75507c8c1f69d`,
 >   includes the T10 cross-committee-epoch-fork fix).
+> - **Corrected again, 2026-08-13** — the digest above drifted stale again after PR #143
+>   ("graceful-close suspend fix") bumped the deployed image without this note being updated in the
+>   same pass — exactly the doc-drift failure mode this file warns about elsewhere. Confirmed via
+>   `clusters/testnet/apps/nodes.yaml` (the actual source of truth) the currently deployed digest is
+>   `ghcr.io/decentral-america/node-scala@sha256:1df608376ad7759b874028977d38c961c4a3ec5106d09db45fe649d17abef28a`.
+>   Rather than hand-maintain this value a third time, treat `nodes.yaml` as authoritative going
+>   forward and don't trust a copy-pasted digest in prose without cross-checking it there first.
 > - **Left intentionally unchanged:** the base-image digest pins in "Artifact Checksums"
 >   (`node:24-alpine`, `rust:1.96`, `debian:12-slim`, `nginx:stable-alpine`) — those are Dockerfile
 >   `FROM` pins unrelated to node-scala/HotStuff and weren't in scope for this pass; the org-secret and
@@ -364,8 +371,8 @@ This file covers all three launch networks:
 |---|---|---|---|
 | `Ecosystem/infra` | Servers, OpenTofu, bootstrap, reusable SSH deploy, compose files | `provision.yml`, `deploy-container.yml` | `mainnet`, `stagenet`, `testnet` |
 | `Ecosystem/DecentralChain` | Exchange, scanner, data-service, blockchain-postgres-sync, Cubensis, npm/Maven release | `deploy-exchange.yml`, `deploy-scanner.yml`, `deploy-data-service.yml`, `deploy-bps.yml`, `deploy-cubensis.yml`, `release.yml`, `publish-*.yml` | Full network mapping in app deploy workflows |
-| `Ecosystem/node-scala` | Scala node image publishing + remote deploy | `publish-docker-image.yml`, `deploy-node-scala.yml` | Builds on `workflow_dispatch`, deploys via infra reusable workflow |
-| `Ecosystem/matcher` | DEX Matcher build + remote deploy | `ci.yml`, `docker-publish.yml`, `deploy-matcher.yml` | Builds on `workflow_dispatch`, deploys via infra reusable workflow |
+| `Ecosystem/node-scala` | Scala node image publishing + remote deploy | `publish-node-scala.yml`, `deploy-node-scala.yml` | Builds on `workflow_dispatch`, deploys via infra reusable workflow |
+| `Ecosystem/matcher` | DEX Matcher build + remote deploy | `ci.yml`, `publish-matcher.yml`, `deploy-matcher.yml` | Builds on `workflow_dispatch`, deploys via infra reusable workflow |
 | `Ecosystem/docs` | Public docs site build/publish | `github_pages_workflow.yml` | No network split |
 
 ---
@@ -453,14 +460,14 @@ Pinned base images used by Docker builds in launch-critical services.
 
 | Variable | Status | Used by | Purpose |
 |---|---|---|---|
-| `DOCKERHUB_USERNAME` | set (`decentralchain`) | `deploy-bps.yml`, `deploy-scanner.yml`, `deploy-data-service.yml`, `publish-docker-image.yml` (node-scala) | Docker Hub username paired with `DOCKERHUB_TOKEN` |
+| `DOCKERHUB_USERNAME` | set (`decentralchain`) | `deploy-bps.yml`, `deploy-scanner.yml`, `deploy-data-service.yml`, `publish-node-scala.yml` (node-scala) | Docker Hub username paired with `DOCKERHUB_TOKEN` |
 | `INFRA_DEPLOY_ENABLED` | set (`false`) | `deploy-bps.yml`, `deploy-scanner.yml`, `deploy-data-service.yml` | Guard that enables infra-backed service rollout after servers are ready |
 
 Additional repo-specific CI/CD facts outside the core launch path:
 
 | Repo | Workflow | Secret expectation | Status |
 |---|---|---|---|
-| `node-scala` | `publish-docker-image.yml` | `DOCKERHUB_USERNAME` (org var), `DOCKERHUB_TOKEN` (org secret) when Docker Hub publish path is used | unified with org standard |
+| `node-scala` | `publish-node-scala.yml` | `DOCKERHUB_USERNAME` (org var), `DOCKERHUB_TOKEN` (org secret) when Docker Hub publish path is used | unified with org standard |
 | `docs` | `github_pages_workflow.yml` | default `GITHUB_TOKEN` only | implicit |
 
 ---
@@ -792,7 +799,7 @@ Scanner runtime variables:
 ### Node Dashboard (`DecentralChain/apps/node-dashboard`)
 
 Private admin dashboard at `admin.decentralchain.io`. Auth via GitHub OAuth (org-restricted to `Decentral-America`).
-Deployed by `deploy-node-dashboard.yml`. Container listens on PORT 3001. Caddy proxies `admin.decentralchain.io → localhost:3001`.
+Deployed by `deploy-admin-dashboard.yml`. Container listens on PORT 3001. Caddy proxies `admin.decentralchain.io → localhost:3001`.
 
 Runtime variables (all from server `env_file: /opt/dcc/secrets/${NETWORK}.env` via SOPS):
 
@@ -923,7 +930,7 @@ Cubensis build-time injections exposed through Vite defines:
 | `DecentralChain` | `cubensis-e2e.yml` | `cubensis/v*.*.*`, manual dispatch | n/a | `NX_CLOUD_ACCESS_TOKEN` | WebdriverIO E2E gate for Cubensis releases |
 | `infra` | `provision.yml` | manual dispatch | all 3 | `LINODE_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Plan/apply/destroy infrastructure |
 | `infra` | `deploy-container.yml` | reusable workflow call | all 3 | `GHCR_TOKEN`, env `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_HOST_FINGERPRINT` | Pull image on server and restart service |
-| `node-scala` | `publish-docker-image.yml` | manual dispatch / workflow call | caller-defined | `DOCKERHUB_USERNAME` (org var), `DOCKERHUB_TOKEN` (org secret) when Docker Hub path used | Builds and publishes node-scala image |
+| `node-scala` | `publish-node-scala.yml` | manual dispatch / workflow call | caller-defined | `DOCKERHUB_USERNAME` (org var), `DOCKERHUB_TOKEN` (org secret) when Docker Hub path used | Builds and publishes node-scala image |
 | `node-scala` | `deploy-node-scala.yml` | manual dispatch | all 3 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, infra `DEPLOY_*`, `GHCR_TOKEN` | Build/push node-scala image, then infra deploy |
 | `node-scala` | `ci.yml` | push / PR | n/a | `CODECOV_TOKEN` | Node-scala compilation, test, and integration checks |
 | `node-scala` | `on-push-default-branch.yml` | push to default branch | n/a | `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY`, `MAVEN_GPG_PASSPHRASE` (org secrets) | Publish snapshots to Maven Central |
@@ -937,7 +944,7 @@ Cubensis build-time injections exposed through Vite defines:
 | `infra` | `ci.yml` | push / PR | n/a | default `GITHUB_TOKEN` | Infra code linting and validation |
 | `matcher` | `ci.yml` | push / PR | n/a | default `GITHUB_TOKEN` | Matcher compilation, test, SBOM generation |
 | `matcher` | `deploy-matcher.yml` | manual dispatch | all 3 | infra `DEPLOY_*`, `GHCR_TOKEN` | Build/push matcher image, then infra deploy |
-| `matcher` | `docker-publish.yml` | manual dispatch / workflow call | caller-defined | default `GITHUB_TOKEN` | Builds and publishes matcher image to GHCR |
+| `matcher` | `publish-matcher.yml` | manual dispatch / workflow call | caller-defined | default `GITHUB_TOKEN` | Builds and publishes matcher image to GHCR |
 
 ### Important behavior notes
 
@@ -945,8 +952,8 @@ Cubensis build-time injections exposed through Vite defines:
 - `deploy-scanner.yml`, `deploy-data-service.yml`, and `deploy-bps.yml` only call infra deploy when `INFRA_DEPLOY_ENABLED == 'true'`.
 - `INFRA_DEPLOY_ENABLED` is a **repository-level variable** on the `DecentralChain` repo, not an org-level variable.
 - `NX_NO_CLOUD` is a **repository-level variable** on `DecentralChain`; defaults to `true` in workflow expressions.
-- `node-scala/publish-docker-image.yml` is an image publication pipeline; `deploy-node-scala.yml` is the full deploy pipeline that calls it.
-- `matcher/docker-publish.yml` is an image publication pipeline; `deploy-matcher.yml` is the full deploy pipeline that calls it.
+- `node-scala/publish-node-scala.yml` is an image publication pipeline; `deploy-node-scala.yml` is the full deploy pipeline that calls it.
+- `matcher/publish-matcher.yml` is an image publication pipeline; `deploy-matcher.yml` is the full deploy pipeline that calls it.
 - ~~**node-scala secret naming divergence:** `node-scala` publish workflows referenced `SONATYPE_USERNAME`/`SONATYPE_PASSWORD`/`GPG_PRIVATE_KEY`/`GPG_PASSPHRASE`/`GPG_KEY_ID` — different names from the org-standard `MAVEN_CENTRAL_*`/`MAVEN_GPG_*` secrets.~~ **SET Done (2026-06-03)** — all node-scala workflows (`on-push-default-branch.yml`, `on-release-published.yml`, `publish-aptly-repo.yml`) and `create-aptly-repo.sh` refactored to use org-standard names. Old repo-level secrets (`SONATYPE_*`, `GPG_*`) can be removed from the node-scala repo.
 - `node-scala/publish-to-npmjs.yml` uses **OIDC trusted publishing** (GitHub environment `NPMJS` + `id-token: write`), NOT `NPM_TOKEN`.
 
@@ -1158,8 +1165,8 @@ Authoritative for app and publish pipelines.
 
 Current state:
 
-- `publish-docker-image.yml` builds and publishes container images (GHCR + optional Docker Hub).
-- `deploy-node-scala.yml` orchestrates full deployment: calls `publish-docker-image.yml` then infra `deploy-container.yml` for SSH rollout.
+- `publish-node-scala.yml` builds and publishes container images (GHCR + optional Docker Hub).
+- `deploy-node-scala.yml` orchestrates full deployment: calls `publish-node-scala.yml` then infra `deploy-container.yml` for SSH rollout.
 - Docker Hub auth uses org-standard `vars.DOCKERHUB_USERNAME` + `secrets.DOCKERHUB_TOKEN`.
 
 Conclusion: node-scala has full deployment automation, blocked only by infra provisioning.
@@ -1168,8 +1175,8 @@ Conclusion: node-scala has full deployment automation, blocked only by infra pro
 
 Current state:
 
-- `docker-publish.yml` builds and publishes matcher image to GHCR.
-- `deploy-matcher.yml` orchestrates full deployment: calls `docker-publish.yml` then infra `deploy-container.yml` for SSH rollout.
+- `publish-matcher.yml` builds and publishes matcher image to GHCR.
+- `deploy-matcher.yml` orchestrates full deployment: calls `publish-matcher.yml` then infra `deploy-container.yml` for SSH rollout.
 - Uses GHCR only (no Docker Hub dependency).
 
 Conclusion: matcher has full deployment automation, blocked only by infra provisioning.
@@ -1312,7 +1319,8 @@ Conclusion: docs site publishing exists, but it is separate from the blockchain 
 │ @dcc/marshall      │  │   protobuf-schemas      │  │   node (provided)     │
 │ @dcc/oracle-data   │  │                         │  │                       │
 │ @dcc/parse-json-bn │  │ Publish: sbt publish    │  │ Publish: sbt publish  │
-│ @dcc/proto-serial  │  │ Docker:  Publish Docker │  │ Docker:  Publish Docker│
+│ @dcc/proto-serial  │  │ Docker:  Publish        │  │ Docker:  Publish       │
+│                    │  │          node-scala     │  │          Matcher       │
 │ @dcc/ledger        │  │ Deploy:  Deploy DCC Node│  │ Deploy:  Deploy Matcher│
 │ @dcc/cubensis-types│  │          (Scala)        │  │                       │
 │ @dcc/assets-pairs  │  └─────────────────────────┘  └────────────────────────┘
@@ -1407,11 +1415,11 @@ gh workflow run publish-protobuf.yml     --repo Decentral-America/DecentralChain
 
 # ── TIER 4b: Node (Scala) ─────────────────────────────────────────
 # Needs Tier 0 Maven artifacts in ~/.m2 or Central
-gh workflow run "Publish release JARs and Docker images" --repo Decentral-America/node-scala
+gh workflow run "Publish node-scala" --repo Decentral-America/node-scala
 
 # ── TIER 4c: Matcher ──────────────────────────────────────────────
 # Needs Tier 2–3 Maven artifacts
-gh workflow run "Publish Docker"         --repo Decentral-America/matcher
+gh workflow run "Publish Matcher"        --repo Decentral-America/matcher
 
 # ── TIER 7: Applications ──────────────────────────────────────────
 gh workflow run deploy-data-service.yml  --repo Decentral-America/DecentralChain -f network=testnet
@@ -1597,10 +1605,10 @@ The remaining unpublished npm packages (`@decentralchain/protobuf-serialization`
 
 ```bash
 # node-scala image — needs curve25519 / blst / groth16 / lang on Central
-gh workflow run "Publish release JARs and Docker images" --repo Decentral-America/node-scala
+gh workflow run "Publish node-scala" --repo Decentral-America/node-scala
 
 # matcher image — needs transactions / java-sdk on Central + local publishM2 for node
-gh workflow run docker-publish.yml --repo Decentral-America/matcher
+gh workflow run publish-matcher.yml --repo Decentral-America/matcher
 ```
 
 Confirm both workflow runs succeed before continuing.

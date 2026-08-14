@@ -16,6 +16,10 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 
 **What survives automatically:** Block Storage PVCs use `linode-block-storage-retain` with `ReclaimPolicy: Retain`. The 3 chain-data volumes are **not deleted** when the node is lost.
 
+**Cost trade-off:** Retain is deliberate (see Scenario A) but means every PVC delete/recreate — including manual incident-recovery resets — leaves the old PersistentVolume behind, Released and still billed ($2/mo per 20GiB volume), forever, until someone prunes it. 21 of these piled up during the June testnet bring-up (multiple genesis-reset attempts while chasing the height-1798/1799/3325 divergences) before anyone noticed on the bill. `.github/workflows/prune-released-chain-volumes.yml` runs weekly and keeps only the 2 most-recent Released PVs per claim (`chain-data-dcc-gen-0-0`, `chain-data-dcc-gen-1-0`, `chain-data-dcc-val-0-0`), deleting older ones via the proper CSI path (patch `persistentVolumeReclaimPolicy` to `Delete`, then `kubectl delete pv`).
+
+**Never delete a chain-data Linode Volume directly via the Linode API/Cloud Manager.** That orphans the k8s PV object (still shows Released, pointing at a disk that no longer exists) instead of cleanly removing it. Always go through kubectl (`kubectl delete pv`, or the prune workflow above) so the CSI driver and k8s stay in sync.
+
 **Recovery steps:**
 
 1. Confirm the node is gone and PVCs still exist:

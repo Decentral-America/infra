@@ -1,0 +1,109 @@
+name: Prune Released Chain-Data Volumes
+
+# Chain-data PVCs (dcc-gen-0/dcc-gen-1/dcc-val-0) use linode-block-storage-retain
+# (ReclaimPolicy: Retain) so a lost node or StatefulSet redeploy never destroys
+# chain data automatically -- see RUNBOOK.md Scenario A. But Retain means a PVC
+# delete/recreate (e.g. during incident recovery, forced genesis resets) leaves
+# the old PersistentVolume behind forever, Released and unbound, still billed
+# by Linode. Nothing pruned these automatically, which is how 21 of them piled
+# up during the June testnet bring-up before anyone noticed the bill.
+#
+# This job keeps the safety net (a bounded number of recent Released PVs per
+# claim, so you can still roll back) while stopping unbounded billing growth.
+# It deletes the underlying Linode Volume via the CSI driver's normal delete
+# path (patch reclaimPolicy to Delete, then delete the PV object) -- NOT by
+# calling the Linode API directly. Deleting a Linode Volume out from under a
+# PV object leaves it as dangling k8s metadata pointing at a disk that no
+# longer exists (this happened on 2026-08-13; had to be cleaned up by hand).
+on:
+  schedule:
+    - cron: '17 4 * * 1'  # Monday 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      keep_per_claim:
+        description: 'How many most-recent Released PVs to keep per claim'
+        required: true
+        default: '2'
+      dry_run:
+        description: 'List what would be pruned without deleting anything'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prune-released-chain-volumes
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: testnet
+    steps:
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+
+      - name: Get LKE kubeconfig (dcc-peer-testnet)
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters" | \
+            jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+          curl -s -H "Authorization: Bearer $LINODE_TOKEN" \
+            "https://api.linode.com/v4/lke/clusters/${CID}/kubeconfig" | \
+            jq -r '.kubeconfig' | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: List, keep-N, prune the rest
+        run: |
+          set -euo pipefail
+          KEEP="${{ inputs.keep_per_claim || '2' }}"
+          DRY="${{ inputs.dry_run || 'true' }}"
+          echo "Keeping $KEEP most-recent Released PV(s) per claim. dry_run=$DRY"
+
+          kubectl get pv -o json > /tmp/pvs.json
+
+          python3 - "$KEEP" "$DRY" <<'PYEOF'
+          import json, subprocess, sys, collections
+
+          keep_n = int(sys.argv[1])
+          dry = sys.argv[2] == "true"
+
+          pvs = json.load(open("/tmp/pvs.json"))["items"]
+          released = [pv for pv in pvs if pv["status"]["phase"] == "Released"]
+
+          by_claim = collections.defaultdict(list)
+          for pv in released:
+              claim = pv["spec"].get("claimRef", {}).get("name", "<unclaimed>")
+              by_claim[claim].append(pv)
+
+          total_pruned = 0
+          for claim, group in sorted(by_claim.items()):
+              group.sort(key=lambda pv: pv["metadata"]["creationTimestamp"], reverse=True)
+              kept, prune = group[:keep_n], group[keep_n:]
+              print(f"\n=== {claim}: {len(group)} Released PV(s) ===")
+              for pv in kept:
+                  print(f"  KEEP   {pv['metadata']['name']}  ({pv['metadata']['creationTimestamp']})")
+              for pv in prune:
+                  name = pv["metadata"]["name"]
+                  print(f"  PRUNE  {name}  ({pv['metadata']['creationTimestamp']})")
+                  total_pruned += 1
+                  if dry:
+                      continue
+                  subprocess.run(
+                      ["kubectl", "patch", "pv", name, "-p",
+                       '{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}'],
+                      check=True)
+                  subprocess.run(["kubectl", "delete", "pv", name, "--timeout=60s"], check=True)
+
+          print(f"\nTotal Released PVs beyond keep-{keep_n}: {total_pruned}"
+                f"{' (dry run, nothing deleted)' if dry else ' -- deleted'}")
+          if total_pruned == 0:
+              print("Nothing to prune.")
+          PYEOF
