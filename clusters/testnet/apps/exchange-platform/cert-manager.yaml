@@ -20,6 +20,19 @@ metadata:
   namespace: exchange
 spec:
   interval: 1h
+  # Live 2026-08-14: the first install failed because the startupapicheck hook
+  # (calls the webhook via its short in-cluster DNS name) hit cold-start DNS
+  # propagation delay right after the Service was created, exceeding the 5m
+  # helm timeout. helm-controller does NOT auto-retry a failed install by
+  # default (0 retries) - it just sits Failed until the spec changes. Retries
+  # here so a one-off transient failure like that self-heals instead of
+  # requiring manual intervention every time.
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: cert-manager

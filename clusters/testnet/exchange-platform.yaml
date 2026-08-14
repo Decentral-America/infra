@@ -11,6 +11,11 @@ metadata:
   namespace: flux-system
 spec:
   interval: 5m
+  # 10m, not the default 5m: the first live install hit ~4.5m of cold-start DNS
+  # propagation delay for the newly-created webhook Service (see cert-manager.yaml's
+  # remediation comment) - default healthCheckExprs/timeout gave up right as it
+  # would have succeeded.
+  timeout: 10m
   path: ./clusters/testnet/apps/exchange-platform
   prune: true
   sourceRef:
