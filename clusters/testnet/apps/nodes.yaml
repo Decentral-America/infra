@@ -162,6 +162,17 @@ data:
         round-timeout = 1200ms
         settled-depth = 3
       }
+
+      db {
+        # Generator role, not designated as a full-archive node (main node
+        # dcc-backend-testnet + val-0 keep complete balance/data history —
+        # see AUDIT-REPORT.md item 01). Prunes stale intermediate balance/
+        # data-history linked-list entries older than max-rollback-depth;
+        # never touches blocks/transactions. Smaller than the 500-for-Xmx2G
+        # default guidance since this pod runs -Xmx768m — a smaller interval
+        # keeps each cleanup pass's batch (and its memory pressure) smaller.
+        cleanup-interval = 100
+      }
     }
 
 ---
@@ -280,6 +291,13 @@ data:
         authoritative = true
         round-timeout = 1200ms
         settled-depth = 3
+      }
+
+      db {
+        # Generator role, not designated as a full-archive node — see the
+        # matching comment on gen-0's db block above. -Xmx640m here (even
+        # smaller than gen-0's 768m), same reduced cleanup-interval choice.
+        cleanup-interval = 100
       }
     }
 
