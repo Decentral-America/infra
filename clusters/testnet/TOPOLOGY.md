@@ -38,8 +38,11 @@ data; use `update-node-image.yml` (or `deploy-testnet-release.yml`, see below) i
 | Block explorer | `https://testnet.decentralscan.com` |
 | Data service | `https://testnet-data-service.decentralchain.io` |
 | DEX Matcher | `https://testnet-matcher.decentralchain.io` |
-| Exchange | `https://testnet.decentral.exchange` |
+| Exchange | `https://testnet.decentral.exchange` (not `decentral.exchange` — that's mainnet) |
 | Admin dashboard | `https://testnet-admin.decentralchain.io` |
+| Faucet | `https://testnet.decentralscan.com/faucet` |
+| Grafana | `https://grafana.testnet.decentralchain.io` |
+| WebSocket | `wss://testnet-ws.decentralchain.io/ws` |
 
 **Token distribution (generators + faucet):**
 
