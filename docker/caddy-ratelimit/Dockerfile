@@ -7,7 +7,7 @@
 # by digest in compose/caddy.yml — not built on the server.
 
 # renovate: image=caddy tag=2.11.4-builder-alpine
-FROM caddy:2.11.4-builder-alpine@sha256:8e89605351333ad2cc2f3bcc95275a2ccc427f88914050e86a5fde0fd77a63c4 AS builder
+FROM caddy:2.11.4-builder-alpine@sha256:7bac9be4072f7c4db2ccc7350750e0705004bf02da2ac7d96b1469ca4f28bb7c AS builder
 
 # Pinned to a specific commit, not a version tag — caddy-ratelimit has only ever
 # cut one release (v0.1.0) and master has since moved 7 commits ahead of it.
