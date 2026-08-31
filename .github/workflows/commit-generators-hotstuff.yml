@@ -12,9 +12,26 @@ name: Commit Generators to HotStuff (T2 Activation)
 # (hotStuffFinalizedHeight stalled) broke again 15 days after the last
 # manual run (confirmed live 2026-07-22: last successful run was 2026-07-07).
 # The 20-minute cron gives >2x safety margin inside each ~50-minute period.
+#
+# 2026-08-31 addendum: confirmed live that GitHub's `schedule` trigger is
+# genuinely best-effort and can go silent for hours during periods of high
+# Actions load across the org/repo -- both this workflow's cron AND
+# auto-commit-generators.yml's went dark for 3+ hours during a single heavy
+# CI day, independently corroborated by peer-watchdog.yml (a totally
+# unrelated */5 cron) also going dark for 5.5 hours in the exact same
+# window. This isn't fixable by tuning the cron expression -- GitHub does
+# not guarantee scheduled dispatch under load, full stop. Added `push` on
+# main as a second, STRUCTURALLY INDEPENDENT trigger path (tied to the push
+# webhook, not the schedule dispatcher) so a schedule-specific outage isn't
+# the only thing standing between the committee and going empty -- this repo's
+# main branch gets pushed to often enough on its own to provide real, frequent
+# coverage. Safe to over-trigger: each run is idempotent ("already committed"
+# is the normal no-op outcome for a generator that doesn't need to re-commit).
 on:
   schedule:
     - cron: '*/20 * * * *'
+  push:
+    branches: [main]
   workflow_call:
   workflow_dispatch: {}
 permissions:

@@ -3,10 +3,21 @@ name: Auto-Commit Generators (T2 HotStuff)
 # Generation periods are 100 blocks (~50 min). Two staggered 10-min crons
 # combine to fire every 5 min (12 attempts/hour) — GitHub cron can miss
 # individual fires; this redundancy means a single missed fire can't stall T2.
+# 2026-08-31: confirmed live that even 2 staggered crons both went dark for
+# 3+ hours during a single heavy-CI-load day on this repo (independently
+# corroborated by peer-watchdog.yml, an unrelated */5 cron, also going dark
+# 5.5 hours in the same window) -- GitHub's `schedule` trigger is genuinely
+# best-effort and gives no delivery guarantee under load, not something more
+# cron entries alone can fix. Added `push` on main as a second, STRUCTURALLY
+# INDEPENDENT trigger path (tied to the push webhook, not the schedule
+# dispatcher). Safe to over-trigger: idempotent, "already committed" is the
+# normal no-op outcome.
 on:
   schedule:
     - cron: '*/10 * * * *'   # every 10 min (primary — high-frequency to survive cron gaps)
     - cron: '5,15,25,35,45,55 * * * *'  # at :05/:15/:25/:35/:45/:55 (fills any 10-min gaps)
+  push:
+    branches: [main]
   workflow_dispatch: {}
   workflow_call:
 permissions:
