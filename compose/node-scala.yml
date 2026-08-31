@@ -42,6 +42,14 @@ services:
       # The entrypoint sets -Ddcc.rest-api.bind-address=$DCC_REST_API_BIND (default 127.0.0.1).
       # Port 6869 is still mapped to 127.0.0.1 on the host — not directly reachable externally.
       DCC_REST_API_BIND: "0.0.0.0"
+      # Confirmed live 2026-08-31: setting DCC_LOG_LEVEL as a shell env var before `docker compose up`
+      # silently did nothing, because compose only forwards host env vars a container explicitly
+      # references here -- this key was simply missing, so the entrypoint's
+      # -Dlogback.stdout.level=${DCC_LOG_LEVEL} always fell back to the Dockerfile's baked-in INFO
+      # default regardless of what was exported on the host. Wiring it through (same pattern as
+      # DCC_NETWORK above) so `DCC_LOG_LEVEL=DEBUG docker compose up ...` actually works for live
+      # debugging.
+      DCC_LOG_LEVEL: "${DCC_LOG_LEVEL:-INFO}"
 
     ports:
       # REST API — localhost only; expose via Caddy reverse proxy
