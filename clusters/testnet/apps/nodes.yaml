@@ -73,9 +73,9 @@ data:
           genesis {
             average-block-delay = 30s
             initial-base-target = 218
-            timestamp = 1782273507414
-            block-timestamp = 1782273507414
-            signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
+            timestamp = 1788172787831
+            block-timestamp = 1788172787831
+            signature = "2EkpH6JdjDy9ifrtZrHakky1LoBSrYx9omBRYjAvkESWHYUeP3HiYK9bfje4YsdFtTWpAHJq7Qrp96Zu46mfWMRc"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
@@ -220,9 +220,9 @@ data:
           genesis {
             average-block-delay = 30s
             initial-base-target = 218
-            timestamp = 1782273507414
-            block-timestamp = 1782273507414
-            signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
+            timestamp = 1788172787831
+            block-timestamp = 1788172787831
+            signature = "2EkpH6JdjDy9ifrtZrHakky1LoBSrYx9omBRYjAvkESWHYUeP3HiYK9bfje4YsdFtTWpAHJq7Qrp96Zu46mfWMRc"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
@@ -346,9 +346,9 @@ data:
           genesis {
             average-block-delay = 30s
             initial-base-target = 218
-            timestamp = 1782273507414
-            block-timestamp = 1782273507414
-            signature = "4otSUW35Q6VwRGYomS99ZZAhUCN963FKVFCsuUpDvWhk3gy2zgpnqStpCvEhcJb344ZzNR2BtVuukj2Bx11UEpth"
+            timestamp = 1788172787831
+            block-timestamp = 1788172787831
+            signature = "2EkpH6JdjDy9ifrtZrHakky1LoBSrYx9omBRYjAvkESWHYUeP3HiYK9bfje4YsdFtTWpAHJq7Qrp96Zu46mfWMRc"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
