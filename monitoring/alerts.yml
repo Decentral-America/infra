@@ -89,6 +89,22 @@ groups:
           summary: "observational HotStuff commit static for 30 min while the chain advances"
           description: "dcc_hotstuff_finalized_height has not advanced in 30 min although dcc_block_height is still increasing. HotStuff QC formation likely regressed (observational only; feature-25 finality is unaffected). Diagnose with hotstuff-status.yml and check for '[HotStuff] QUORUM REACHED but no QC' WARNs."
 
+      # ── T2 HotStuff real equivocations (CRITICAL, unlike other observational T2 alerts) ──────
+      # dcc_hotstuff_equivocations_total is emitted only when an equivocation is detected
+      # (voter signed conflicting votes at the same view/phase). ANY nonzero value is unambiguous
+      # evidence of either a Byzantine actor or a protocol-violating bug — not merely
+      # observational. Severity is CRITICAL.
+      - alert: HotStuffEquivocationDetected
+        expr: |
+          dcc_hotstuff_equivocations_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "HotStuff equivocation detected -- CRITICAL, unlike T2's other observational alerts"
+          description: "dcc_hotstuff_equivocations_total > 0. A committee member signed conflicting votes at the same view/phase -- either a Byzantine actor or a protocol-violating bug. Check node logs for '[HotStuff] EQUIVOCATION DETECTED' and investigate the named voter index immediately."
+
       # ── User-facing service uptime (MON-1) ─────────────────────────────────
       # dcc_service_up is emitted by exporter.py for each hosted service (matcher,
       # data-service, explorer, websocket, grafana, admin, faucet). 0 = the service

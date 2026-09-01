@@ -80,6 +80,8 @@ def metrics():
         "# TYPE dcc_hotstuff_finalized_height gauge",
         "# HELP dcc_hotstuff_lag Blocks the observational HotStuff commit is behind the chain tip",
         "# TYPE dcc_hotstuff_lag gauge",
+        "# HELP dcc_hotstuff_equivocations_total Real HotStuff equivocations detected in production (voter signed conflicting votes at the same view/phase). Any nonzero value is a critical finding.",
+        "# TYPE dcc_hotstuff_equivocations_total gauge",
         "# HELP dcc_peers_connected Number of currently connected P2P peers",
         "# TYPE dcc_peers_connected gauge",
         "# HELP dcc_scrape_error 1 if the last scrape failed for any endpoint, 0 otherwise",
@@ -130,6 +132,13 @@ def metrics():
             lines.append(f'dcc_hotstuff_finalized_height{{{lbl}}} {hs}')
             if height:
                 lines.append(f'dcc_hotstuff_lag{{{lbl}}} {max(0, height - hs)}')
+
+        # Real HotStuff equivocations (voter signed conflicting votes at the same view/phase),
+        # surfaced on /node/status only when equivocation detection is active and >=1 has occurred.
+        # Absent => emit nothing (no error), but ANY nonzero value is a critical finding.
+        if s and "hotStuffEquivocationsTotal" in s:
+            eq = s["hotStuffEquivocationsTotal"]
+            lines.append(f'dcc_hotstuff_equivocations_total{{{lbl}}} {eq}')
 
         # /peers/connected may require X-API-Key; silently return 0 without marking error
         peers = fetch(f"{base}/peers/connected")
