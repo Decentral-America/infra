@@ -97,6 +97,7 @@ jobs:
           ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
           kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
           PF_PID=$!
+          trap 'kill $PF_PID 2>/dev/null || true' EXIT
           sleep 5
           SIGNED=$(curl -s -X POST http://localhost:16869/transactions/sign \
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
@@ -133,7 +134,6 @@ jobs:
                 : # retry
               else
                 echo "Gen-0: broadcast FAILED (unexpected error): $(echo $RESULT | head -c 300)"
-                kill $PF_PID 2>/dev/null || true
                 exit 1
               fi
               [ "$attempt" -lt 15 ] && sleep 20
@@ -146,15 +146,12 @@ jobs:
               echo "Gen-0: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "Gen-0: exhausted retries without success: $(echo $RESULT | head -c 300)"
-              kill $PF_PID 2>/dev/null || true
               exit 1
             fi
           else
             echo "Gen-0: sign FAILED: $(echo $SIGNED | head -c 300)"
-            kill $PF_PID 2>/dev/null || true
             exit 1
           fi
-          kill $PF_PID 2>/dev/null || true
 
       - name: Commit gen-1 generator
         env:
@@ -164,6 +161,7 @@ jobs:
           ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
           kubectl port-forward pod/dcc-gen-1-0 -n dcc 16870:6870 &
           PF_PID=$!
+          trap 'kill $PF_PID 2>/dev/null || true' EXIT
           sleep 5
           SIGNED=$(curl -s -X POST http://localhost:16870/transactions/sign \
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
@@ -185,7 +183,6 @@ jobs:
                 : # retry
               else
                 echo "Gen-1: broadcast FAILED (unexpected error): $(echo $RESULT | head -c 300)"
-                kill $PF_PID 2>/dev/null || true
                 exit 1
               fi
               [ "$attempt" -lt 15 ] && sleep 20
@@ -198,15 +195,12 @@ jobs:
               echo "Gen-1: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "Gen-1: exhausted retries without success: $(echo $RESULT | head -c 300)"
-              kill $PF_PID 2>/dev/null || true
               exit 1
             fi
           else
             echo "Gen-1: sign FAILED: $(echo $SIGNED | head -c 300)"
-            kill $PF_PID 2>/dev/null || true
             exit 1
           fi
-          kill $PF_PID 2>/dev/null || true
 
       - name: Commit val-0 generator (T2 upgrade)
         # val-0 has miner+hotstuff enabled (nodes.yaml). Address needs verification:
@@ -223,6 +217,7 @@ jobs:
           ADDR="31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq"
           kubectl port-forward pod/dcc-val-0-0 -n dcc 16871:6871 &
           PF_PID=$!
+          trap 'kill $PF_PID 2>/dev/null || true' EXIT
           sleep 5
           SIGNED=$(curl -s -X POST http://localhost:16871/transactions/sign \
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
@@ -244,7 +239,6 @@ jobs:
                 : # retry
               else
                 echo "Val-0: broadcast FAILED (unexpected error): $(echo $RESULT | head -c 300)"
-                kill $PF_PID 2>/dev/null || true
                 exit 1
               fi
               [ "$attempt" -lt 15 ] && sleep 20
@@ -257,15 +251,12 @@ jobs:
               echo "Val-0: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "Val-0: exhausted retries without success: $(echo $RESULT | head -c 300)"
-              kill $PF_PID 2>/dev/null || true
               exit 1
             fi
           else
             echo "Val-0: sign FAILED: $(echo $SIGNED | head -c 300)"
-            kill $PF_PID 2>/dev/null || true
             exit 1
           fi
-          kill $PF_PID 2>/dev/null || true
 
       - name: Report finality
         env:

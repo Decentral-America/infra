@@ -119,6 +119,7 @@ jobs:
           echo "=== Port-forward gen-0 REST API (localhost:16869) ==="
           kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
           PF_PID=$!
+          trap 'kill $PF_PID 2>/dev/null || true' EXIT
           sleep 5
           echo "=== Signing CommitToGeneration for gen-0 ==="
           SIGNED=$(curl -s -X POST http://localhost:16869/transactions/sign \
@@ -162,7 +163,6 @@ jobs:
                 : # retry
               else
                 echo "gen-0: broadcast FAILED (unexpected error)"
-                kill $PF_PID 2>/dev/null || true
                 exit 1
               fi
               [ "$attempt" -lt 15 ] && sleep 20
@@ -175,15 +175,12 @@ jobs:
               echo "gen-0: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "gen-0: exhausted retries without success"
-              kill $PF_PID 2>/dev/null || true
               exit 1
             fi
           else
             echo "gen-0: sign FAILED"
-            kill $PF_PID 2>/dev/null || true
             exit 1
           fi
-          kill $PF_PID 2>/dev/null || true
 
       - name: Commit gen-1 generator (port-forward)
         env:
@@ -194,6 +191,7 @@ jobs:
           echo "=== Port-forward gen-1 REST API (localhost:16870 -> pod:6870) ==="
           kubectl port-forward pod/dcc-gen-1-0 -n dcc 16870:6870 &
           PF_PID=$!
+          trap 'kill $PF_PID 2>/dev/null || true' EXIT
           sleep 5
           echo "=== Signing CommitToGeneration for gen-1 ==="
           SIGNED=$(curl -s -X POST http://localhost:16870/transactions/sign \
@@ -223,7 +221,6 @@ jobs:
                 : # retry
               else
                 echo "gen-1: broadcast FAILED (unexpected error)"
-                kill $PF_PID 2>/dev/null || true
                 exit 1
               fi
               [ "$attempt" -lt 15 ] && sleep 20
@@ -236,15 +233,12 @@ jobs:
               echo "gen-1: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "gen-1: exhausted retries without success"
-              kill $PF_PID 2>/dev/null || true
               exit 1
             fi
           else
             echo "gen-1: sign FAILED"
-            kill $PF_PID 2>/dev/null || true
             exit 1
           fi
-          kill $PF_PID 2>/dev/null || true
 
       - name: Verify generators committed
         env:
