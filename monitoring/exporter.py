@@ -12,6 +12,17 @@ Metrics exposed:
   dcc_finality_lag                  — blocks behind the tip not yet finalized
   dcc_peers_connected               — connected P2P peers (0 if API key required)
   dcc_scrape_error                  — 1 if last scrape failed, 0 otherwise
+  dcc_generation_period_pct_elapsed — % of the current generation period elapsed (0-100+),
+                                      computed as (height mod generationPeriodLength) / length.
+                                      Steady-state approximation: the node exposes
+                                      generationPeriodLength via /node/status but not the
+                                      activation height, so this ignores the one-time zero-period
+                                      offset near activation (fine long after activation, which is
+                                      this testnet's actual state).
+  dcc_next_period_committee_size    — generator count from GET /generators/at/{nextPeriodStart}.
+                                      -1 if the endpoint returned a non-200 status (distinct from
+                                      a genuine empty committee at HTTP 200 — see CommitteeGapUpcoming
+                                      alert comment in alerts.yml for why this distinction matters).
 """
 import http.server, json, os, ssl, time, urllib.request
 
@@ -34,6 +45,24 @@ def fetch(url):
             return json.loads(r.read())
     except Exception:
         return None
+
+def fetch_with_status(url):
+    """Like fetch(), but also returns the HTTP status code (or None on connection
+    failure). Needed for /generators/at/{height}: it returns HTTP 404 with body
+    "[]" when the height is out of range, which must NOT be confused with a
+    genuine HTTP-200 empty committee -- see CommitteeGapUpcoming in alerts.yml."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "dcc-exporter/1.0"})
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read())
+        except Exception:
+            body = None
+        return e.code, body
+    except Exception:
+        return None, None
 
 # ── Web-service liveness (MON-1) ──────────────────────────────────────────────
 # Each user-facing service is probed with a plain GET; "up" means it answered with
@@ -88,6 +117,10 @@ def metrics():
         "# TYPE dcc_scrape_error gauge",
         "# HELP dcc_service_up 1 if the web service answered with HTTP <500, 0 if down (conn error/timeout/5xx)",
         "# TYPE dcc_service_up gauge",
+        "# HELP dcc_generation_period_pct_elapsed Percent of the current generation period elapsed (steady-state approximation via height mod generationPeriodLength; see module docstring)",
+        "# TYPE dcc_generation_period_pct_elapsed gauge",
+        "# HELP dcc_next_period_committee_size Generator count for the NEXT generation period from GET /generators/at/{nextPeriodStart}. -1 means the endpoint returned a non-200 status (distinct from a genuine HTTP-200 empty committee)",
+        "# TYPE dcc_next_period_committee_size gauge",
     ]
 
     # Web-service liveness for every user-facing service (matcher, data-service,
@@ -144,6 +177,28 @@ def metrics():
         peers = fetch(f"{base}/peers/connected")
         peer_count = len(peers.get("peers", [])) if peers and "peers" in peers else 0
         lines.append(f'dcc_peers_connected{{{lbl}}} {peer_count}')
+
+        # ── CommitteeGapUpcoming inputs ────────────────────────────────────────
+        # Steady-state approximation (see module docstring): the node exposes
+        # generationPeriodLength via /node/status but not the activation height,
+        # so period-start math here ignores the one-time zero-period offset near
+        # activation. Fine long after activation (this testnet's actual state);
+        # would be off-by-<length> right at activation.
+        if s and height and "generationPeriodLength" in s:
+            period_len = s["generationPeriodLength"]
+            if period_len > 0:
+                pct_elapsed = ((height % period_len) / period_len) * 100
+                lines.append(f'dcc_generation_period_pct_elapsed{{{lbl}}} {pct_elapsed:.1f}')
+
+                next_period_start = ((height // period_len) + 1) * period_len + 1
+                status_code, committee = fetch_with_status(f"{base}/generators/at/{next_period_start}")
+                if status_code == 200 and isinstance(committee, list):
+                    lines.append(f'dcc_next_period_committee_size{{{lbl}}} {len(committee)}')
+                else:
+                    # Non-200 (e.g. 404 out-of-range) is NOT the same as a genuine
+                    # empty committee -- emit -1 so PromQL can distinguish
+                    # "no data" from "data says zero generators".
+                    lines.append(f'dcc_next_period_committee_size{{{lbl}}} -1')
 
         lines.append(f'dcc_scrape_error{{{lbl}}} {error}')
 

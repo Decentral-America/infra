@@ -70,6 +70,7 @@ jobs:
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
+          set -euo pipefail
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           # Write key to temp file to avoid SSH quoting issues with Base64 special chars
           echo "${MAIN_API_KEY}" > /tmp/.main_key
@@ -77,7 +78,7 @@ jobs:
           rm -f /tmp/.main_key
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
-            'set +e
+            'set -euo pipefail
              API_KEY=$(cat /tmp/.main_key 2>/dev/null | tr -d "\n")
              rm -f /tmp/.main_key
              ADDR="31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"
@@ -94,16 +95,26 @@ jobs:
                  -H "Content-Type: application/json" \
                  -d "$SIGNED")
                echo "Broadcast result: $RESULT" | head -c 300
+               echo ""
+               if echo "$RESULT" | grep -q "\"id\""; then
+                 echo "Main: broadcast OK"
+               elif echo "$RESULT" | grep -qi "is already committed"; then
+                 echo "Main: already committed (no-op)"
+               else
+                 echo "Main: broadcast FAILED"
+                 exit 1
+               fi
              else
-               echo "Sign failed or already committed — skipping broadcast"
+               echo "Main: sign FAILED"
+               exit 1
              fi'
           rm -f /tmp/id_rsa
 
       - name: Commit gen-0 generator (port-forward)
-        continue-on-error: true
         env:
           API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
         run: |
+          set -euo pipefail
           ADDR="31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD"
           echo "=== Port-forward gen-0 REST API (localhost:16869) ==="
           kubectl port-forward pod/dcc-gen-0-0 -n dcc 16869:6869 &
@@ -125,28 +136,60 @@ jobs:
             # single run, so widen it: 15 attempts over ~5 minutes gives
             # meaningfully more chances to land inside a connected window
             # without materially lengthening the overall workflow.
+            #
+            # break ONLY on: (a) success ("id" in response) or (b) the
+            # specific already-committed error. Retry on "not enough
+            # connections" or a curl network failure (empty RESULT). Any
+            # OTHER error is unexpected -- fail loudly instead of silently
+            # swallowing it.
             for attempt in $(seq 1 15); do
               echo "=== Broadcasting (attempt ${attempt}/15) ==="
+              set +e
               RESULT=$(curl -s -X POST http://localhost:16869/transactions/broadcast \
                 -H "Content-Type: application/json" \
                 -d "$SIGNED")
+              CURL_RC=$?
+              set -e
               echo "Broadcast result: $RESULT" | head -c 300
               echo ""
-              if ! echo "$RESULT" | grep -q "not enough connections"; then
+              if [ "$CURL_RC" -ne 0 ] || [ -z "$RESULT" ]; then
+                echo "gen-0: curl network error (rc=$CURL_RC), retrying..."
+              elif echo "$RESULT" | grep -q '"id"'; then
                 break
+              elif echo "$RESULT" | grep -qi "is already committed"; then
+                break
+              elif echo "$RESULT" | grep -q "not enough connections"; then
+                : # retry
+              else
+                echo "gen-0: broadcast FAILED (unexpected error)"
+                kill $PF_PID 2>/dev/null || true
+                exit 1
               fi
               [ "$attempt" -lt 15 ] && sleep 20
             done
+            if echo "$RESULT" | grep -q '"id"'; then
+              TXID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"id\"])")
+              echo "gen-0: broadcast OK, id=$TXID (attempt ${attempt}/15)"
+              echo "GEN0_TXID=$TXID" >> "$GITHUB_ENV"
+            elif echo "$RESULT" | grep -qi "is already committed"; then
+              echo "gen-0: already committed (no-op, attempt ${attempt}/15)"
+            else
+              echo "gen-0: exhausted retries without success"
+              kill $PF_PID 2>/dev/null || true
+              exit 1
+            fi
           else
-            echo "Sign failed or already committed"
+            echo "gen-0: sign FAILED"
+            kill $PF_PID 2>/dev/null || true
+            exit 1
           fi
           kill $PF_PID 2>/dev/null || true
 
       - name: Commit gen-1 generator (port-forward)
-        continue-on-error: true
         env:
           API_KEY: ${{ secrets.GEN_1_NODE_REST_API_KEY }}
         run: |
+          set -euo pipefail
           ADDR="31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV"
           echo "=== Port-forward gen-1 REST API (localhost:16870 -> pod:6870) ==="
           kubectl port-forward pod/dcc-gen-1-0 -n dcc 16870:6870 &
@@ -160,13 +203,46 @@ jobs:
           echo "Signed response: $SIGNED" | head -c 300
           echo ""
           if echo "$SIGNED" | grep -q '"id"'; then
-            echo "=== Broadcasting ==="
-            RESULT=$(curl -s -X POST http://localhost:16870/transactions/broadcast \
-              -H "Content-Type: application/json" \
-              -d "$SIGNED")
-            echo "Broadcast result: $RESULT" | head -c 300
+            for attempt in $(seq 1 15); do
+              echo "=== Broadcasting (attempt ${attempt}/15) ==="
+              set +e
+              RESULT=$(curl -s -X POST http://localhost:16870/transactions/broadcast \
+                -H "Content-Type: application/json" \
+                -d "$SIGNED")
+              CURL_RC=$?
+              set -e
+              echo "Broadcast result: $RESULT" | head -c 300
+              echo ""
+              if [ "$CURL_RC" -ne 0 ] || [ -z "$RESULT" ]; then
+                echo "gen-1: curl network error (rc=$CURL_RC), retrying..."
+              elif echo "$RESULT" | grep -q '"id"'; then
+                break
+              elif echo "$RESULT" | grep -qi "is already committed"; then
+                break
+              elif echo "$RESULT" | grep -q "not enough connections"; then
+                : # retry
+              else
+                echo "gen-1: broadcast FAILED (unexpected error)"
+                kill $PF_PID 2>/dev/null || true
+                exit 1
+              fi
+              [ "$attempt" -lt 15 ] && sleep 20
+            done
+            if echo "$RESULT" | grep -q '"id"'; then
+              TXID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"id\"])")
+              echo "gen-1: broadcast OK, id=$TXID (attempt ${attempt}/15)"
+              echo "GEN1_TXID=$TXID" >> "$GITHUB_ENV"
+            elif echo "$RESULT" | grep -qi "is already committed"; then
+              echo "gen-1: already committed (no-op, attempt ${attempt}/15)"
+            else
+              echo "gen-1: exhausted retries without success"
+              kill $PF_PID 2>/dev/null || true
+              exit 1
+            fi
           else
-            echo "Sign failed or already committed"
+            echo "gen-1: sign FAILED"
+            kill $PF_PID 2>/dev/null || true
+            exit 1
           fi
           kill $PF_PID 2>/dev/null || true
 
@@ -184,3 +260,63 @@ jobs:
              F=$(curl -s http://localhost:6869/blocks/height/finalized | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])" 2>/dev/null)
              echo "Height: $H Finalized: $F Lag: $(( ${H:-0} - ${F:-0} ))"'
           rm -f /tmp/id_rsa
+
+      # Real post-commit verification: previously nothing checked that a broadcast
+      # commit actually resulted in a non-empty NEXT-period committee. This step
+      # polls each freshly-broadcast tx for confirmation, then queries
+      # GET /generators/at/{nextPeriodStart} on the main node's public HTTPS
+      # endpoint and requires BOTH HTTP 200 AND a non-empty JSON array body.
+      #
+      # NOTE: out of range, this endpoint returns HTTP 404 with body "[]" --
+      # a naive `jq length` on that body reads as "0 generators", which is WRONG
+      # (it means "no data for that height", not "empty committee"). Checking
+      # HTTP status is mandatory, not optional.
+      - name: Verify next-period committee
+        run: |
+          set -euo pipefail
+          NODE_URL="https://testnet-node.decentralchain.io"
+
+          for label in GEN0 GEN1; do
+            eval "TXID=\${${label}_TXID:-}"
+            if [ -z "$TXID" ]; then
+              echo "$label: no fresh tx this run (already committed) — skipping confirmation poll"
+              continue
+            fi
+            CONFIRMED=0
+            for attempt in $(seq 1 15); do
+              INFO=$(curl -s "${NODE_URL}/transactions/info/${TXID}" || true)
+              if echo "$INFO" | grep -q '"height"'; then
+                CONFIRMED=1
+                echo "$label: tx $TXID confirmed (attempt ${attempt}/15)"
+                break
+              fi
+              sleep 10
+            done
+            if [ "$CONFIRMED" -ne 1 ]; then
+              echo "$label: tx $TXID did NOT confirm after 15 attempts (~2.5min)"
+              exit 1
+            fi
+          done
+
+          # Mirrors the node's GenerationPeriod.next.start arithmetic for the
+          # steady-state (non-zero period) case: testnet generation-period-length=100.
+          HEIGHT_JSON=$(curl -s "${NODE_URL}/blocks/height")
+          CURR_HEIGHT=$(echo "$HEIGHT_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['height'])")
+          GEN_PERIOD_LEN=100
+          NEXT_PERIOD_START=$(( ((CURR_HEIGHT / GEN_PERIOD_LEN) + 1) * GEN_PERIOD_LEN + 1 ))
+
+          HTTP_CODE=$(curl -s -o /tmp/generators_body -w '%{http_code}' \
+            "${NODE_URL}/generators/at/${NEXT_PERIOD_START}")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Committee verification FAILED: GET /generators/at/${NEXT_PERIOD_START} returned HTTP ${HTTP_CODE} (expected 200). Body: $(cat /tmp/generators_body | head -c 300)"
+            exit 1
+          fi
+
+          COUNT=$(jq 'length' /tmp/generators_body 2>/dev/null || echo 0)
+          if [ "$COUNT" -le 0 ]; then
+            echo "Committee verification FAILED: HTTP 200 but next-period committee at height ${NEXT_PERIOD_START} is EMPTY ($(cat /tmp/generators_body))"
+            exit 1
+          fi
+
+          echo "Committee verification OK: next period (start ${NEXT_PERIOD_START}) has ${COUNT} committed generator(s)"
