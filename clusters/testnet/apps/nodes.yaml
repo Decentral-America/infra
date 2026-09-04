@@ -73,9 +73,9 @@ data:
           genesis {
             average-block-delay = 30s
             initial-base-target = 218
-            timestamp = 1788172787831
-            block-timestamp = 1788172787831
-            signature = "2EkpH6JdjDy9ifrtZrHakky1LoBSrYx9omBRYjAvkESWHYUeP3HiYK9bfje4YsdFtTWpAHJq7Qrp96Zu46mfWMRc"
+            timestamp = 1788539579643
+            block-timestamp = 1788539579643
+            signature = "5be1Fs9oqWGnUt1vVpBDXaJNN583tqic72hFwY9mmMf56n5WevrmwqMzdLSRVdEu7DWGhuQkVL1zhYBn4iuz9DX4"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
@@ -173,6 +173,17 @@ data:
         # keeps each cleanup pass's batch (and its memory pressure) smaller.
         cleanup-interval = 100
       }
+
+      # Feature 26 (AdjustedBlockRewardDistribution) — operator-approved 2026-09-02 monetary
+      # policy change: block reward becomes 20-DCC-equivalent and feature 23's 10x boost
+      # retires. It is deliberately NOT pre-activated at genesis; it activates strictly by
+      # vote, like every other votable DCC feature. Blocks produced by this node carry a
+      # yes-vote for 26 while this list contains it. Activation needs
+      # blocks-for-feature-activation (2700) of every feature-check-blocks-period (3000)
+      # window -- 90% -- so ALL FOUR testnet nodes must carry this list. See RELAUNCH-20260904.md §4.
+      features {
+        supported = [26]
+      }
     }
 
 ---
@@ -220,9 +231,9 @@ data:
           genesis {
             average-block-delay = 30s
             initial-base-target = 218
-            timestamp = 1788172787831
-            block-timestamp = 1788172787831
-            signature = "2EkpH6JdjDy9ifrtZrHakky1LoBSrYx9omBRYjAvkESWHYUeP3HiYK9bfje4YsdFtTWpAHJq7Qrp96Zu46mfWMRc"
+            timestamp = 1788539579643
+            block-timestamp = 1788539579643
+            signature = "5be1Fs9oqWGnUt1vVpBDXaJNN583tqic72hFwY9mmMf56n5WevrmwqMzdLSRVdEu7DWGhuQkVL1zhYBn4iuz9DX4"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
@@ -299,6 +310,17 @@ data:
         # smaller than gen-0's 768m), same reduced cleanup-interval choice.
         cleanup-interval = 100
       }
+
+      # Feature 26 (AdjustedBlockRewardDistribution) — operator-approved 2026-09-02 monetary
+      # policy change: block reward becomes 20-DCC-equivalent and feature 23's 10x boost
+      # retires. It is deliberately NOT pre-activated at genesis; it activates strictly by
+      # vote, like every other votable DCC feature. Blocks produced by this node carry a
+      # yes-vote for 26 while this list contains it. Activation needs
+      # blocks-for-feature-activation (2700) of every feature-check-blocks-period (3000)
+      # window -- 90% -- so ALL FOUR testnet nodes must carry this list. See RELAUNCH-20260904.md §4.
+      features {
+        supported = [26]
+      }
     }
 
 ---
@@ -346,9 +368,9 @@ data:
           genesis {
             average-block-delay = 30s
             initial-base-target = 218
-            timestamp = 1788172787831
-            block-timestamp = 1788172787831
-            signature = "2EkpH6JdjDy9ifrtZrHakky1LoBSrYx9omBRYjAvkESWHYUeP3HiYK9bfje4YsdFtTWpAHJq7Qrp96Zu46mfWMRc"
+            timestamp = 1788539579643
+            block-timestamp = 1788539579643
+            signature = "5be1Fs9oqWGnUt1vVpBDXaJNN583tqic72hFwY9mmMf56n5WevrmwqMzdLSRVdEu7DWGhuQkVL1zhYBn4iuz9DX4"
             initial-balance = 10000000000000000
             transactions = [
               { recipient = "31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq", amount = 1000000000000000 }
@@ -414,6 +436,17 @@ data:
         round-timeout = 1200ms
         settled-depth = 3
       }
+
+      # Feature 26 (AdjustedBlockRewardDistribution) — operator-approved 2026-09-02 monetary
+      # policy change: block reward becomes 20-DCC-equivalent and feature 23's 10x boost
+      # retires. It is deliberately NOT pre-activated at genesis; it activates strictly by
+      # vote, like every other votable DCC feature. Blocks produced by this node carry a
+      # yes-vote for 26 while this list contains it. Activation needs
+      # blocks-for-feature-activation (2700) of every feature-check-blocks-period (3000)
+      # window -- 90% -- so ALL FOUR testnet nodes must carry this list. See RELAUNCH-20260904.md §4.
+      features {
+        supported = [26]
+      }
     }
 
 ---
@@ -473,7 +506,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:e2e84774ddd5cffa374aa7d88254feec2bfc2ddeec18c42d1c822d1b602bd527
+          image: ghcr.io/decentral-america/node-scala@sha256:b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -601,7 +634,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:e2e84774ddd5cffa374aa7d88254feec2bfc2ddeec18c42d1c822d1b602bd527
+          image: ghcr.io/decentral-america/node-scala@sha256:b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -718,7 +751,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:e2e84774ddd5cffa374aa7d88254feec2bfc2ddeec18c42d1c822d1b602bd527
+          image: ghcr.io/decentral-america/node-scala@sha256:b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

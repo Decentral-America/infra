@@ -58,7 +58,7 @@ jobs:
                -e DCC_NETWORK=testnet \
                -e DCC_HEAP_SIZE=2g \
                -e DCC_REST_API_BIND=0.0.0.0 \
-               ghcr.io/decentral-america/node-scala@sha256:8a1c9d17e03a305ca763b0c53c1e2c080e891c64d8cd6946abd75507c8c1f69d # sha-9c49632 -- KEEP IN SYNC with update-node-image.yml and restart-host-network.yml (see PR#88 "tag-drift bomb"; recurred 2026-08-03, cf. PR fixing this comment)
+               ghcr.io/decentral-america/node-scala@sha256:b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098 # testnet-relaunch-20260904 -- KEEP IN SYNC with update-node-image.yml and restart-host-network.yml (see PR#88 "tag-drift bomb"; recurred 2026-08-03)
              sleep 20
              echo "=== Node status ==="
              docker ps | grep node-scala
