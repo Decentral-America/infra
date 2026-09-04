@@ -173,6 +173,17 @@ data:
         # keeps each cleanup pass's batch (and its memory pressure) smaller.
         cleanup-interval = 100
       }
+
+      # Feature 26 (AdjustedBlockRewardDistribution) — operator-approved 2026-09-02 monetary
+      # policy change: block reward becomes 20-DCC-equivalent and feature 23's 10x boost
+      # retires. It is deliberately NOT pre-activated at genesis; it activates strictly by
+      # vote, like every other votable DCC feature. Blocks produced by this node carry a
+      # yes-vote for 26 while this list contains it. Activation needs
+      # blocks-for-feature-activation (2700) of every feature-check-blocks-period (3000)
+      # window -- 90% -- so ALL FOUR testnet nodes must carry this list. See RELAUNCH-20260904.md §4.
+      features {
+        supported = [26]
+      }
     }
 
 ---
@@ -299,6 +310,17 @@ data:
         # smaller than gen-0's 768m), same reduced cleanup-interval choice.
         cleanup-interval = 100
       }
+
+      # Feature 26 (AdjustedBlockRewardDistribution) — operator-approved 2026-09-02 monetary
+      # policy change: block reward becomes 20-DCC-equivalent and feature 23's 10x boost
+      # retires. It is deliberately NOT pre-activated at genesis; it activates strictly by
+      # vote, like every other votable DCC feature. Blocks produced by this node carry a
+      # yes-vote for 26 while this list contains it. Activation needs
+      # blocks-for-feature-activation (2700) of every feature-check-blocks-period (3000)
+      # window -- 90% -- so ALL FOUR testnet nodes must carry this list. See RELAUNCH-20260904.md §4.
+      features {
+        supported = [26]
+      }
     }
 
 ---
@@ -413,6 +435,17 @@ data:
         authoritative = true
         round-timeout = 1200ms
         settled-depth = 3
+      }
+
+      # Feature 26 (AdjustedBlockRewardDistribution) — operator-approved 2026-09-02 monetary
+      # policy change: block reward becomes 20-DCC-equivalent and feature 23's 10x boost
+      # retires. It is deliberately NOT pre-activated at genesis; it activates strictly by
+      # vote, like every other votable DCC feature. Blocks produced by this node carry a
+      # yes-vote for 26 while this list contains it. Activation needs
+      # blocks-for-feature-activation (2700) of every feature-check-blocks-period (3000)
+      # window -- 90% -- so ALL FOUR testnet nodes must carry this list. See RELAUNCH-20260904.md §4.
+      features {
+        supported = [26]
       }
     }
 
