@@ -74,11 +74,10 @@ jobs:
              if echo "$SIGNED" | grep -q "\"id\""; then
                RESULT=$(curl -s -X POST http://localhost:6869/transactions/broadcast \
                  -H "Content-Type: application/json" -d "$SIGNED")
-               if echo "$RESULT" | grep -q "\"id\""; then
-                 TXID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"id\"])")
-                 echo "Main: broadcast OK, id=$TXID"
-               elif echo "$RESULT" | grep -qi "is already committed"; then
+               if echo "$RESULT" | grep -qi "is already committed"; then
                  echo "Main: already committed (no-op)"
+               elif TXID=$(echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[\"id\"]) if isinstance(d, dict) and \"id\" in d else sys.exit(1)" 2>/dev/null); then
+                 echo "Main: broadcast OK, id=$TXID"
                else
                  echo "Main: broadcast FAILED: $(echo $RESULT | head -c 300)"
                  exit 1
@@ -113,8 +112,14 @@ jobs:
             # kept progressing regardless). A short retry here makes each
             # individual fire much more likely to succeed on its own.
             #
-            # break ONLY on: (a) success ("id" in response) or (b) the
-            # specific already-committed error. Retry on "not enough
+            # break ONLY on: (a) the specific already-committed error or
+            # (b) success (top-level "id" field, checked via jq so a
+            # rejected broadcast that echoes back the tx as a nested
+            # transaction.id doesn't false-positive as success -- confirmed
+            # live 2026-09-02 that a naive `grep '"id"'` substring match hit
+            # that nested id and crashed the python3 extractor with
+            # KeyError). Already-committed is checked FIRST since it's the
+            # more specific/certain signal. Retry on "not enough
             # connections" or a curl network failure (empty RESULT). Any
             # OTHER error is unexpected -- fail loudly instead of silently
             # swallowing it.
@@ -126,9 +131,9 @@ jobs:
               set -e
               if [ "$CURL_RC" -ne 0 ] || [ -z "$RESULT" ]; then
                 echo "Gen-0: curl network error (rc=$CURL_RC) on attempt ${attempt}/15, retrying..."
-              elif echo "$RESULT" | grep -q '"id"'; then
-                break
               elif echo "$RESULT" | grep -qi "is already committed"; then
+                break
+              elif echo "$RESULT" | jq -e 'has("id")' >/dev/null 2>&1; then
                 break
               elif echo "$RESULT" | grep -q "not enough connections"; then
                 : # retry
@@ -138,12 +143,12 @@ jobs:
               fi
               [ "$attempt" -lt 15 ] && sleep 20
             done
-            if echo "$RESULT" | grep -q '"id"'; then
-              TXID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"id\"])")
+            if echo "$RESULT" | grep -qi "is already committed"; then
+              echo "Gen-0: already committed (no-op, attempt ${attempt}/15)"
+            elif echo "$RESULT" | jq -e 'has("id")' >/dev/null 2>&1; then
+              TXID=$(echo "$RESULT" | jq -r '.id')
               echo "Gen-0: broadcast OK, id=$TXID (attempt ${attempt}/15)"
               echo "GEN0_TXID=$TXID" >> "$GITHUB_ENV"
-            elif echo "$RESULT" | grep -qi "is already committed"; then
-              echo "Gen-0: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "Gen-0: exhausted retries without success: $(echo $RESULT | head -c 300)"
               exit 1
@@ -175,9 +180,9 @@ jobs:
               set -e
               if [ "$CURL_RC" -ne 0 ] || [ -z "$RESULT" ]; then
                 echo "Gen-1: curl network error (rc=$CURL_RC) on attempt ${attempt}/15, retrying..."
-              elif echo "$RESULT" | grep -q '"id"'; then
-                break
               elif echo "$RESULT" | grep -qi "is already committed"; then
+                break
+              elif echo "$RESULT" | jq -e 'has("id")' >/dev/null 2>&1; then
                 break
               elif echo "$RESULT" | grep -q "not enough connections"; then
                 : # retry
@@ -187,12 +192,12 @@ jobs:
               fi
               [ "$attempt" -lt 15 ] && sleep 20
             done
-            if echo "$RESULT" | grep -q '"id"'; then
-              TXID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"id\"])")
+            if echo "$RESULT" | grep -qi "is already committed"; then
+              echo "Gen-1: already committed (no-op, attempt ${attempt}/15)"
+            elif echo "$RESULT" | jq -e 'has("id")' >/dev/null 2>&1; then
+              TXID=$(echo "$RESULT" | jq -r '.id')
               echo "Gen-1: broadcast OK, id=$TXID (attempt ${attempt}/15)"
               echo "GEN1_TXID=$TXID" >> "$GITHUB_ENV"
-            elif echo "$RESULT" | grep -qi "is already committed"; then
-              echo "Gen-1: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "Gen-1: exhausted retries without success: $(echo $RESULT | head -c 300)"
               exit 1
@@ -231,9 +236,9 @@ jobs:
               set -e
               if [ "$CURL_RC" -ne 0 ] || [ -z "$RESULT" ]; then
                 echo "Val-0: curl network error (rc=$CURL_RC) on attempt ${attempt}/15, retrying..."
-              elif echo "$RESULT" | grep -q '"id"'; then
-                break
               elif echo "$RESULT" | grep -qi "is already committed"; then
+                break
+              elif echo "$RESULT" | jq -e 'has("id")' >/dev/null 2>&1; then
                 break
               elif echo "$RESULT" | grep -q "not enough connections"; then
                 : # retry
@@ -243,12 +248,12 @@ jobs:
               fi
               [ "$attempt" -lt 15 ] && sleep 20
             done
-            if echo "$RESULT" | grep -q '"id"'; then
-              TXID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"id\"])")
+            if echo "$RESULT" | grep -qi "is already committed"; then
+              echo "Val-0: already committed (no-op, attempt ${attempt}/15)"
+            elif echo "$RESULT" | jq -e 'has("id")' >/dev/null 2>&1; then
+              TXID=$(echo "$RESULT" | jq -r '.id')
               echo "Val-0: broadcast OK, id=$TXID (attempt ${attempt}/15)"
               echo "VAL0_TXID=$TXID" >> "$GITHUB_ENV"
-            elif echo "$RESULT" | grep -qi "is already committed"; then
-              echo "Val-0: already committed (no-op, attempt ${attempt}/15)"
             else
               echo "Val-0: exhausted retries without success: $(echo $RESULT | head -c 300)"
               exit 1
