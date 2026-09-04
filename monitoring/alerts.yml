@@ -45,6 +45,28 @@ groups:
           summary: "DCC exporter cannot reach node endpoints"
           description: "dcc_scrape_error=1 for 5 min. Node REST API may be unreachable."
 
+      # ── Committee gap early warning (root cause of testnet committee-gap incidents) ──
+      # dcc_generation_period_pct_elapsed and dcc_next_period_committee_size are emitted
+      # by exporter.py from /node/status (generationPeriodLength) and
+      # GET /generators/at/{nextPeriodStart} respectively. The committee-size metric is
+      # -1 when the endpoint returned a non-200 status (e.g. 404 out-of-range) -- that is
+      # NOT the same as a genuine empty committee, so the alert must match `== 0` exactly,
+      # never `<= 0` or "not > 0", to avoid the exact naive-jq-length bug this whole task
+      # exists to fix (see auto-commit-generators.yml / commit-generators-hotstuff.yml
+      # verification steps and CommonGeneratorsApi's HTTP-404-body-"[]" behavior).
+      # Fires BEFORE the period actually runs out empty, so on-call has time to run
+      # auto-commit-generators.yml / commit-generators-hotstuff.yml manually.
+      - alert: CommitteeGapUpcoming
+        expr: |
+          (dcc_generation_period_pct_elapsed > 60) and (dcc_next_period_committee_size == 0)
+        for: 5m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "DCC next generation period's committee is EMPTY with current period >60% elapsed on {{ $labels.node }}"
+          description: "dcc_generation_period_pct_elapsed > 60 and dcc_next_period_committee_size == 0 for 5 min. The upcoming generation period has no committed generators -- committee is about to go empty. Run auto-commit-generators.yml and/or commit-generators-hotstuff.yml now to avoid a T0/T2 stall."
+
   - name: dcc-testnet-infra
     interval: 60s
     rules:
@@ -88,6 +110,22 @@ groups:
         annotations:
           summary: "observational HotStuff commit static for 30 min while the chain advances"
           description: "dcc_hotstuff_finalized_height has not advanced in 30 min although dcc_block_height is still increasing. HotStuff QC formation likely regressed (observational only; feature-25 finality is unaffected). Diagnose with hotstuff-status.yml and check for '[HotStuff] QUORUM REACHED but no QC' WARNs."
+
+      # ── T2 HotStuff real equivocations (CRITICAL, unlike other observational T2 alerts) ──────
+      # dcc_hotstuff_equivocations_total is emitted only when an equivocation is detected
+      # (voter signed conflicting votes at the same view/phase). ANY nonzero value is unambiguous
+      # evidence of either a Byzantine actor or a protocol-violating bug — not merely
+      # observational. Severity is CRITICAL.
+      - alert: HotStuffEquivocationDetected
+        expr: |
+          dcc_hotstuff_equivocations_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "HotStuff equivocation detected -- CRITICAL, unlike T2's other observational alerts"
+          description: "dcc_hotstuff_equivocations_total > 0. A committee member signed conflicting votes at the same view/phase -- either a Byzantine actor or a protocol-violating bug. Check node logs for '[HotStuff] EQUIVOCATION DETECTED' and investigate the named voter index immediately."
 
       # ── User-facing service uptime (MON-1) ─────────────────────────────────
       # dcc_service_up is emitted by exporter.py for each hosted service (matcher,
