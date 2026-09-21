@@ -22,9 +22,12 @@ run-name: E2E (${{ inputs.suite || 'full' }}) — ${{ inputs.correlation_id }}
 on:
   # No schedule: this suite only ever exercises the main testnet node
   # (DCC_TEST_NODE_URL below), which canary-transaction.yml already checks
-  # every 15 min for a fraction of the cost. A nightly full re-run added no
-  # independent signal -- it just rediscovered the same outage hours later,
-  # at ~8 min/run. Triggered on-demand via the admin dashboard's "Run E2E"
+  # every 15 min. Removing the nightly cron is duplicate-signal hygiene, not
+  # a cost saving -- infra is public, and GitHub's Actions timing API reports
+  # 0 billable minutes for every workflow here regardless, so no per-workflow
+  # cost was ever attributable to this cron. It just re-discovered, hours
+  # later on a slower cadence, the same single-node outage canary-transaction
+  # already catches. Triggered on-demand via the admin dashboard's "Run E2E"
   # button (workflow_dispatch) instead.
   workflow_dispatch:
     inputs:
