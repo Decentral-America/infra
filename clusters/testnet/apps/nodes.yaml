@@ -109,6 +109,10 @@ data:
         # + main's enable-peers-exchange=no mean gen-0 and gen-1 don't actually dial each other today
         # — but this closes the latent asymmetry preemptively, same fix class as RC#2.
         max-single-host-connections = 8
+        # In-process peer-reconnection stall detection (node-scala PR #61), replacing
+        # peer-watchdog.yml. Soak on gen-0/gen-1/val-0 with the external watchdog kept running as
+        # safety net until Task 5 of docs/superpowers/plans/2026-09-12-inprocess-peer-stall-detection.md.
+        peer-stall-threshold = 900
       }
 
       wallet {
@@ -136,6 +140,11 @@ data:
         quorum = 1
         micro-block-interval = 2s
         interval-after-last-block-then-generation-is-allowed = 15d
+        # In-process self-commit-to-generation (node-scala PR #60), replacing the
+        # auto-commit-generators/commit-generators-hotstuff GH Actions crons. Soaking on
+        # gen-0/gen-1/val-0 only (not main) with both crons kept running as safety net until
+        # Task 5 of docs/superpowers/plans/2026-09-12-inprocess-self-commit-generation.md.
+        self-commit-to-generation = yes
       }
 
       rest-api {
@@ -261,6 +270,8 @@ data:
         # Mirrors main's dcc.conf override — see the matching comment on gen-0's network block above
         # (2026-08-04 gen-0/gen-1 churn investigation): closes a latent asymmetry, not an active bug.
         max-single-host-connections = 8
+        # In-process peer-reconnection stall detection (node-scala PR #61) — see gen-0's note above.
+        peer-stall-threshold = 900
       }
 
       wallet {
@@ -277,6 +288,8 @@ data:
         quorum = 1
         micro-block-interval = 2s
         interval-after-last-block-then-generation-is-allowed = 15d
+        # In-process self-commit-to-generation (node-scala PR #60) — see gen-0's note above.
+        self-commit-to-generation = yes
       }
 
       rest-api {
@@ -398,6 +411,8 @@ data:
         # Mirrors main's dcc.conf override — see the matching comment on gen-0's network block
         # (2026-08-04 gen-0/gen-1 churn investigation): closes a latent asymmetry, not an active bug.
         max-single-host-connections = 8
+        # In-process peer-reconnection stall detection (node-scala PR #61) — see gen-0's note above.
+        peer-stall-threshold = 900
       }
 
       wallet {
@@ -410,6 +425,8 @@ data:
         enable = yes
         quorum = 0
         interval-after-last-block-then-generation-is-allowed = 15d
+        # In-process self-commit-to-generation (node-scala PR #60) — see gen-0's note above.
+        self-commit-to-generation = yes
       }
 
       rest-api {
