@@ -1,0 +1,22 @@
+name: Canary Address Check (one-off diagnostic)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save @decentralchain/ts-lib-crypto@latest
+      - name: Print canary address only (never the seed)
+        env:
+          DCC_CANARY_SEED: ${{ secrets.DCC_CANARY_SEED }}
+        run: |
+          node -e "
+          const { address } = require('@decentralchain/ts-lib-crypto');
+          console.log('CANARY_ADDRESS=' + address(process.env.DCC_CANARY_SEED, '!'));
+          "
