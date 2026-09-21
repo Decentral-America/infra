@@ -21,9 +21,12 @@ requires their 2/3 stake (main alone ≈29% < 2/3) → **decentralized + safety-
 protocol's one-period cadence). To get *fully decentralized block production* back **with** tight
 finality, ship §3 (endorsement rebroadcast).
 
-Fleet is **digest-pinned** to the canonical build `be2dcfc0` (`sha256:9d7d4f31…`) everywhere
-(k8s `nodes.yaml` + the 3 VPS deploy workflows). Recover a gen node only via
-`migrate-state-snapshot.yml` — the chain is un-resyncable from genesis (RUNBOOK IR-5).
+**STALE as of the 2026-09-04 relaunch — corrected 2026-09-21:** the fleet is no longer pinned
+to `be2dcfc0`; all four testnet nodes run the digest-pinned relaunch image (`sha256:0346f624…`,
+built from the fixed/re-genesised chain). Genesis-from-scratch resync now works normally, so
+the `migrate-state-snapshot.yml` recovery path described here no longer applies — that workflow
+was archived 2026-09-21 (see `.github/archived-workflows/README.md`). The `be2dcfc0`-era detail
+below (§ pinning history, endorsement-rebroadcast patch) is kept as historical record only.
 
 ---
 
@@ -166,6 +169,8 @@ equivocation), aggregator `EndorsementStorage` dedups (idempotent), bounded by t
 ## Cross-cutting guardrails
 - Fleet stays **digest-pinned**; intentional image changes go through `pin-node-image-digest.yml`
   (k8s) + the 3 VPS deploy workflows, never the mutable `node-scala-testnet-latest` tag.
-- Gen-node recovery = `migrate-state-snapshot.yml`, never `resync-gen-nodes.yml` (RUNBOOK IR-5).
+- Gen-node recovery: **stale, corrected 2026-09-21** — `migrate-state-snapshot.yml` was archived;
+  it was a one-off recovery for the pre-relaunch, state-hash-inconsistent chain. Post-relaunch,
+  gen nodes resync normally from genesis via the standard StatefulSet/PVC path.
 - Every phase above has an explicit rollback; never switch the aggregator (main) or deploy consensus
   code without a verified prior step.
