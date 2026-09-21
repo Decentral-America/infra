@@ -16,7 +16,8 @@ jobs:
         env:
           DCC_CANARY_SEED: ${{ secrets.DCC_CANARY_SEED }}
         run: |
-          node -e "
-          const { address } = require('@decentralchain/ts-lib-crypto');
+          cat <<'JSEOF' > check.mjs
+          import { address } from '@decentralchain/ts-lib-crypto';
           console.log('CANARY_ADDRESS=' + address(process.env.DCC_CANARY_SEED, '!'));
-          "
+          JSEOF
+          node check.mjs
