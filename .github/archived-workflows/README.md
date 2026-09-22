@@ -47,5 +47,19 @@ missing), `stress-test.yml` (live admin-dashboard "Run Stress Test" button — d
 confirmed wired via `correlation_id` in `admin-dashboard/src/routes/api.load-test.stream.ts`),
 `prune-released-chain-volumes.yml` (actively scheduled, prevents real recurring billing).
 
+Archived 2026-09-22, second pass — these three were each a bespoke, hand-written diagnostic
+script for one specific past incident's symptom (different `kubectl`/grep patterns each time,
+not a shared reusable tool), all read-only, none run in 6+ weeks:
+
+| Workflow | Last run before archiving | Why |
+|---|---|---|
+| `hotstuff-status.yml` | 2026-08-03 | One-off per-pod HotStuff/image/status dump written for a specific investigation |
+| `peer-check.yml` | 2026-08-03 | "Final Fork Reconciliation Check" — one-time fork-reconciliation investigation, name says it all |
+| `deep-finality-diag.yml` | 2026-08-04 | Investigated why gen-1 intermittently dropped from the 2/3 finality set; that investigation concluded |
+
+`cluster-diagnostics.yml` is kept as the general-purpose replacement — broader scope (health +
+P2P connectivity + optional remediation), "safe to run anytime" by its own header, and the only
+one of the four still actually exercised regularly.
+
 If any of these are needed again, move the file back to `.github/workflows/` — nothing else
 to restore.
