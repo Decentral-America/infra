@@ -7,9 +7,15 @@
 #   dcc-gen-1  generator  P2P :6864
 #   dcc-val-0  validator  P2P :6865
 #
-# Testnet:  LKE standard control plane (free), 1× g6-standard-2, eu-central
+# Testnet:  LKE standard control plane (free), eu-central
+#             primary pool:  1× g6-standard-4 (the 3 peer-node StatefulSets)
+#             extra pool:    2× g6-standard-2, label role=exchange (exchange app
+#                            stack, nodeSelector in clusters/testnet/apps/exchange/)
 # Mainnet:  LKE HA control plane ($60/mo, irreversible), dedicated CPU, 2+ nodes
 #           Set lke_ha = true and lke_node_type = "g6-dedicated-2" in mainnet.tfvars
+#
+# Every pool must be declared here: a pool added by hand in the Linode console is
+# invisible to cost review and makes drift-detect.yml fail on every run.
 #
 # NOTE: UFW is intentionally NOT installed on LKE nodes. Kubelet, kube-proxy,
 # and Calico all manage iptables rules directly; UFW would conflict and break
@@ -27,6 +33,16 @@ resource "linode_lke_cluster" "peer_nodes" {
   pool {
     type  = var.lke_node_type
     count = var.lke_node_count
+  }
+
+  # Declared after the primary pool so pool ordering matches the live cluster.
+  dynamic "pool" {
+    for_each = var.lke_extra_pools
+    content {
+      type   = pool.value.type
+      count  = pool.value.count
+      labels = pool.value.labels
+    }
   }
 
   control_plane {

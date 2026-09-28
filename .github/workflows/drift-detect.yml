@@ -169,10 +169,36 @@ jobs:
           LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
 
+      # A committed <network>.tfvars does not mean the network is provisioned:
+      # mainnet.tfvars is committed ahead of launch, and planning it failed every
+      # week on a variable validation, keeping this job permanently red -- which
+      # hid a real finding in the testnet leg (Linode API: "This Linode has been
+      # suspended", 2026-09-21 onwards). An empty workspace state means the
+      # network has never been applied, so there is nothing to drift from.
+      - name: Check workspace has state
+        id: state
+        if: >-
+          steps.provisioned.outputs.exists == 'true' && (
+            github.event_name != 'workflow_dispatch' ||
+            inputs.network == 'all' ||
+            inputs.network == matrix.network
+          )
+        run: |
+          set -euo pipefail
+          if [ -n "$(tofu state list)" ]; then
+            echo "has_state=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_state=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ matrix.network }} workspace has no state -- never applied, skipping plan."
+          fi
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+
       - name: OpenTofu Plan (drift detection)
         id: plan
         if: >-
-          steps.provisioned.outputs.exists == 'true' && (
+          steps.state.outputs.has_state == 'true' && (
             github.event_name != 'workflow_dispatch' ||
             inputs.network == 'all' ||
             inputs.network == matrix.network
@@ -231,7 +257,7 @@ jobs:
         run: |
           NETWORK="${{ matrix.network }}"
           STATUS="${{ steps.plan.outputs.status }}"
-          if [ "${{ steps.provisioned.outputs.exists }}" = "false" ]; then
+          if [ "${{ steps.provisioned.outputs.exists }}" = "false" ] || [ "${{ steps.state.outputs.has_state }}" = "false" ]; then
             STATUS="not-provisioned"
           fi
 
@@ -240,7 +266,7 @@ jobs:
 
           case "$STATUS" in
             not-provisioned)
-              echo "⏭️ **Not provisioned** — \`$NETWORK.tfvars\` doesn't exist yet, skipped." >> "$GITHUB_STEP_SUMMARY"
+              echo "⏭️ **Not provisioned** — no \`$NETWORK.tfvars\`, or its workspace has no state (never applied). Skipped." >> "$GITHUB_STEP_SUMMARY"
               ;;
             clean)
               echo "✅ **No drift detected** — live infrastructure matches the desired state." >> "$GITHUB_STEP_SUMMARY"
@@ -265,7 +291,7 @@ jobs:
 
       - name: Fail if drift or error detected
         if: >-
-          steps.provisioned.outputs.exists == 'true' &&
+          steps.state.outputs.has_state == 'true' &&
           (steps.plan.outputs.status != 'clean' && steps.plan.outputs.status != '') &&
           (github.event_name != 'workflow_dispatch' ||
            inputs.network == 'all' ||
