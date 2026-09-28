@@ -9,6 +9,9 @@ variables {
   postgres_password      = "test-postgres-password"
   DEFAULT_MATCHER        = "3PC9BfRwJWWiw9AREE2B3eWzCks3CYtg4yo"
   blockchain_updates_url = "grpcs://mainnet-node.decentralchain.io:6881"
+  # Both are required (validation rejects an empty list); test-only documentation CIDRs.
+  lke_ssh_allowed_ips      = ["192.0.2.1/32"]
+  lke_federate_allowed_ips = ["192.0.2.2/32"]
 }
 
 run "validate_configuration" {

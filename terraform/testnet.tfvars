@@ -46,6 +46,13 @@ lke_k8s_version = "1.35"
 lke_node_type   = "g6-standard-4" # 4 vCPU / 8 GB — fits 3 JVM nodes + monitoring stack
 lke_node_count  = 1
 lke_ha          = false # Standard control plane (free). Mainnet uses true.
+
+# Exchange app stack (clusters/testnet/apps/exchange/deployments.yaml pins its pods
+# with nodeSelector role=exchange). This pool was created in the Linode console and
+# declared here afterwards to match the live cluster exactly (pool 946807).
+lke_extra_pools = [
+  { type = "g6-standard-2", count = 2, labels = { role = "exchange" } },
+]
 # SSH access restricted to team IPs. Add VPN egress or office CIDR here.
 lke_ssh_allowed_ips = ["201.182.55.117/32"]
 # Cross-site Prometheus federation: only Newark (66.228.55.154, the main node

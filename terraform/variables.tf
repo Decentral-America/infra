@@ -177,6 +177,16 @@ variable "lke_node_count" {
   default     = 1
 }
 
+variable "lke_extra_pools" {
+  description = "Additional LKE node pools after the primary peer-node pool, e.g. the testnet exchange-app pool (role=exchange)."
+  type = list(object({
+    type   = string
+    count  = number
+    labels = optional(map(string), {})
+  }))
+  default = []
+}
+
 variable "lke_ha" {
   description = "Enable LKE HA control plane (3-replica etcd). IRREVERSIBLE — must be set at cluster creation. Required for mainnet."
   type        = bool
