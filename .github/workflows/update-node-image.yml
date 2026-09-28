@@ -2,6 +2,9 @@ name: Update Main Node Image (NO DATA WIPE)
 # Updates the node-scala image without wiping chain data.
 # Downloads fresh plugin JARs from the latest matcher CI build (plugin-jars artifact).
 # Use restart-host-network.yml ONLY when a clean chain reset is needed.
+# Image digest is read from node-config/testnet/vps-image.env, the single
+# source of truth shared with deploy-node-config.yml and restart-host-network.yml
+# (see that file's header for why: PR#88 "tag-drift bomb", recurred 2026-08-03).
 on:
   workflow_call:
   workflow_dispatch: {}
@@ -17,12 +20,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read pinned VPS image digest
+        id: image
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source node-config/testnet/vps-image.env
+          echo "image=${NODE_SCALA_IMAGE}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy plugin JARs and update node image
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          NODE_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
 
@@ -40,7 +52,7 @@ jobs:
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "${SSH_USER}@${SSH_HOST}" \
             "set +e
-             IMG=ghcr.io/decentral-america/node-scala@sha256:b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098 # testnet-relaunch-20260904 -- KEEP IN SYNC with deploy-node-config.yml and restart-host-network.yml (see PR#88 "tag-drift bomb")
+             IMG='${NODE_IMAGE}'
 
              echo '=== Current node state ==='
              docker ps | grep node-scala

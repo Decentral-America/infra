@@ -1,9 +1,8 @@
 name: Deploy Node Config to VPS
 # Copies dcc.conf from this repo to the VPS and restarts the node (no data wipe)
-# WARNING: this workflow hardcodes its own node-scala image digest below (docker run).
-# That digest MUST match update-node-image.yml and restart-host-network.yml, or a
-# later run of this workflow will silently revert Newark to a stale image (tag-drift
-# bomb, cf. PR#88, recurred 2026-08-03). When bumping the image, update ALL THREE files.
+# Image digest is read from node-config/testnet/vps-image.env, the single
+# source of truth shared with update-node-image.yml and restart-host-network.yml
+# (see that file's header for why: PR#88 "tag-drift bomb", recurred 2026-08-03).
 on:
   workflow_call:
   workflow_dispatch: {}
@@ -18,52 +17,68 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      - name: Read pinned VPS image digest
+        id: image
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source node-config/testnet/vps-image.env
+          echo "image=${NODE_SCALA_IMAGE}" >> "$GITHUB_OUTPUT"
+
       - name: Copy dcc.conf to VPS and restart node
         env:
           SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          NODE_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
           # Copy updated dcc.conf to VPS
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
             node-config/testnet/dcc.conf \
             "${SSH_USER}@${SSH_HOST}:/tmp/dcc.conf.new"
-          # Apply and restart without data wipe
+          # Apply and restart without data wipe. IMG is substituted locally
+          # (single source of truth: node-config/testnet/vps-image.env) before
+          # the script is sent over SSH -- everything else stays single-quoted
+          # remote shell as before.
+          REMOTE_SCRIPT=$(cat <<REMOTE_EOF
+          set +e
+          IMG='${NODE_IMAGE}'
+          echo "=== Update dcc.conf ==="
+          sudo cp /tmp/dcc.conf.new /opt/dcc/config/node-testnet/dcc.conf
+          sudo chown root:root /opt/dcc/config/node-testnet/dcc.conf
+          echo "=== Current height ==="
+          curl -s http://localhost:6869/blocks/height 2>/dev/null
+          echo "=== Restart node (no data wipe) ==="
+          docker stop node-scala-testnet
+          docker rm node-scala-testnet
+          docker run -d \
+            --name node-scala-testnet \
+            --network host \
+            --restart unless-stopped \
+            --memory 4g \
+            --memory-reservation 1g \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            --read-only \
+            --tmpfs /tmp:size=256m,mode=1777,exec \
+            -v node-state-testnet:/var/lib/dcc \
+            -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
+            -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
+            --env-file /opt/dcc/secrets/testnet.env \
+            -e DCC_NETWORK=testnet \
+            -e DCC_HEAP_SIZE=2g \
+            -e DCC_REST_API_BIND=0.0.0.0 \
+            "\$IMG"
+          sleep 20
+          echo "=== Node status ==="
+          docker ps | grep node-scala
+          echo "=== HotStuff in config ==="
+          grep -A3 hotstuff /opt/dcc/config/node-testnet/dcc.conf
+          echo "=== Node version ==="
+          curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"
+          REMOTE_EOF
+          )
           ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'set +e
-             echo "=== Update dcc.conf ==="
-             sudo cp /tmp/dcc.conf.new /opt/dcc/config/node-testnet/dcc.conf
-             sudo chown root:root /opt/dcc/config/node-testnet/dcc.conf
-             echo "=== Current height ==="
-             curl -s http://localhost:6869/blocks/height 2>/dev/null
-             echo "=== Restart node (no data wipe) ==="
-             docker stop node-scala-testnet
-             docker rm node-scala-testnet
-             docker run -d \
-               --name node-scala-testnet \
-               --network host \
-               --restart unless-stopped \
-               --memory 4g \
-               --memory-reservation 1g \
-               --security-opt no-new-privileges:true \
-               --cap-drop ALL \
-               --read-only \
-               --tmpfs /tmp:size=256m,mode=1777,exec \
-               -v node-state-testnet:/var/lib/dcc \
-               -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
-               -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
-               --env-file /opt/dcc/secrets/testnet.env \
-               -e DCC_NETWORK=testnet \
-               -e DCC_HEAP_SIZE=2g \
-               -e DCC_REST_API_BIND=0.0.0.0 \
-               ghcr.io/decentral-america/node-scala@sha256:b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098 # testnet-relaunch-20260904 -- KEEP IN SYNC with update-node-image.yml and restart-host-network.yml (see PR#88 "tag-drift bomb"; recurred 2026-08-03)
-             sleep 20
-             echo "=== Node status ==="
-             docker ps | grep node-scala
-             echo "=== HotStuff in config ==="
-             grep -A3 hotstuff /opt/dcc/config/node-testnet/dcc.conf
-             echo "=== Node version ==="
-             curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"'
+            "${SSH_USER}@${SSH_HOST}" "$REMOTE_SCRIPT"
           rm -f /tmp/id_rsa
