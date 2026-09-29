@@ -7,7 +7,7 @@
 # by digest in compose/caddy.yml — not built on the server.
 
 # renovate: image=caddy tag=2.11.4-builder-alpine
-FROM caddy:2.11.4-builder-alpine@sha256:8e89605351333ad2cc2f3bcc95275a2ccc427f88914050e86a5fde0fd77a63c4 AS builder
+FROM caddy:2.11.4-builder-alpine@sha256:0aa610043dab5da82ad0a0268e46bb852785e6f5160f12f1c6fe3f42903d7e1b AS builder
 
 # Pinned to a specific commit, not a version tag — caddy-ratelimit has only ever
 # cut one release (v0.1.0) and master has since moved 7 commits ahead of it.
@@ -17,5 +17,5 @@ RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
 
 # renovate: image=caddy tag=2.11.4-alpine
-FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+FROM caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy

@@ -34,7 +34,7 @@
 # monitors. LKE Ubuntu kernels (>=5.6) ship WireGuard in-tree.
       initContainers:
         - name: wg-up
-          image: docker.io/alpine:3.20   # TODO: bake+pin an internal image with wireguard-tools+iproute2
+          image: docker.io/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6   # TODO: bake+pin an internal image with wireguard-tools+iproute2
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -73,7 +73,7 @@
 # (e.g. after `ip link del`) and lets you `kubectl exec ... -c wg-mon -- wg show`.
       containers:
         - name: wg-mon
-          image: docker.io/alpine:3.20
+          image: docker.io/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
           command: ["/bin/sh", "-c"]
           args:
             - |

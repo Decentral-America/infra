@@ -10,7 +10,11 @@ services:
     # release notes; carries forward the 12.0.2 -> 13.0.2 security patches
     # (CVE-2026-27876, CVE-2026-9029, CVE-2026-33382, CVE-2026-42127,
     # CVE-2026-42129, CVE-2026-10601, CVE-2026-8609, CVE-2026-8595).
-    image: grafana/grafana:13.1.0@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
+    # Bumped 13.1.0 -> 13.2.3 (2026-09-29, latest stable). The only 13.2
+    # "breaking change" is removal of the alertingSaveStateCompressed feature
+    # flag (not set in monitoring/grafana.ini); scripted dashboards are now
+    # disabled by default (none used — dashboards are file-provisioned JSON).
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     container_name: "grafana-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

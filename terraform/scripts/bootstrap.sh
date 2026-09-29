@@ -78,7 +78,7 @@ apt-get update -qq
 # bookworm-pgdg Packages index at the time this was written) so this
 # provisioning script doesn't silently pull whatever happens to be current
 # when a new server is stood up. Bump deliberately, not implicitly.
-apt-get install -y -qq postgresql-18=18.4-1.pgdg12+1 postgresql-client-18=18.4-1.pgdg12+1
+apt-get install -y -qq postgresql-18=18.6-1.pgdg12+2 postgresql-client-18=18.6-1.pgdg12+2
 
 # -- Docker --------------------------------------------------------------------
 install -m 0755 -d /etc/apt/keyrings

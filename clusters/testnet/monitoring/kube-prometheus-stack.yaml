@@ -24,22 +24,15 @@ spec:
   chart:
     spec:
       chart: kube-prometheus-stack
-      # Bumped from the 65.x-69.x range to the current latest (87.6.0, verified
-      # 2026-07-03; check https://artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
-      # for newer patch/minor releases before widening further).
+      # Bumped 87.x -> 91.8.2 (latest stable, verified against the
+      # prometheus-community index.yaml on 2026-09-29; history: 65.x-69.x ->
+      # 87.6.0 on 2026-07-03). Check
+      # https://artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
+      # for newer patch/minor releases before widening further.
       #
-      # MANUAL STEP REQUIRED BEFORE FLUX RECONCILES THIS BUMP:
-      # This jump crosses ~10 prometheus-operator CRD bumps (op v0.82.0 through
-      # v0.92.0). Flux/Helm will NOT upgrade the CRDs for you (Helm never
-      # upgrades CRDs on `helm upgrade`), so apply the target CRD set manually
-      # first, e.g.:
-      #   kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.92.0/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagerconfigs.yaml
-      #   (repeat for: alertmanagers, podmonitors, probes, prometheusagents,
-      #    prometheuses, prometheusrules, scrapeconfigs, servicemonitors,
-      #    thanosrulers — same base URL, monitoring.coreos.com_<kind>.yaml)
-      # Apply --force-conflicts if server-side-apply reports field ownership
-      # conflicts. Only the final (v0.92.0) CRD set needs applying — CRDs in
-      # this range are additive, no intermediate versions required.
+      # CRDs: upgraded automatically by helm-controller (install/upgrade
+      # crds: CreateReplace below), so a major bump no longer needs the manual
+      # `kubectl apply` of the prometheus-operator CRDs (v0.94.1 for 91.x).
       #
       # Other things to double check before/after this jump (see chart's
       # UPGRADE.md at prometheus-community/helm-charts):
@@ -51,16 +44,33 @@ spec:
       #     v13 changes if anything looks off after upgrade.
       #   - 85.x defaults Prometheus/node-exporter images to distroless
       #     variants — irrelevant unless mirroring images to a private registry.
-      version: ">=87.0.0 <88.0.0"
+      #   - 89.x bumps the Grafana subchart to 13.x (now pulled from
+      #     oci://ghcr.io/grafana-community/helm-charts, bundled in the parent
+      #     chart package — no extra HelmRepository needed).
+      #   - 90.x: control-plane ServiceMonitors switch from bearerTokenFile to
+      #     a chart-created long-lived `<prometheus SA>-token` Secret
+      #     (prometheus.serviceAccount.createTokenSecret=true). None of the
+      #     removed values (bearerTokenFile/caSecret/insecureSkipVerify) are
+      #     set below, so no values migration is needed.
+      #   - 91.x: operator ClusterRole no longer grants wildcard verbs.
+      # Verified offline: `helm template` of 91.8.2 with the values below
+      # renders cleanly (--kube-version 1.35).
+      version: ">=91.8.2 <92.0.0"
       sourceRef:
         kind: HelmRepository
         name: prometheus-community
         namespace: flux-system
+  # CreateReplace makes helm-controller create AND upgrade the chart's CRDs
+  # (including the chart's crds subchart). Plain Helm never upgrades CRDs on
+  # `helm upgrade`, which is why every major bump of this chart used to need a
+  # manual `kubectl apply` of the prometheus-operator CRDs before Flux reconciled.
   install:
     createNamespace: true
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
+    crds: CreateReplace
     remediation:
       retries: 3
   # valuesFrom injects credentials directly from the monitoring-secrets Secret.
