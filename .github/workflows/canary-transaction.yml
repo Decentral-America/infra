@@ -47,9 +47,9 @@ jobs:
 
     steps:
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6.5.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install signing/broadcast dependencies
         run: npm install --no-save @decentralchain/transactions@latest @decentralchain/ts-lib-crypto@latest
@@ -59,7 +59,7 @@ jobs:
       # ships no "exports" map, so Node's ESM resolver (unlike CJS require()) requires the
       # exact file path and refuses to guess ".js" — every `import` of @decentralchain/transactions
       # crashes with ERR_MODULE_NOT_FOUND before this fix. Confirmed reproducing on both Node 22
-      # (this job's version) and Node 24 with a plain `npm install` of the published package,
+      # and Node 24 (this job's version, the current Active LTS) with a plain `npm install` of the published package,
       # so this is not specific to this workflow's setup. Tracked upstream at
       # github.com/Decentral-America/protobuf-serialization; this sed is the minimal workaround
       # until a patched version is published there — remove once that lands and this step

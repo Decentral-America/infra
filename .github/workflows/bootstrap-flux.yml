@@ -48,8 +48,8 @@ jobs:
 
       - name: Install Flux CLI
         env:
-          FLUX_VERSION: '2.9.0'
-          FLUX_SHA256: '7aa9779fc7ec6d030e609dab7dbed8c6fc9e3a7f4670834ad02369268aaf341f'
+          FLUX_VERSION: '2.9.5'
+          FLUX_SHA256: 'b853df82adfd7736f580692f9f734473d571606307139f8fd20c2a80dd1ff473'
         run: |
           set -euo pipefail
           curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" -o /tmp/flux.tar.gz

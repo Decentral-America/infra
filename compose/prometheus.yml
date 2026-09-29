@@ -11,7 +11,13 @@ services:
     # prometheus/common v0.69.0 bump. No breaking changes affect this
     # deployment (SHA-256 pagination tokens and PromQL min()/max() rename
     # are internal/behind experimental flags not used here).
-    image: prom/prometheus:v3.13.0@sha256:c6b27ea434f8389bfe233fbc7be381cf50587c286e871bc842008f5a1b1908a7
+    # Bumped v3.13.0 -> v3.15.0 (2026-09-29, latest stable; note v3.13 was
+    # never an LTS line — the current LTS is v3.5). 3.14/3.15 [CHANGE]s:
+    # stats-param deprecation, Hetzner SD label drop, duration expressions on
+    # by default, --log.level deprecated (still works; not passed here) — none
+    # affect this config. Verified: `promtool check config` (incl. alerts.yml)
+    # passes with the v3.15.0 image.
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     container_name: "prometheus-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -51,7 +57,7 @@ services:
         max-file: "3"
 
   exporter:
-    image: python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+    image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
     container_name: "exporter-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -95,7 +101,10 @@ services:
     # Bumped 0.33.0 -> 0.33.1 (2026-07-05): bugfix-only patch release
     # (webhook doc fix, silences snapshot/legacy-matchers fix). No config
     # changes required.
-    image: prom/alertmanager:v0.33.1@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
+    # Bumped 0.33.1 -> 0.34.1 (2026-09-29): only [CHANGE] is the finer-grained
+    # `reason` label on alertmanager_notifications_failed_total (not used by
+    # any alert/dashboard here). `amtool check-config` passes on 0.34.1.
+    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
     container_name: "alertmanager-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -126,7 +135,7 @@ services:
         max-file: "3"
 
   alert-webhook:
-    image: python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+    image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
     container_name: "alert-webhook-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

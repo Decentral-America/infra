@@ -12,11 +12,17 @@ terraform {
   required_providers {
     linode = {
       source  = "linode/linode"
-      version = "~> 4.0" # v4.0.0 (2026-06-30): removed deprecated `group` (linode_instance)
+      version = "~> 4.5" # v4.0.0 (2026-06-30): removed deprecated `group` (linode_instance)
       # and `dashboard_url` (linode_lke_cluster) fields — neither is used in this repo.
       # No other breaking changes affect linode_instance/linode_firewall/
       # linode_stackscript/linode_lke_cluster. See:
       # https://github.com/linode/terraform-provider-linode/releases/tag/v4.0.0
+      # v4.5.0 (2026-09-08): 4.1-4.5 are additive (firewall protocol ALL,
+      # firewall version/fingerprint attrs, LKE pool isolation, NodeBalancer
+      # lke_cluster) — no breaking changes for the four resource types used here.
+      # v4.6.0 (GitHub, 2026-09-29) is not yet on registry.opentofu.org, so
+      # 4.5.0 is the newest version `tofu init` can resolve; Renovate picks up
+      # 4.6.0 once the OpenTofu registry syncs it.
     }
   }
 
