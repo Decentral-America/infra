@@ -30,19 +30,9 @@ spec:
       # https://artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
       # for newer patch/minor releases before widening further.
       #
-      # MANUAL STEP REQUIRED BEFORE FLUX RECONCILES THIS BUMP:
-      # 88.x (operator v0.93.0) and 91.x (operator v0.94.x) both bump the
-      # prometheus-operator CRDs. Flux/Helm will NOT upgrade the CRDs for you
-      # (Helm never upgrades CRDs on `helm upgrade`), so apply the target CRD
-      # set (v0.94.1 = this chart's appVersion) manually first, e.g.:
-      #   kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.1/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagerconfigs.yaml
-      #   (repeat for: alertmanagers, podmonitors, probes, prometheusagents,
-      #    prometheuses, prometheusrules, scrapeconfigs, servicemonitors,
-      #    thanosrulers — same base URL, monitoring.coreos.com_<kind>.yaml)
-      # Apply --force-conflicts if server-side-apply reports field ownership
-      # conflicts. Only the final (v0.94.1) CRD set needs applying — if the
-      # cluster never got the earlier v0.92.0 step, this single apply covers
-      # it too (CRDs in this range are additive).
+      # CRDs: upgraded automatically by helm-controller (install/upgrade
+      # crds: CreateReplace below), so a major bump no longer needs the manual
+      # `kubectl apply` of the prometheus-operator CRDs (v0.94.1 for 91.x).
       #
       # Other things to double check before/after this jump (see chart's
       # UPGRADE.md at prometheus-community/helm-charts):
@@ -70,11 +60,17 @@ spec:
         kind: HelmRepository
         name: prometheus-community
         namespace: flux-system
+  # CreateReplace makes helm-controller create AND upgrade the chart's CRDs
+  # (including the chart's crds subchart). Plain Helm never upgrades CRDs on
+  # `helm upgrade`, which is why every major bump of this chart used to need a
+  # manual `kubectl apply` of the prometheus-operator CRDs before Flux reconciled.
   install:
     createNamespace: true
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
+    crds: CreateReplace
     remediation:
       retries: 3
   # valuesFrom injects credentials directly from the monitoring-secrets Secret.
