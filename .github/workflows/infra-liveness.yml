@@ -1,0 +1,65 @@
+name: Infra Liveness (Tier 0)
+
+# Pages on a dead testnet regardless of wallet balances. The 2026-09-17 Linode
+# outage went unnoticed for 6+ days: canary-transaction was already red for an
+# unrelated reason (0-balance canary wallet), so its red->red transition carried
+# no signal, drift-detect ignored power state, and healthchecks only tested REST
+# liveness. This probe opens (or comments on) one alert issue per outage.
+# infra is a public repo, so the 30-min schedule costs no Actions minutes.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: infra-liveness
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Main node height advances
+        run: |
+          set -euo pipefail
+          H1=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
+          sleep 150
+          H2=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
+          echo "h1=$H1 h2=$H2"
+          test "$H2" -gt "$H1" || { echo "::error::main node height did not advance ($H1 -> $H2)"; exit 1; }
+
+      - name: LKE pool nodes ready
+        # Run even when the main-node probe failed, so one alert reports both halves.
+        if: ${{ !cancelled() }}
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -sf -m 15 -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/lke/clusters \
+            | jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+          test -n "$CID" || { echo "::error::LKE cluster dcc-peer-testnet not found"; exit 1; }
+          NOTREADY=$(curl -sf -m 15 -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/$CID/pools" \
+            | jq '[.data[].nodes[] | select(.status!="ready")] | length')
+          echo "not-ready pool nodes: $NOTREADY"
+          test "$NOTREADY" -eq 0 || { echo "::error::$NOTREADY LKE pool node(s) not ready"; exit 1; }
+
+      - name: Open or update alert issue on failure
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="[ALERT] InfraLiveness: testnet unreachable or not advancing"
+          N=$(gh issue list -R "$GITHUB_REPOSITORY" --search "\"$TITLE\" in:title" --state open --json number -q '.[0].number')
+          if [ -z "$N" ]; then
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "Run: $RUN_URL"
+          else
+            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "Still failing: $RUN_URL"
+          fi

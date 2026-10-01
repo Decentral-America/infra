@@ -118,6 +118,11 @@ resource "linode_instance" "backend" {
   image     = "linode/debian12"
   root_pass = var.root_password
 
+  # Assert the instance is powered on. drift-detect (tofu plan) then reports an
+  # Offline VPS as drift. On 2026-09-17 a Linode account-level outage left this
+  # instance powered off for 6+ days, and no check noticed.
+  booted = true
+
   tags = local.tags
 
   # Firewall — allow SSH (22), HTTP (80), HTTPS (443).
