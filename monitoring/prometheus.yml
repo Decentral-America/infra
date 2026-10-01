@@ -30,6 +30,23 @@ scrape_configs:
       - target_label: network
         replacement: testnet
 
+  # Host disk/CPU/memory (compose/prometheus.yml node-exporter). Feeds HostDiskSpaceLow.
+  - job_name: node
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
+  # System Postgres (compose/prometheus.yml postgres-exporter, role dcc). Feeds
+  # PostgresDatabaseGrowthHigh via pg_database_size_bytes{datname="bps_testnet"}.
+  - job_name: postgres
+    static_configs:
+      - targets: ['127.0.0.1:9187']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
   # Loki metrics — ingestion rate, chunk/index store ops, compaction lag.
   # Loki exposes Prometheus-format metrics at :3100/metrics.
   - job_name: loki
