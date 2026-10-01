@@ -84,6 +84,16 @@ def handle_alert(alert: dict) -> None:
             log.info('Closed issue #%s for resolved alert %s', num, name)
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Healthcheck target (compose/prometheus.yml). 503 without GITHUB_TOKEN:
+        # in that state no alert can open a GitHub issue (gh() gets 401), so the
+        # container must not report healthy.
+        if self.path != '/healthz':
+            self.send_response(404); self.end_headers(); return
+        ok = bool(GITHUB_TOKEN)
+        self.send_response(200 if ok else 503); self.end_headers()
+        self.wfile.write(b'ok' if ok else b'GITHUB_TOKEN not set')
+
     def do_POST(self):
         if self.path != '/alert':
             self.send_response(404); self.end_headers(); return

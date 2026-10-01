@@ -76,13 +76,20 @@ services:
       - "/opt/dcc/plugins/${NETWORK:-mainnet}:/usr/share/dcc/lib/plugins:ro"
 
     # docker compose up --wait blocks until the container is running/healthy.
-    # /node/version is the canonical liveness endpoint on the Scala node REST API.
+    # Healthy = REST answers AND /blocks/height changed within the last 15 min
+    # (900s). /node/version only proved the JVM was up: a node stuck on one
+    # height (the 2026-09-01 height-2640 InvalidStateHash stall class) stayed
+    # "healthy". State lives in /tmp (tmpfs), so a restart starts a fresh
+    # 15-min window. Uses wget because the node-scala image has no curl.
+    # $$ is compose's escape for a literal $. Note: docker only MARKS the
+    # container unhealthy (visible to `docker ps`, `--wait`, and the exporter),
+    # it does not restart it. TESTNET-FINAL-PLAN Task 2.6.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6869/node/version"]
-      interval: 30s
+      test: ["CMD-SHELL", 'H=$$(wget -qO- -T 5 http://127.0.0.1:6869/blocks/height | sed ''s/[^0-9]//g''); [ -n "$$H" ] || exit 1; N=$$(date +%s); P=$$(cat /tmp/.liveness_h 2>/dev/null); T=$$(cat /tmp/.liveness_t 2>/dev/null || echo "$$N"); if [ "$$H" != "$$P" ]; then echo "$$H" >/tmp/.liveness_h; echo "$$N" >/tmp/.liveness_t; exit 0; fi; [ $$((N-T)) -lt 900 ]']
+      interval: 60s
       timeout: 10s
       start_period: 120s
-      retries: 5
+      retries: 3
 
     # ── Container security hardening ──────────────────────────────────────────
     security_opt:
