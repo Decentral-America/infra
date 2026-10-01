@@ -78,6 +78,13 @@ jobs:
           # re-running this workflow to promote a newer build works the same
           # way as the first pin.
           sed -i -E "s#${{ env.IMAGE_NAME }}(:[A-Za-z0-9._-]+|@sha256:[0-9a-f]+)#${NEW}#g" "$FILE"
+          # Keep the VPS main node on the same binary (rule D6). CI's
+          # scripts/check-digest-parity.sh fails any PR where they differ.
+          # This only changes the pin; the VPS picks it up on the next
+          # update-node-image.yml / deploy-node-config.yml run.
+          VPS_ENV=node-config/testnet/vps-image.env
+          sed -i -E "s#^NODE_SCALA_IMAGE=.*#NODE_SCALA_IMAGE=${NEW} \# pinned by pin-node-image-digest.yml from ${{ steps.resolve.outputs.ref }}#" "$VPS_ENV"
+          ./scripts/check-digest-parity.sh
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Open PR
@@ -92,11 +99,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add clusters/testnet/apps/nodes.yaml
+          git add clusters/testnet/apps/nodes.yaml node-config/testnet/vps-image.env
           git commit -m "chore: pin node-scala testnet image to ${DIGEST}" \
             -m "Resolved from ${{ env.IMAGE_NAME }}:${REF} by pin-node-image-digest.yml."
           git push origin "$BRANCH"
-          BODY="Resolved \`${{ env.IMAGE_NAME }}:${REF}\` -> \`${DIGEST}\` and pinned clusters/testnet/apps/nodes.yaml to it."$'\n\n'"Review the actual node-scala build/commit behind this digest before merging -- merging this PR is what promotes it to the gen-0/gen-1/val-0 swarm on their next restart."
+          BODY="Resolved \`${{ env.IMAGE_NAME }}:${REF}\` -> \`${DIGEST}\` and pinned clusters/testnet/apps/nodes.yaml plus node-config/testnet/vps-image.env to it."$'\n\n'"Review the actual node-scala build/commit behind this digest before merging -- merging this PR is what promotes it to the gen-0/gen-1/val-0 swarm on their next restart, and to the VPS main node on its next update-node-image.yml run."
           gh pr create --title "chore: pin node-scala testnet image to ${DIGEST}" \
             --body "$BODY" \
             --base main --head "$BRANCH"

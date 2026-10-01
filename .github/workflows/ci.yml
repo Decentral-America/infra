@@ -29,6 +29,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # ── Node image parity (rule D6) ───────────────────────────────────────────
+      # All four testnet nodes must pin the same node-scala digest: the VPS main
+      # node (node-config/testnet/vps-image.env) and gen-0/gen-1/val-0
+      # (clusters/testnet/apps/nodes.yaml).
+      - name: Check node-scala digest parity (VPS vs LKE)
+        run: ./scripts/check-digest-parity.sh
+
       # ── OpenTofu ──────────────────────────────────────────────────────────────
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
