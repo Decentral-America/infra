@@ -423,7 +423,12 @@ data:
 
       miner {
         enable = yes
-        quorum = 0
+        # quorum=1 (was 0, 2026-10-01): see gen-0 note above. #80 (78efa95) moved only the FUNDED
+        # gen-0/gen-1 to 1 because val-0 is unfunded at genesis and never forges, so quorum=0 was
+        # moot for it, not deliberate. 1 changes nothing while val-0 does not forge, and stops the
+        # quorum=0 self-fork loop if val-0 is ever funded/promoted. Only the bootstrap seed (main
+        # VPS) keeps quorum=0.
+        quorum = 1
         interval-after-last-block-then-generation-is-allowed = 15d
         # In-process self-commit-to-generation (node-scala PR #60) — see gen-0's note above.
         self-commit-to-generation = yes
