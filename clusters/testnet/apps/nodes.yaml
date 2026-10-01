@@ -588,17 +588,19 @@ spec:
             limits:
               cpu: "420m"
               memory: "1280Mi"
-          # Liveness = REST answers AND /blocks/height changed within the last 15 min (900s).
-          # The old /node/status httpGet only proved the JVM was up, so a node stuck on one
-          # height stayed "live". Readiness stays /node/status so a briefly slow chain does
-          # not flap the Service. wget because the node-scala image has no curl.
-          # TESTNET-FINAL-PLAN Task 2.6.
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
-            exec:
-              command: ["sh", "-c", 'H=$(wget -qO- -T 5 http://127.0.0.1:6869/blocks/height | sed ''s/[^0-9]//g''); [ -n "$H" ] || exit 1; N=$(date +%s); P=$(cat /tmp/.liveness_h 2>/dev/null); T=$(cat /tmp/.liveness_t 2>/dev/null || echo "$N"); if [ "$H" != "$P" ]; then echo "$H" >/tmp/.liveness_h; echo "$N" >/tmp/.liveness_t; exit 0; fi; [ $((N-T)) -lt 900 ]']
-            initialDelaySeconds: 180
-            periodSeconds: 60
-            timeoutSeconds: 10
+            httpGet:
+              path: /node/status
+              port: 6869
+              host: 127.0.0.1
+            initialDelaySeconds: 60
+            periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
             httpGet:
@@ -718,17 +720,19 @@ spec:
             limits:
               cpu: "300m"
               memory: "1280Mi"
-          # Liveness = REST answers AND /blocks/height changed within the last 15 min (900s).
-          # The old /node/status httpGet only proved the JVM was up, so a node stuck on one
-          # height stayed "live". Readiness stays /node/status so a briefly slow chain does
-          # not flap the Service. wget because the node-scala image has no curl.
-          # TESTNET-FINAL-PLAN Task 2.6.
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
-            exec:
-              command: ["sh", "-c", 'H=$(wget -qO- -T 5 http://127.0.0.1:6870/blocks/height | sed ''s/[^0-9]//g''); [ -n "$H" ] || exit 1; N=$(date +%s); P=$(cat /tmp/.liveness_h 2>/dev/null); T=$(cat /tmp/.liveness_t 2>/dev/null || echo "$N"); if [ "$H" != "$P" ]; then echo "$H" >/tmp/.liveness_h; echo "$N" >/tmp/.liveness_t; exit 0; fi; [ $((N-T)) -lt 900 ]']
-            initialDelaySeconds: 180
-            periodSeconds: 60
-            timeoutSeconds: 10
+            httpGet:
+              path: /node/status
+              port: 6870
+              host: 127.0.0.1
+            initialDelaySeconds: 60
+            periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
             httpGet:
@@ -839,16 +843,19 @@ spec:
             limits:
               cpu: "250m"
               memory: "1024Mi"
-          # Liveness = REST answers AND /blocks/height changed within the last 15 min (900s).
-          # The old /node/status httpGet only proved the JVM was up, so a node stuck on one
-          # height stayed "live". Readiness stays /node/status so a briefly slow chain does
-          # not flap the Service. wget because the node-scala image has no curl.
-          # TESTNET-FINAL-PLAN Task 2.6.
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
-            exec:
-              command: ["sh", "-c", 'H=$(wget -qO- -T 25 http://127.0.0.1:6871/blocks/height | sed ''s/[^0-9]//g''); [ -n "$H" ] || exit 1; N=$(date +%s); P=$(cat /tmp/.liveness_h 2>/dev/null); T=$(cat /tmp/.liveness_t 2>/dev/null || echo "$N"); if [ "$H" != "$P" ]; then echo "$H" >/tmp/.liveness_h; echo "$N" >/tmp/.liveness_t; exit 0; fi; [ $((N-T)) -lt 900 ]']
-            initialDelaySeconds: 180
-            periodSeconds: 60
+            httpGet:
+              path: /node/status
+              port: 6871
+              host: 127.0.0.1
+            initialDelaySeconds: 120
+            periodSeconds: 30
             timeoutSeconds: 30
             failureThreshold: 5
           readinessProbe:
