@@ -70,6 +70,12 @@ print('Rule groups:',len(groups))
 for g in groups: print(' ',g.get('name'),':',len(g.get('rules',[])))
 " || echo "(prometheus not reachable)"
 
+echo "=== Start host + Postgres exporters (feed HostDiskSpaceLow / PostgresDatabaseGrowthHigh) ==="
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d node-exporter postgres-exporter
+sleep 4
+curl -s http://127.0.0.1:9100/metrics 2>/dev/null | grep -c '^node_filesystem_avail_bytes' | sed 's/^/  node_filesystem_avail_bytes series: /' || echo "  (node-exporter not reachable)"
+curl -s http://127.0.0.1:9187/metrics 2>/dev/null | grep -E '^pg_up ' || echo "  (postgres-exporter not reachable)"
+
 echo "=== (Re)start Loki + Alloy (removes decommissioned promtail-testnet) ==="
 NETWORK=testnet docker compose -p "$LOKI_PROJECT" -f /opt/dcc/compose/loki.yml up -d --remove-orphans
 docker ps | grep -E "loki|alloy" || echo "(not running)"

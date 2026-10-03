@@ -168,6 +168,10 @@ data:
         # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
         authoritative = true
+        # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
+        # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
+        # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
+        slashing-enabled = no
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -313,6 +317,10 @@ data:
         # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
         authoritative = true
+        # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
+        # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
+        # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
+        slashing-enabled = no
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -423,7 +431,12 @@ data:
 
       miner {
         enable = yes
-        quorum = 0
+        # quorum=1 (was 0, 2026-10-01): see gen-0 note above. #80 (78efa95) moved only the FUNDED
+        # gen-0/gen-1 to 1 because val-0 is unfunded at genesis and never forges, so quorum=0 was
+        # moot for it, not deliberate. 1 changes nothing while val-0 does not forge, and stops the
+        # quorum=0 self-fork loop if val-0 is ever funded/promoted. Only the bootstrap seed (main
+        # VPS) keeps quorum=0.
+        quorum = 1
         interval-after-last-block-then-generation-is-allowed = 15d
         # In-process self-commit-to-generation (node-scala PR #60) — see gen-0's note above.
         self-commit-to-generation = yes
@@ -450,6 +463,10 @@ data:
         # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
         authoritative = true
+        # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
+        # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
+        # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
+        slashing-enabled = no
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -571,6 +588,12 @@ spec:
             limits:
               cpu: "420m"
               memory: "1280Mi"
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
             httpGet:
               path: /node/status
@@ -697,6 +720,12 @@ spec:
             limits:
               cpu: "300m"
               memory: "1280Mi"
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
             httpGet:
               path: /node/status
@@ -814,6 +843,12 @@ spec:
             limits:
               cpu: "250m"
               memory: "1024Mi"
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
             httpGet:
               path: /node/status

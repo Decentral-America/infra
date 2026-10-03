@@ -26,6 +26,13 @@
 # already uses for every other testnet alert (title prefix `[ALERT] {name}`,
 # labels `alert` + `severity:{sev}`), so this failure mode surfaces in the same
 # place as Alertmanager-driven alerts.
+#
+# An unfunded canary wallet is its OWN alert (`CanaryWalletUnfunded`), not the
+# generic `CanaryTransactionFailed`. Before broadcasting, the script reads the
+# canary balance and exits 3 with `CANARY_UNFUNDED` if it is below 10x the tx
+# fee. Issue #148: the canary sat red for weeks on a 0 balance, so when the
+# whole testnet went dark on 2026-09-17 the red->red transition carried no
+# signal. Re-fund from the treasury (TESTNET-FINAL-PLAN Task 3.4 Step 2).
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Canary Transaction (Tier 6 synthetic monitoring)
@@ -99,6 +106,26 @@ jobs:
           const start = Date.now();
           const tx = transfer({ amount: 100_000, chainId: CHAIN_ID, recipient }, SEED);
 
+          // Unfunded-wallet guard (issue #148): an empty canary wallet gets its
+          // own alert (exit 3), not the generic network-failure one. If the
+          // balance read itself fails, the node is the problem, so that stays
+          // the generic failure (exit 1).
+          const MIN_BALANCE = 10 * Number(tx.fee);
+          let bal;
+          try {
+            const res = await fetch(`${API_BASE}addresses/balance/${recipient}`, { signal: AbortSignal.timeout(15_000) });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            bal = Number((await res.json()).balance);
+            if (!Number.isFinite(bal)) throw new Error('balance field missing or not a number');
+          } catch (err) {
+            console.error(`Canary tx failed: balance lookup for ${recipient} failed: ${err?.message ?? err}`);
+            process.exit(1);
+          }
+          if (bal < MIN_BALANCE) {
+            console.error(`Canary tx failed: CANARY_UNFUNDED balance=${bal} min=${MIN_BALANCE} address=${recipient}`);
+            process.exit(3);
+          }
+
           try {
             await broadcast(tx, API_BASE);
             const confirmed = await waitForTx(tx.id, { apiBase: API_BASE, timeout: 120_000 });
@@ -110,28 +137,43 @@ jobs:
             process.exit(1);
           }
           EOF
-          node canary.mjs
+          rc=0
+          node canary.mjs || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "reason=unfunded" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" -ne 0 ]; then
+            echo "reason=failed" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$rc"
 
       - name: Open a GitHub Issue on failure (matches alert-webhook.py's issue format)
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ steps.canary.outputs.reason }}
         run: |
-          PREFIX="[ALERT] CanaryTransactionFailed"
+          if [ "$REASON" = "unfunded" ]; then
+            NAME="CanaryWalletUnfunded"
+            SUMMARY="canary wallet balance is below 10x the tx fee (re-fund from treasury)"
+          else
+            NAME="CanaryTransactionFailed"
+            SUMMARY="canary transaction did not confirm against testnet"
+          fi
+          PREFIX="[ALERT] $NAME"
           EXISTING=$(gh issue list --repo "${{ github.repository }}" --label alert --state open --json title,number \
             --jq ".[] | select(.title | startswith(\"$PREFIX\")) | .number" | head -1)
           if [ -z "$EXISTING" ]; then
             gh issue create --repo "${{ github.repository }}" \
-              --title "$PREFIX: canary transaction did not confirm against testnet" \
+              --title "$PREFIX: $SUMMARY" \
               --label alert --label severity:high \
-              --body "## HIGH — canary transaction did not confirm against testnet
+              --body "## HIGH — $SUMMARY
 
           **Network:** testnet
-          **Alert:** \`CanaryTransactionFailed\`
+          **Alert:** \`$NAME\`
           **Severity:** high
           **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
           > Auto-opened by the canary-transaction workflow (Tier 6 synthetic monitoring). Close when resolved."
           else
-            echo "Alert CanaryTransactionFailed already open as issue #$EXISTING — not creating a duplicate."
+            echo "Alert $NAME already open as issue #$EXISTING — not creating a duplicate."
           fi

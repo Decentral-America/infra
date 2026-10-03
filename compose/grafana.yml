@@ -30,6 +30,18 @@ services:
       - /opt/dcc/monitoring/dashboards:/etc/grafana/provisioning/dashboards:ro
       - /opt/dcc/monitoring/datasources:/etc/grafana/provisioning/datasources:ro
       - grafana-data:/var/lib/grafana
+    # Admin password: GF_SECURITY_ADMIN_PASSWORD comes ONLY from this dedicated
+    # env file. push-secrets.yml writes it from the SOPS key GRAFANA_ADMIN_PASSWORD
+    # (KeeWeb entry of the same name). It is deliberately not the shared
+    # /opt/dcc/secrets/<network>.env, so this internet-facing container never
+    # sees the wallet seed or other service secrets. A missing file makes compose
+    # refuse to start Grafana, instead of silently falling back to admin/admin.
+    # Grafana only applies this when it FIRST creates the admin user. On an
+    # existing grafana-data volume, rotate once by hand (paste the KeeWeb value at the prompt):
+    #   read -rs P; printf '%s' "$P" | docker exec -i grafana-testnet grafana cli admin reset-admin-password --password-from-stdin; unset P
+    # TESTNET-FINAL-PLAN Task 4.4 Step 3.
+    env_file:
+      - /opt/dcc/secrets/grafana-${NETWORK:-testnet}.env
     environment:
       GF_PATHS_DATA: /var/lib/grafana
       GF_PATHS_LOGS: /var/log/grafana

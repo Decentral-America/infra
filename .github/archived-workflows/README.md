@@ -63,3 +63,27 @@ one of the four still actually exercised regularly.
 
 If any of these are needed again, move the file back to `.github/workflows/` — nothing else
 to restore.
+
+## 2026-09-21 round — retired crons, replaced by in-process node flags
+
+Retired in `849148d` (committed 2026-09-12, landed on `main` 2026-09-21 via PR #156). Unlike
+the rounds above, these three were **deleted**, not moved here, so there is no copy in this
+directory. To recover one, run `git show 849148d^:.github/workflows/<file>`.
+
+| Workflow | What it did | Replacement |
+|---|---|---|
+| `auto-commit-generators.yml` | Staggered 10-min crons submitting `CommitToGenerationTransaction` (type 19) for the generators each period | node-scala PR #60, `dcc.miner.self-commit-to-generation = yes` (MinerImpl self-commit) |
+| `commit-generators-hotstuff.yml` | Manual/`workflow_call` one-shot of the same commit for all 3 generators | node-scala PR #60, same flag |
+| `peer-watchdog.yml` | Cron that detected stalled peer reconnection and cleared suspensions | node-scala PR #61, `dcc.network.peer-stall-threshold = 900` (NetworkServer stall detection; suspensions only, never the blacklist) |
+
+Both flags have been set on gen-0/gen-1/val-0 since 2026-09-21 (`clusters/testnet/apps/nodes.yaml`,
+`43c4a3f`). Retiring the crons left the **main VPS node** with neither flag and no external
+safety net. Main node coverage closed by TESTNET-FINAL-PLAN Task 2.2
+(`node-config/testnet/dcc.conf`, branch `feat/testnet-final-offline-prep`; live once
+`deploy-node-config.yml` is run).
+
+`RELAUNCH-20260904.md` §9/§11 and the `CommitteeGapUpcoming` alert text in
+`monitoring/alerts.yml` still name `auto-commit-generators.yml` /
+`commit-generators-hotstuff.yml` as the manual remedy. Those files are gone. Recover one
+with the `git show` above for a one-off manual commit, or check why the in-process
+self-commit did not fire.
