@@ -118,6 +118,10 @@ resource "linode_instance" "backend" {
   image     = "linode/debian12"
   root_pass = var.root_password
 
+  # Linode backups: the 2026-10-01 non-payment deletion is recoverable only for
+  # 90 days through recovery images; backups make the restore point explicit.
+  backups_enabled = true
+
   # Assert the instance is powered on. drift-detect (tofu plan) then reports an
   # Offline VPS as drift. On 2026-09-17 a Linode account-level outage left this
   # instance powered off for 6+ days, and no check noticed.
@@ -165,7 +169,10 @@ resource "linode_instance" "backend" {
   # consumed only on first boot and must not trigger a replacement on rotation.
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [stackscript_data, root_pass]
+    # image/stackscript_id: an instance restored from a recovery image (Linode
+    # deleted the original on non-payment, 2026-10-01) or otherwise adopted via
+    # provision.yml import-backend must be updated in place, never replaced.
+    ignore_changes = [stackscript_data, root_pass, image, stackscript_id]
   }
 }
 

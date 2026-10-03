@@ -34,6 +34,7 @@ on:
           - plan
           - apply
           - destroy
+          - import-backend
       network:
         description: 'Target network workspace'
         required: true
@@ -45,6 +46,11 @@ on:
           - testnet
       confirm_destroy:
         description: 'Type YES to confirm destruction of mainnet (required when action=destroy and network=mainnet)'
+        required: false
+        type: string
+        default: ''
+      import_linode_id:
+        description: 'action=import-backend only: numeric Linode ID of an existing backend instance to adopt into state (e.g. one restored from a recovery image)'
         required: false
         type: string
         default: ''
@@ -98,6 +104,9 @@ jobs:
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: '1.12.6'
+          # The wrapper rewrites exit codes; drift-detect.yml proved it hides
+          # `-detailed-exitcode`'s 2 (run 37096490854). Use the real binary.
+          tofu_wrapper: false
 
       - name: Write backend config
         run: |
@@ -152,6 +161,30 @@ jobs:
         run: echo "server_ip=$(tofu output -raw backend_ip)" >> "$GITHUB_OUTPUT"
         env:
           TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+
+      # Adopt an existing backend Linode into state, e.g. after Linode deleted the
+      # instance on non-payment and it was restored from its recovery image
+      # (2026-10-01). It drops the stale state entry, then imports the new ID. The
+      # resource has prevent_destroy and ignores image/stackscript drift, so a
+      # later plan updates it in place instead of replacing it.
+      - name: OpenTofu Import (backend)
+        if: inputs.action == 'import-backend'
+        run: |
+          set -euo pipefail
+          [[ "$IMPORT_ID" =~ ^[0-9]+$ ]] || { echo "::error::import_linode_id must be a numeric Linode ID"; exit 1; }
+          if tofu state list | grep -qx 'linode_instance.backend'; then
+            echo "Removing stale state entry: $(tofu state show linode_instance.backend | grep -m1 ' id ' || true)"
+            tofu state rm linode_instance.backend
+          fi
+          tofu import -input=false -var-file="${{ inputs.network }}.tfvars" linode_instance.backend "$IMPORT_ID"
+          tofu plan -input=false -var-file="${{ inputs.network }}.tfvars" -target=linode_instance.backend
+        env:
+          IMPORT_ID: ${{ inputs.import_linode_id }}
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+          TF_VAR_root_password:            ${{ secrets.TF_VAR_root_password }}
+          TF_VAR_deploy_ssh_public_key:    ${{ secrets.TF_VAR_deploy_ssh_public_key }}
+          TF_VAR_DEFAULT_MATCHER:          ${{ secrets.TF_VAR_DEFAULT_MATCHER }}
 
       - name: OpenTofu Destroy
         if: inputs.action == 'destroy'
