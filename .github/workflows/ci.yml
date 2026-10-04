@@ -80,6 +80,9 @@ jobs:
           mkdir -p "$T/file_sd"
           cp monitoring/prometheus.yml monitoring/alerts.yml "$T/"
           echo '[]' > "$T/file_sd/lke-chain.json"
+          # mktemp -d is 0700; the prometheus image runs as `nobody`, which could
+          # not stat the bind-mounted config ("permission denied"). World-readable only.
+          chmod -R a+rX "$T"
           docker run --rm --entrypoint promtool -v "$T:/etc/prometheus:ro" "$IMG" \
             check config /etc/prometheus/prometheus.yml
           docker run --rm --entrypoint promtool -v "$PWD/monitoring:/work:ro" -w /work "$IMG" \
