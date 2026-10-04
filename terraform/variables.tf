@@ -178,7 +178,7 @@ variable "lke_node_count" {
 }
 
 variable "lke_extra_pools" {
-  description = "Additional LKE node pools after the primary peer-node pool, e.g. the testnet exchange-app pool (role=exchange)."
+  description = "Additional LKE node pools after the primary peer-node pool, e.g. a labelled pool for workloads that must not share the consensus nodes. Testnet uses none."
   type = list(object({
     type   = string
     count  = number
