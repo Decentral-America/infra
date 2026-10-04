@@ -24,7 +24,7 @@ Metrics exposed:
                                       a genuine empty committee at HTTP 200 — see CommitteeGapUpcoming
                                       alert comment in alerts.yml for why this distinction matters).
 """
-import http.server, json, os, ssl, time, urllib.request
+import concurrent.futures, http.server, json, os, ssl, time, urllib.request
 
 PORT = int(os.getenv("EXPORTER_PORT", "9101"))
 
@@ -125,8 +125,14 @@ def metrics():
 
     # Web-service liveness for every user-facing service (matcher, data-service,
     # explorer, websocket, grafana, admin, faucet) — so an outage of any of them pages.
-    for svc, url in SERVICES:
-        code = probe_status(url)
+    # Probed in parallel: sequentially, every dead service added its full 6s timeout, so
+    # two unreachable hosts (explorer + faucet during the 2026-10-04 DNS move) pushed a
+    # scrape to ~25s. That is past Prometheus' 10s scrape timeout, which then dropped the
+    # node metrics as well and raised a false MainNodeUnreachable. Now a scrape takes as
+    # long as the slowest single probe.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(SERVICES))) as pool:
+        codes = list(pool.map(lambda su: probe_status(su[1]), SERVICES))
+    for (svc, _), code in zip(SERVICES, codes):
         up = 1 if (code is not None and code < 500) else 0
         lines.append(f'dcc_service_up{{service="{svc}"}} {up}')
 
