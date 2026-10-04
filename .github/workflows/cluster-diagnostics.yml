@@ -127,6 +127,115 @@ jobs:
           echo "=== PVCs ==="; kubectl get pvc -n dcc
           echo "=== RESTART COUNTS ==="; kubectl get pods -n dcc -o jsonpath='{range .items[*]}{.metadata.name}{": restarts="}{.status.containerStatuses[0].restartCount}{"\n"}{end}'
 
+      # Read-only capacity measurement for the "shared 8 GB bundle" sizing
+      # question: how many DCC nodes fit on one g6-standard-4. Prints, per
+      # worker, capacity vs allocatable and the summed pod requests/limits
+      # (scheduler rules: max(sum(containers), max(initContainers)) + pod
+      # overhead, terminated pods excluded), then live usage from
+      # metrics-server when it is serving. Also written to
+      # /tmp/diag-results/capacity.json (uploaded with the results artifact).
+      - name: Capacity (allocatable vs requested vs used)
+        if: always()
+        run: |
+          set +e
+          mkdir -p /tmp/diag-results
+          if ! kubectl get nodes -o json > /tmp/nodes.json || ! kubectl get pods -A -o json > /tmp/pods.json; then
+            echo "(could not list nodes/pods)"; exit 0
+          fi
+          python3 - <<'PYCAP'
+          import json
+          from collections import defaultdict
+
+          def cpu_m(v):
+              v = str(v)
+              if v.endswith("n"): return int(v[:-1]) / 1e6
+              if v.endswith("u"): return int(v[:-1]) / 1e3
+              if v.endswith("m"): return float(v[:-1])
+              return float(v) * 1000
+
+          UNITS = {"Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40,
+                   "k": 10**3, "M": 10**6, "G": 10**9, "T": 10**12}
+          def mem_b(v):
+              v = str(v)
+              for u in sorted(UNITS, key=len, reverse=True):
+                  if v.endswith(u): return float(v[:-len(u)]) * UNITS[u]
+              return float(v)
+
+          def mib(b): return round(b / 2**20)
+
+          def pod_totals(spec):
+              # Effective request/limit per the scheduler, for cpu and memory.
+              out = {}
+              for kind in ("requests", "limits"):
+                  for res, conv in (("cpu", cpu_m), ("memory", mem_b)):
+                      app = sum(conv(c.get("resources", {}).get(kind, {}).get(res, 0)) for c in spec.get("containers", []))
+                      init = max([conv(c.get("resources", {}).get(kind, {}).get(res, 0)) for c in spec.get("initContainers", [])] or [0])
+                      over = conv((spec.get("overhead") or {}).get(res, 0))
+                      out[f"{kind}.{res}"] = max(app, init) + over
+              return out
+
+          nodes = json.load(open("/tmp/nodes.json"))["items"]
+          pods = [p for p in json.load(open("/tmp/pods.json"))["items"]
+                  if p.get("status", {}).get("phase") not in ("Succeeded", "Failed")]
+
+          report = {"nodes": []}
+          for n in nodes:
+              name = n["metadata"]["name"]
+              cap, alloc = n["status"]["capacity"], n["status"]["allocatable"]
+              mine = [p for p in pods if p["spec"].get("nodeName") == name]
+              tot = defaultdict(float)
+              per_ns = defaultdict(lambda: defaultdict(float))
+              rows = []
+              for p in mine:
+                  t = pod_totals(p["spec"])
+                  ns = p["metadata"]["namespace"]
+                  for k, v in t.items():
+                      tot[k] += v
+                      per_ns[ns][k] += v
+                  rows.append((ns, p["metadata"]["name"], t))
+              a_cpu, a_mem = cpu_m(alloc["cpu"]), mem_b(alloc["memory"])
+              print(f"=== node {name} ({n['metadata'].get('labels', {}).get('node.kubernetes.io/instance-type', '?')}) ===")
+              print(f"  capacity    cpu={cpu_m(cap['cpu']):.0f}m  memory={mib(mem_b(cap['memory']))}Mi")
+              print(f"  allocatable cpu={a_cpu:.0f}m  memory={mib(a_mem)}Mi  (capacity minus kube/system reserved + eviction threshold)")
+              print(f"  requests    cpu={tot['requests.cpu']:.0f}m ({100 * tot['requests.cpu'] / a_cpu:.0f}% of allocatable)  memory={mib(tot['requests.memory'])}Mi ({100 * tot['requests.memory'] / a_mem:.0f}%)")
+              print(f"  limits      cpu={tot['limits.cpu']:.0f}m ({100 * tot['limits.cpu'] / a_cpu:.0f}%)  memory={mib(tot['limits.memory'])}Mi ({100 * tot['limits.memory'] / a_mem:.0f}%)  (containers with no limit count as 0)")
+              print(f"  free to request: cpu={a_cpu - tot['requests.cpu']:.0f}m  memory={mib(a_mem - tot['requests.memory'])}Mi")
+              print("  per namespace (requests cpu/mem | limits cpu/mem):")
+              for ns in sorted(per_ns):
+                  v = per_ns[ns]
+                  print(f"    {ns:<16} {v['requests.cpu']:>6.0f}m {mib(v['requests.memory']):>6}Mi | {v['limits.cpu']:>6.0f}m {mib(v['limits.memory']):>6}Mi")
+              print("  per pod (requests cpu/mem | limits cpu/mem):")
+              for ns, pn, t in sorted(rows):
+                  print(f"    {ns + '/' + pn:<60} {t['requests.cpu']:>6.0f}m {mib(t['requests.memory']):>6}Mi | {t['limits.cpu']:>6.0f}m {mib(t['limits.memory']):>6}Mi")
+              report["nodes"].append({
+                  "name": name,
+                  "capacity": {"cpu_m": cpu_m(cap["cpu"]), "memory_mib": mib(mem_b(cap["memory"]))},
+                  "allocatable": {"cpu_m": a_cpu, "memory_mib": mib(a_mem)},
+                  "requests": {"cpu_m": tot["requests.cpu"], "memory_mib": mib(tot["requests.memory"])},
+                  "limits": {"cpu_m": tot["limits.cpu"], "memory_mib": mib(tot["limits.memory"])},
+                  "per_namespace": {ns: {"requests_cpu_m": v["requests.cpu"], "requests_memory_mib": mib(v["requests.memory"]),
+                                         "limits_cpu_m": v["limits.cpu"], "limits_memory_mib": mib(v["limits.memory"])}
+                                    for ns, v in per_ns.items()},
+              })
+          json.dump(report, open("/tmp/diag-results/capacity.json", "w"), indent=2)
+          PYCAP
+
+          # LKE ships metrics-server in kube-system, but do not assume it: check
+          # the aggregated API is registered AND Available before calling top.
+          echo "=== metrics-server ==="
+          avail=$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null)
+          if [ "$avail" = "True" ]; then
+            echo "--- kubectl top nodes ---"; kubectl top nodes
+            echo "--- kubectl top pods -A (sorted by memory) ---"; kubectl top pods -A --sort-by=memory
+            echo "--- kubectl top pods -n dcc --containers ---"; kubectl top pods -n dcc --containers
+            kubectl get --raw /apis/metrics.k8s.io/v1beta1/nodes > /tmp/diag-results/metrics-nodes.json 2>/dev/null
+            kubectl get --raw /apis/metrics.k8s.io/v1beta1/pods > /tmp/diag-results/metrics-pods.json 2>/dev/null
+          else
+            echo "metrics-server API v1beta1.metrics.k8s.io not available (Available='${avail:-absent}'); skipping kubectl top."
+            kubectl get deploy -n kube-system -l k8s-app=metrics-server 2>/dev/null || true
+          fi
+          exit 0
+
       - name: P2P connectivity via port-forward
         env:
           GEN_0_API_KEY: ${{ secrets.GEN_0_NODE_REST_API_KEY }}
@@ -297,5 +406,5 @@ jobs:
         if: always()
         with:
           name: diag-results-${{ github.run_id }}
-          path: /tmp/diag-results/results.json
+          path: /tmp/diag-results/
           retention-days: 3
