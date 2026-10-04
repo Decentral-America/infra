@@ -12,7 +12,7 @@ on:
       gen0_pubkey: { description: "gen-0 WG public key", required: true, type: string }
       gen1_pubkey: { description: "gen-1 WG public key", required: true, type: string }
       val0_pubkey: { description: "val-0 WG public key", required: true, type: string }
-      lke_egress_ip: { description: "LKE egress IP allowed to reach 51820", required: true, default: "172.105.64.89", type: string }
+      lke_egress_ip: { description: "LKE egress IP allowed to reach 51820", required: true, default: "139.162.144.243", type: string }
 permissions:
   contents: read
 jobs:
