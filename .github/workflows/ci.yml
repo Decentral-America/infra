@@ -68,6 +68,23 @@ jobs:
             docker compose -f "$f" config --quiet
           done
 
+      # ── Prometheus config + alert rule unit tests ─────────────────────────────
+      # Same pinned image the VPS runs (compose/prometheus.yml). prometheus.yml
+      # uses absolute /etc/prometheus paths, so it is checked from a copy laid
+      # out like the container, with an empty file_sd target list.
+      - name: promtool check config + test rules
+        run: |
+          set -euo pipefail
+          IMG=$(grep -oE 'prom/prometheus:[^ ]+@sha256:[0-9a-f]+' compose/prometheus.yml)
+          T=$(mktemp -d)
+          mkdir -p "$T/file_sd"
+          cp monitoring/prometheus.yml monitoring/alerts.yml "$T/"
+          echo '[]' > "$T/file_sd/lke-chain.json"
+          docker run --rm --entrypoint promtool -v "$T:/etc/prometheus:ro" "$IMG" \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/work:ro" -w /work "$IMG" \
+            test rules tests/alerts_test.yml
+
       # ── Shell script linting ──────────────────────────────────────────────────
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck

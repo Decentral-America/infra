@@ -1,0 +1,72 @@
+# promtool unit tests for monitoring/alerts.yml.
+# Run: promtool test rules monitoring/tests/alerts_test.yml   (CI: ci.yml)
+#
+# LkeGeneratorsDown: the LKE per-node heights now come from the direct
+# `lke-chain` scrape of the in-cluster metrics-exporter NodePort, not from the
+# removed `federate-lke` job (source="lke-incluster").
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # All three LKE nodes report: no alert.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_block_height{job="lke-chain", node="gen-0"}'
+        values: '100+1x20'
+      - series: 'dcc_block_height{job="lke-chain", node="gen-1"}'
+        values: '100+1x20'
+      - series: 'dcc_block_height{job="lke-chain", node="val-0"}'
+        values: '100+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LkeGeneratorsDown
+        exp_alerts: []
+
+  # val-0 stops reporting (its REST is down, so the exporter omits it): the
+  # count arm fires once `for: 10m` has elapsed, and not before.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_block_height{job="lke-chain", node="gen-0"}'
+        values: '100+1x20'
+      - series: 'dcc_block_height{job="lke-chain", node="gen-1"}'
+        values: '100+1x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LkeGeneratorsDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LkeGeneratorsDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              network: testnet
+            exp_annotations:
+              summary: "fewer than 3 LKE nodes (gen-0/gen-1/val-0) report a block height for 10 min"
+              description: "dcc_block_height from the LKE metrics-exporter (job lke-chain) covers fewer than 3 of gen-0/gen-1/val-0. If up{job=\"lke-chain\"} == 0 or the job has no target, the scrape path is down (LKE outage, firewall/NodePort 32092, or an unresolved LKE node IP in file_sd/lke-chain.json); otherwise check pods with cluster-diagnostics.yml."
+
+  # Scrape path down (no lke-chain series at all): the absent() arm fires.
+  # The main node's own series (job dcc-chain) must not mask it, and neither
+  # must leftover series shaped like the old federate-lke job.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_block_height{job="dcc-chain", node="main-node"}'
+        values: '100+1x20'
+      - series: 'dcc_block_height{job="federate-lke", source="lke-incluster", node="gen-0"}'
+        values: '100+1x20'
+      - series: 'dcc_block_height{job="federate-lke", source="lke-incluster", node="gen-1"}'
+        values: '100+1x20'
+      - series: 'dcc_block_height{job="federate-lke", source="lke-incluster", node="val-0"}'
+        values: '100+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LkeGeneratorsDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              network: testnet
+              job: lke-chain
+            exp_annotations:
+              summary: "fewer than 3 LKE nodes (gen-0/gen-1/val-0) report a block height for 10 min"
+              description: "dcc_block_height from the LKE metrics-exporter (job lke-chain) covers fewer than 3 of gen-0/gen-1/val-0. If up{job=\"lke-chain\"} == 0 or the job has no target, the scrape path is down (LKE outage, firewall/NodePort 32092, or an unresolved LKE node IP in file_sd/lke-chain.json); otherwise check pods with cluster-diagnostics.yml."

@@ -76,46 +76,31 @@ scrape_configs:
       - target_label: network
         replacement: testnet
 
-  # ── Cross-site federation: LKE in-cluster Prometheus (Task 13) ─────────────
-  # Pulls the LKE cluster's chain metrics-exporter series (dcc_block_height /
-  # dcc_blockchain_height_age_seconds per node — gen-0/gen-1/val-0, see
-  # clusters/testnet/monitoring/metrics-exporter.yaml) and a handful of
-  # kube-state/cAdvisor series already referenced by the in-cluster
-  # PrometheusRule (clusters/testnet/monitoring/kube-prometheus-stack.yaml's
-  # DCCPodRestarting/DCCDiskPressure/DCCContainerMemoryPressure alerts) into
-  # this Prometheus, so on-call sees per-node/gen-vs-val chain health and pod
-  # health in the SAME Grafana (grafana.testnet.decentralchain.io) they
-  # already watch, instead of needing a second, in-cluster Grafana.
+  # ── LKE chain metrics-exporter, scraped directly (no federation) ───────────
+  # gen-0/gen-1/val-0 per-node chain metrics (dcc_block_height,
+  # dcc_blockchain_height_age_seconds, label node=gen-0|gen-1|val-0) from
+  # clusters/testnet/monitoring/metrics-exporter.yaml, through its NodePort
+  # 32092. This replaced the `federate-lke` job: the cluster no longer runs its
+  # own Prometheus, so this VPS Prometheus is the single monitoring plane.
   #
-  # T2 lag (dcc_hotstuff_lag) and T0 lag (dcc_finality_lag) are NOT federated
-  # here — they're already scraped locally by the `dcc-chain` job above via
-  # exporter.py hitting the public node REST API, so no federation was needed
-  # for those two. What federation adds is the per-node (gen-0/gen-1/val-0)
-  # granularity that only the in-cluster exporter has.
+  # The target is NOT hardcoded. The LKE worker's public IP changes whenever the
+  # cluster or its node is recreated, so deploy-monitoring-stack.yml writes
+  # file_sd/lke-chain.json (resolved from the Linode API, or the LKE_NODE_IP
+  # repo/environment variable when set) and Prometheus re-reads it without a
+  # restart. An empty target list means the IP could not be resolved, and
+  # LkeGeneratorsDown fires instead of silently showing nothing.
   #
-  # DEPLOY-TIME ACTION REQUIRED: this job only works once (1) the LKE-side
-  # kube-prometheus-stack.yaml prometheus.service NodePort change has been
-  # reconciled by Flux, and (2) the matching Linode firewall rule
-  # (terraform/lke.tf's allow-prometheus-federate-nodeport, gated on
-  # var.lke_federate_allowed_ips) has been terraform-applied. Until both are
-  # done, this target will show as `down` in Newark's Prometheus — that is
-  # expected in the interim, not a config bug. An operator must verify
-  # reachability at deploy time, e.g.:
-  #   curl -sf 'http://172.105.64.89:32090/federate?match[]={__name__=~"dcc_.*"}'
-  - job_name: federate-lke
+  # Network path: terraform/lke.tf `allow-chain-exporter-nodeport` (inbound to
+  # the LKE node, from the VPS IP only) + terraform/main.tf
+  # `allow-lke-exporter-out` (VPS egress to the LKE node IPs only), both derived
+  # from live resources in tofu, no IP literals.
+  - job_name: lke-chain
     scrape_interval: 30s
     scrape_timeout: 15s
-    honor_labels: true
-    metrics_path: /federate
-    scheme: http
-    params:
-      'match[]':
-        - '{__name__=~"dcc_.*"}'
-        - '{__name__=~"kube_pod_container_status_restarts_total|kubelet_volume_stats_used_bytes|kubelet_volume_stats_capacity_bytes|container_memory_working_set_bytes|container_spec_memory_limit_bytes"}'
-    static_configs:
-      - targets: ['172.105.64.89:32090']
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/file_sd/lke-chain.json
+        refresh_interval: 5m
     relabel_configs:
       - target_label: network
         replacement: testnet
-      - target_label: source
-        replacement: lke-incluster

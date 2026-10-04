@@ -31,6 +31,10 @@ services:
     volumes:
       - /opt/dcc/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - /opt/dcc/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # file_sd targets written by deploy-monitoring-stack.yml (lke-chain.json:
+      # the LKE worker's current public IP). A directory mount, so a rewritten
+      # file is seen without recreating the container.
+      - /opt/dcc/monitoring/file_sd:/etc/prometheus/file_sd:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'

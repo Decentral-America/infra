@@ -233,15 +233,21 @@ resource "linode_firewall" "backend" {
     ipv6     = ["::/0"]
   }
 
-  outbound {
-    # Grafana NodePort on Frankfurt LKE worker — Caddy on Newark reverse-proxies
-    # grafana.testnet.decentralchain.io to 139.162.152.128:32300.
-    # Scoped to the LKE worker IP only to minimise blast radius.
-    label    = "allow-grafana-lke-out"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "32300"
-    ipv4     = ["172.105.64.89/32"]
+  # VPS Prometheus -> LKE chain metrics-exporter NodePort (job lke-chain in
+  # monitoring/prometheus.yml). Scoped to the LKE worker public IPs, read from
+  # the live cluster (lke.tf data.linode_instances.lke_nodes), so a recreated
+  # node needs no edit here. Omitted when LKE is disabled. Replaces
+  # allow-grafana-lke-out (32300 to a hardcoded LKE IP): Grafana is served by
+  # the VPS itself (compose/grafana.yml, Caddy -> localhost:3002).
+  dynamic "outbound" {
+    for_each = var.lke_enabled ? [1] : []
+    content {
+      label    = "allow-lke-exporter-out"
+      action   = "ACCEPT"
+      protocol = "TCP"
+      ports    = tostring(local.lke_chain_exporter_nodeport)
+      ipv4     = local.lke_node_public_ipv4_cidrs
+    }
   }
 
   inbound {

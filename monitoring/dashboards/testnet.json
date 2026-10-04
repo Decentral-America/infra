@@ -225,7 +225,7 @@
       "id": 10,
       "type": "stat",
       "title": "Generators Active",
-      "description": "Count of gen-* nodes that produced a block in the last 60s (dcc_blockchain_height_age_seconds < 60), federated in from the LKE in-cluster metrics-exporter (Task 13 cross-site federation — clusters/testnet/monitoring/metrics-exporter.yaml). Expect 2 (gen-0, gen-1) on testnet.",
+      "description": "Count of gen-* nodes that produced a block in the last 60s (dcc_blockchain_height_age_seconds < 60), scraped directly from the LKE metrics-exporter NodePort (job lke-chain; clusters/testnet/monitoring/metrics-exporter.yaml). Expect 2 (gen-0, gen-1) on testnet.",
       "gridPos": { "x": 0, "y": 52, "w": 6, "h": 4 },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "textMode": "auto" },
       "fieldConfig": {
@@ -255,7 +255,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Per-Node Block Height (gen-0 / gen-1 / val-0)",
-      "description": "Federated from the LKE in-cluster metrics-exporter (:9200 — Task 13). Complements the 'Block Height Over Time' panel above, which shows dcc_block_height for whichever node is behind the public main-node endpoint; this panel shows all three LKE-hosted nodes individually.",
+      "description": "Scraped directly from the LKE metrics-exporter NodePort 32092 (job lke-chain). Complements the 'Block Height Over Time' panel above, which shows dcc_block_height for whichever node is behind the public main-node endpoint; this panel shows all three LKE-hosted nodes individually.",
       "gridPos": { "x": 6, "y": 52, "w": 6, "h": 8 },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": {

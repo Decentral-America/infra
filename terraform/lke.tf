@@ -149,48 +149,27 @@ resource "linode_firewall" "lke_nodes" {
     ipv4     = ["192.168.128.0/17"]
   }
 
-  # Prometheus node-exporter scrape (from within cluster, private net)
-  inbound {
-    label    = "allow-node-exporter"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "9100"
-    ipv4     = ["192.168.128.0/17"]
-  }
+  # (allow-node-exporter, private :9100, was removed with the in-cluster
+  # kube-prometheus-stack: nothing in the cluster runs node-exporter now.)
 
 
-  inbound {
-    label    = "allow-grafana-nodeport"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "32300"
-    ipv4     = ["0.0.0.0/0"]
-    ipv6     = ["::/0"]
-  }
-
-  # ── Cross-site Prometheus federation (Task 13, monitoring/cross-site-federation) ──
-  # Exposes the in-cluster kube-prometheus-stack Prometheus (its /federate
-  # endpoint) so Newark's Prometheus — the instance on-call actually watches
-  # in Grafana — can pull LKE's chain metrics-exporter (:9200) and
-  # kube-state-metrics series into one dashboard. See
-  # clusters/testnet/monitoring/kube-prometheus-stack.yaml's
-  # prometheus.service NodePort override (32090) and
-  # monitoring/prometheus.yml's federate-lke job.
-  # Restricted to Newark's IP only, unlike allow-grafana-nodeport above:
-  # Grafana anon-viewer needs public reach, but this NodePort exposes the
-  # full Prometheus HTTP API (not just /federate), so it must stay narrow.
+  # ── Chain metrics-exporter NodePort → VPS Prometheus ──────────────────────
+  # The VPS Prometheus (the single monitoring plane; there is no in-cluster
+  # Prometheus or Grafana) scrapes clusters/testnet/monitoring/metrics-exporter.yaml
+  # through this NodePort (job lke-chain in monitoring/prometheus.yml). Source
+  # is the backend VPS's own public IPv4, read from linode_instance.backend, so
+  # a restored or rebuilt VPS with a new IP needs no tfvars edit, only an apply.
+  # The matching VPS egress rule is allow-lke-exporter-out in main.tf.
   #
-  # DEPLOY-TIME ACTION REQUIRED: this firewall rule only opens the network
-  # path. It has no effect until clusters/testnet/monitoring/kube-prometheus-stack.yaml's
-  # prometheus.service.{type,nodePort} change is reconciled by Flux (or applied
-  # manually) AND `terraform apply` runs this firewall change. Neither is done
-  # by authoring this file — an operator must run both at deploy time.
+  # Replaces allow-prom-federate-nodeport (32090, in-cluster Prometheus
+  # /federate) and allow-grafana-nodeport (32300, 0.0.0.0/0). Grafana is served
+  # by the VPS (compose/grafana.yml behind Caddy), never from the cluster.
   inbound {
-    label    = "allow-prom-federate-nodeport"
+    label    = "allow-chain-exporter-nodeport"
     action   = "ACCEPT"
     protocol = "TCP"
-    ports    = "32090"
-    ipv4     = var.lke_federate_allowed_ips
+    ports    = tostring(local.lke_chain_exporter_nodeport)
+    ipv4     = local.backend_public_ipv4_cidrs
   }
 
   tags = local.tags
@@ -201,4 +180,36 @@ resource "linode_firewall" "lke_nodes" {
   ]
 
   depends_on = [linode_lke_cluster.peer_nodes]
+}
+
+# Public IPv4s of the LKE worker(s) the firewall above is attached to. Feeds the
+# VPS egress rule allow-lke-exporter-out (main.tf), so a recreated node's new IP
+# is picked up by the next plan instead of living as a literal in this repo.
+data "linode_instances" "lke_nodes" {
+  count = var.lke_enabled ? 1 : 0
+
+  filter {
+    name   = "id"
+    values = [for node in linode_lke_cluster.peer_nodes[0].pool[0].nodes : tostring(node.instance_id)]
+  }
+}
+
+locals {
+  # NodePort of the chain metrics-exporter Service. Keep in sync with
+  # clusters/testnet/monitoring/metrics-exporter.yaml and
+  # .github/workflows/deploy-monitoring-stack.yml (LKE_EXPORTER_NODEPORT).
+  lke_chain_exporter_nodeport = 32092
+
+  # Linode's regional private range; excluded so only public addresses are allowed.
+  linode_private_ipv4_range = "192.168.128.0/17"
+
+  backend_public_ipv4_cidrs = [
+    for ip in linode_instance.backend.ipv4 : "${ip}/32" if !cidrcontains(local.linode_private_ipv4_range, ip)
+  ]
+
+  lke_node_public_ipv4_cidrs = var.lke_enabled ? flatten([
+    for inst in data.linode_instances.lke_nodes[0].instances : [
+      for ip in inst.ipv4 : "${ip}/32" if !cidrcontains(local.linode_private_ipv4_range, ip)
+    ]
+  ]) : []
 }

@@ -1,4 +1,9 @@
-# Flux Kustomization for the monitoring stack (moved from inside monitoring/ — B2 fix).
+# Flux Kustomization for clusters/testnet/monitoring/: the chain metrics-exporter
+# and its NodePort, nothing else. The in-cluster kube-prometheus-stack (and with
+# it helm-controller, the monitoring namespace and the monitoring-secrets Secret)
+# was removed: the VPS runs the one Prometheus/Alertmanager/Grafana and scrapes
+# this exporter directly. No SOPS files live here, so no decryption block, and no
+# postBuild substitution is needed.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -11,22 +16,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
+  # The exporter runs in the dcc namespace, which apps creates.
   dependsOn:
     - name: apps
-  # postBuild substitutes ${SMTP_PASSWORD} and ${GRAFANA_ADMIN_PASSWORD} from the
-  # monitoring-secrets Secret. Create it once with your credentials, then SOPS-encrypt:
-  #
-  #   kubectl create secret generic monitoring-secrets -n monitoring \
-  #     --from-literal=SMTP_PASSWORD=<info@decentralchain.io password> \
-  #     --from-literal=GRAFANA_ADMIN_PASSWORD=<choose a strong password>
-  #
-  # Until the Secret exists, monitoring deploys but email/Grafana login are disabled.
-  postBuild:
-    substituteFrom:
-      - kind: Secret
-        name: monitoring-secrets
-        optional: true
