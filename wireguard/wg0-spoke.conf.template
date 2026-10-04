@@ -19,6 +19,6 @@ MTU        = 1420
 # spokes) is routed to main, which relays it. No direct gen<->gen tunnel exists.
 [Peer]
 PublicKey           = ${MAIN_WG_PUBKEY}
-Endpoint            = 66.228.55.154:51820
+Endpoint            = 50.116.30.244:51820
 AllowedIPs          = 10.66.0.0/24
 PersistentKeepalive = 25

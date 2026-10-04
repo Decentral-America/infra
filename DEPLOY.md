@@ -121,7 +121,7 @@ They are NOT infra environment secrets.
 
 | # | Item | Status | Purpose |
 |---|---|---|---|
-| 31 | `TESTNET_DEPLOY_HOST` | SET | Testnet server IP (66.228.55.154) |
+| 31 | `TESTNET_DEPLOY_HOST` | SET | Testnet server IP (50.116.30.244, restored 2026-10-04; was 66.228.55.154) |
 | — | `STAGENET_DEPLOY_HOST` | MISSING | Stagenet server IP |
 | — | `MAINNET_DEPLOY_HOST` | MISSING | Mainnet server IP |
 | 32 | `TESTNET_DEPLOY_USER` | SET | SSH username (`deploy`) |

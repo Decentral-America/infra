@@ -269,7 +269,7 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
 
 | Node | Host | P2P bind | declared-address | known-peers |
 |------|------|----------|------------------|-------------|
-| Newark (compose) | 66.228.55.154 | `dcc.network.port = 6868` | `66.228.55.154:6868` | the 3 Frankfurt nodes |
+| Newark (compose) | 50.116.30.244 | `dcc.network.port = 6868` | `50.116.30.244:6868` | the 3 Frankfurt nodes |
 | dcc-gen-0 (LKE)  | 172.105.64.89 | 6863 | `172.105.64.89:6863` | Newark:6868 + gen-1 + val-0 |
 | dcc-gen-1 (LKE)  | 172.105.64.89 | 6864 | `172.105.64.89:6864` | Newark:6868 + gen-0 + val-0 |
 | dcc-val-0 (LKE)  | 172.105.64.89 | 6865 | `172.105.64.89:6865` | Newark:6868 + gen-0 + gen-1 |
@@ -279,7 +279,7 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
 1. **Newark P2P bind == published port.** `dcc.network.port` MUST equal the compose
    publish (`6868:6868`) and the Linode firewall inbound rule (6868). A mismatch
    (historically `port = 6863` vs publish 6868) makes Newark unreachable even though
-   docker-proxy shows `0.0.0.0:6868 LISTEN`. Verify: `nc -zv 66.228.55.154 6868` from
+   docker-proxy shows `0.0.0.0:6868 LISTEN`. Verify: `nc -zv 50.116.30.244 6868` from
    outside → must succeed.
 2. **Firewall egress.** Newark's Cloud Firewall `outbound_policy = DROP` must allow
    the Frankfurt P2P ports. `terraform/main.tf` `allow-p2p-out` is `6863-6868`. Test
