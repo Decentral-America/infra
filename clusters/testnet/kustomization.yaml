@@ -10,5 +10,6 @@ resources:
   - apps.yaml
   - monitoring.yaml
   - policy.yaml
-  - exchange-platform.yaml
-  - exchange.yaml
+# exchange.yaml / exchange-platform.yaml (the copied PRODUCTION web stack plus
+# its ingress-nginx + cert-manager) were retired from this cluster; the only git
+# copy now lives in archive/production-exchange-stack/ and is not reconciled.

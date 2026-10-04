@@ -142,3 +142,90 @@ groups:
         annotations:
           summary: "DCC service {{ $labels.service }} is DOWN"
           description: "dcc_service_up{service=\"{{ $labels.service }}\"} has been 0 for 5 min (connection failure / timeout / 5xx). Check the service container and its Caddy route."
+
+      # ── Infra-down rules the 2026-09-17 outage proved missing (TESTNET-FINAL-PLAN Task 5.1 Step 3) ──
+      # The plan draft used up{job="node-scala"}, but no such scrape job exists. The main node is
+      # observed only through the `dcc-chain` exporter (exporter.py, node="main-node", public
+      # HTTPS REST), which emits dcc_block_height ONLY when GET /blocks/height succeeded. So
+      # "the series is absent" means "main node REST unreachable". When the exporter itself is
+      # down, ExporterDown fires and inhibits this. LIMITATION: this Prometheus runs ON the VPS,
+      # so a whole-VPS outage (2026-09-17) cannot page from here. That case needs an off-box
+      # probe (TESTNET-FINAL-PLAN Task 0.2, infra-liveness.yml).
+      - alert: MainNodeUnreachable
+        expr: |
+          absent(dcc_block_height{job="dcc-chain", node="main-node"})
+        for: 5m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "main node REST unreachable for 5 min (no dcc_block_height from the dcc-chain exporter)"
+          description: "exporter.py could not read /blocks/height from the main node for 5 min. Check node-scala-testnet on the VPS (docker ps, docker logs) and the Caddy route for testnet-node.decentralchain.io."
+
+      # gen-0/gen-1/val-0 heights arrive ONLY through the lke-chain job: this Prometheus scrapes
+      # the LKE metrics-exporter NodePort directly (no in-cluster Prometheus, no federation). The
+      # exporter labels them node=gen-0|gen-1|val-0 and only emits a node's dcc_block_height when
+      # that node's REST /blocks/height answered. count(count by (node)) is immune to duplicate
+      # series. The `or absent(...)` arm covers zero nodes reporting, where count() returns
+      # nothing at all.
+      # NOTE: that arm also fires when the scrape path itself is down (up{job="lke-chain"} == 0:
+      # LKE outage, NodePort/firewall not applied, or an empty file_sd target list because
+      # deploy-monitoring-stack.yml could not resolve the LKE node IP). That is intended. Either
+      # way this Prometheus is blind to the LKE generators.
+      - alert: LkeGeneratorsDown
+        expr: |
+          (count(count by (node) (dcc_block_height{job="lke-chain", node=~"gen-0|gen-1|val-0"})) < 3)
+          or absent(dcc_block_height{job="lke-chain", node=~"gen-0|gen-1|val-0"})
+        for: 10m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "fewer than 3 LKE nodes (gen-0/gen-1/val-0) report a block height for 10 min"
+          description: "dcc_block_height from the LKE metrics-exporter (job lke-chain) covers fewer than 3 of gen-0/gen-1/val-0. If up{job=\"lke-chain\"} == 0 or the job has no target, the scrape path is down (LKE outage, firewall/NodePort 32092, or an unresolved LKE node IP in file_sd/lke-chain.json); otherwise check pods with cluster-diagnostics.yml."
+
+  # ── Exchange-indexer Postgres + host disk (TESTNET-FINAL-PLAN Task 7.3 item 02) ──────────
+  # Fed by node-exporter (job `node`) and postgres-exporter (job `postgres`) in
+  # compose/prometheus.yml. Neither existed before, so these rules had no data to evaluate.
+  - name: dcc-testnet-capacity
+    interval: 5m
+    rules:
+      # BPS indexes every block into bps_testnet. THRESHOLD IS PROVISIONAL. 1 GiB/day is well
+      # above what a ~30s-block testnet should write, but the real baseline was never measured.
+      # Re-tune from delta(pg_database_size_bytes{datname="bps_testnet"}[1d]) after the 72h soak
+      # (TESTNET-FINAL-PLAN Task 6.6).
+      - alert: PostgresDatabaseGrowthHigh
+        expr: |
+          delta(pg_database_size_bytes{job="postgres", datname="bps_testnet"}[1d]) > 1073741824
+        for: 30m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "bps_testnet grew more than 1 GiB in the last 24h"
+          description: "pg_database_size_bytes{datname=\"bps_testnet\"} grew {{ $value | humanize1024 }}B over 24h. Check BPS for re-indexing loops (repeated rollbacks or duplicate delivery) before the disk fills. See HostDiskSpaceLow."
+
+      # Postgres, the node's RocksDB volume and docker all share the VPS root filesystem.
+      - alert: HostDiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{job="node", fstype=~"ext4|xfs|btrfs"}
+            / node_filesystem_size_bytes{job="node", fstype=~"ext4|xfs|btrfs"}) < 0.20
+        for: 15m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "VPS filesystem {{ $labels.mountpoint }} below 20% free"
+          description: "{{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free. Largest consumers: Postgres (bps_testnet), node-state-testnet volume, docker logs/images. restart-services.yml already truncates >50MB container logs."
+
+      # Without this, a dead exporter makes the two rules above evaluate to "no data", not an alert.
+      - alert: CapacityExporterDown
+        expr: |
+          up{job=~"node|postgres"} == 0
+        for: 10m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "{{ $labels.job }} exporter unreachable for 10 min"
+          description: "Prometheus cannot scrape the {{ $labels.job }} exporter (compose/prometheus.yml). Disk/Postgres capacity alerts are blind until it is back. For postgres, check pg_hba/role dcc and PG* vars in /opt/dcc/secrets/testnet.env."

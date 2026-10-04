@@ -29,6 +29,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # ── Node image parity (rule D6) ───────────────────────────────────────────
+      # All four testnet nodes must pin the same node-scala digest: the VPS main
+      # node (node-config/testnet/vps-image.env) and gen-0/gen-1/val-0
+      # (clusters/testnet/apps/nodes.yaml).
+      - name: Check node-scala digest parity (VPS vs LKE)
+        run: ./scripts/check-digest-parity.sh
+
       # ── OpenTofu ──────────────────────────────────────────────────────────────
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
@@ -55,11 +62,31 @@ jobs:
         run: |
           # Create dummy env/config files so compose config can parse references
           sudo mkdir -p /opt/dcc/secrets /opt/dcc/caddy
-          sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/secrets/testnet.env /opt/dcc/secrets/stagenet.env /opt/dcc/caddy/Caddyfile
+          sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/secrets/testnet.env /opt/dcc/secrets/stagenet.env /opt/dcc/secrets/grafana-testnet.env /opt/dcc/caddy/Caddyfile
           for f in compose/*.yml; do
             echo "Validating $f..."
             docker compose -f "$f" config --quiet
           done
+
+      # ── Prometheus config + alert rule unit tests ─────────────────────────────
+      # Same pinned image the VPS runs (compose/prometheus.yml). prometheus.yml
+      # uses absolute /etc/prometheus paths, so it is checked from a copy laid
+      # out like the container, with an empty file_sd target list.
+      - name: promtool check config + test rules
+        run: |
+          set -euo pipefail
+          IMG=$(grep -oE 'prom/prometheus:[^ ]+@sha256:[0-9a-f]+' compose/prometheus.yml)
+          T=$(mktemp -d)
+          mkdir -p "$T/file_sd"
+          cp monitoring/prometheus.yml monitoring/alerts.yml "$T/"
+          echo '[]' > "$T/file_sd/lke-chain.json"
+          # mktemp -d is 0700; the prometheus image runs as `nobody`, which could
+          # not stat the bind-mounted config ("permission denied"). World-readable only.
+          chmod -R a+rX "$T"
+          docker run --rm --entrypoint promtool -v "$T:/etc/prometheus:ro" "$IMG" \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/work:ro" -w /work "$IMG" \
+            test rules tests/alerts_test.yml
 
       # ── Shell script linting ──────────────────────────────────────────────────
       - name: Install shellcheck

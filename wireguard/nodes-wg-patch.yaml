@@ -46,7 +46,7 @@
               wg set wg0 \
                 private-key /etc/wireguard/privatekey \
                 peer "$MAIN_WG_PUBKEY" \
-                  endpoint 66.228.55.154:51820 \
+                  endpoint 50.116.30.244:51820 \
                   allowed-ips 10.66.0.0/24 \
                   persistent-keepalive 25
               ip -4 address add 10.66.0.11/32 dev wg0      # <-- per node: .12 / .13

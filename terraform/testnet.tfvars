@@ -43,20 +43,20 @@ acme_email          = "ops@decentralamerica.com"
 lke_enabled     = true
 lke_region      = "eu-central" # Frankfurt
 lke_k8s_version = "1.35"
-lke_node_type   = "g6-standard-4" # 4 vCPU / 8 GB — fits 3 JVM nodes + monitoring stack
-lke_node_count  = 1
-lke_ha          = false # Standard control plane (free). Mainnet uses true.
+# "Shared 8 GB bundle": ONE g6-standard-4 worker runs gen-0, gen-1 and val-0 plus
+# Flux (source + kustomize controllers) and the chain metrics-exporter. Monitoring
+# lives on the VPS. cluster-diagnostics.yml prints the node's real allocatable vs
+# requested figures.
+lke_node_type  = "g6-standard-4" # 4 vCPU / 8 GB
+lke_node_count = 1
+lke_ha         = false # Standard control plane (free). Mainnet uses true.
 
-# Exchange app stack (clusters/testnet/apps/exchange/deployments.yaml pins its pods
-# with nodeSelector role=exchange). This pool was created in the Linode console and
-# declared here afterwards to match the live cluster exactly (pool 946807).
-lke_extra_pools = [
-  { type = "g6-standard-2", count = 2, labels = { role = "exchange" } },
-]
+# No extra pools. The former role=exchange pool (2x g6-standard-2, pool 946807)
+# only hosted the copied production web stack, now archived in
+# archive/production-exchange-stack/.
+
 # SSH access restricted to team IPs. Add VPN egress or office CIDR here.
 lke_ssh_allowed_ips = ["201.182.55.117/32"]
-# Cross-site Prometheus federation: only Newark (66.228.55.154, the main node
-# host that also runs the Prometheus/Grafana on-call actually watches) may
-# reach the in-cluster Prometheus NodePort. See variables.tf for why this is
-# narrower than the public grafana-nodeport rule.
-lke_federate_allowed_ips = ["66.228.55.154/32"]
+# The chain metrics-exporter NodePort is opened to the backend VPS's own public
+# IP, read from linode_instance.backend in lke.tf. No IP literal lives here, so a
+# restored VPS with a new address needs only `tofu apply`, not a tfvars edit.

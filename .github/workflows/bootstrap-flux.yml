@@ -104,13 +104,22 @@ jobs:
         run: |
           # "y" answers the "Please give the key access to your repository?" prompt.
           # The key is pre-registered — we confirm it's already in place.
+          #
+          # --components must match the "# Components:" header of the committed
+          # clusters/<network>/flux-system/gotk-components.yaml (source +
+          # kustomize only). bootstrap regenerates that file from these flags and
+          # pushes it, so a mismatch would reinstall controllers the cluster does
+          # not use. Network policies are left at the flux default (on), which is
+          # also how the committed file was generated; --network-policy=false
+          # here used to make a re-bootstrap silently strip them.
+          # Resource right-sizing lives as patches in flux-system/kustomization.yaml,
+          # which bootstrap keeps.
           echo "y" | flux bootstrap git \
             --url=ssh://git@github.com/Decentral-America/infra.git \
             --branch=main \
             --path=clusters/${{ inputs.network }} \
             --private-key-file=/tmp/flux-deploy-key \
-            --network-policy=false \
-            --components-extra=image-reflector-controller,image-automation-controller
+            --components=source-controller,kustomize-controller
 
       - name: Verify Flux is healthy
         run: flux check

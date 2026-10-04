@@ -10,6 +10,9 @@
 #   - hostNetwork: true  — pods bind P2P ports directly to node IP, no NAT
 #   - secrets as volume files (mode 0400), never env vars
 #   - linode-block-storage-retain StorageClass — survives node replacement
+#   - chain-data PVCs are 10Gi (Linode Block Storage minimum). volumeClaimTemplates
+#     are immutable: a size change applies only to newly created StatefulSets/PVCs;
+#     grow an existing volume by editing its PVC (the StorageClass allows expansion).
 #   - podManagementPolicy: Parallel for generators (independent startup)
 #   - persistentVolumeClaimRetentionPolicy: Retain on all axes
 #
@@ -94,10 +97,10 @@ data:
         port = 6863
         declared-address = "172.105.64.89:6863"
         # Only main node in known-peers — prevents loopback mini-fork with gen-1
-        known-peers = ["66.228.55.154:6868"]
+        known-peers = ["50.116.30.244:6868"]
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
-        blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
+        blacklist-exempt = ["50.116.30.244", "172.105.64.89"]
         enable-blacklisting = no
         suspension-residence-time = 30s
         # All 3 LKE gen/val nodes share ONE egress IP (172.105.64.89); main's own dcc.conf already
@@ -168,6 +171,10 @@ data:
         # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
         authoritative = true
+        # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
+        # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
+        # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
+        slashing-enabled = no
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -261,10 +268,10 @@ data:
         port = 6864
         declared-address = "172.105.64.89:6864"
         # Only main node in known-peers — prevents loopback mini-fork with gen-0
-        known-peers = ["66.228.55.154:6868"]
+        known-peers = ["50.116.30.244:6868"]
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
-        blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
+        blacklist-exempt = ["50.116.30.244", "172.105.64.89"]
         enable-blacklisting = no
         suspension-residence-time = 30s
         # Mirrors main's dcc.conf override — see the matching comment on gen-0's network block above
@@ -313,6 +320,10 @@ data:
         # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
         authoritative = true
+        # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
+        # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
+        # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
+        slashing-enabled = no
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -402,10 +413,10 @@ data:
         port = 6865
         declared-address = "172.105.64.89:6865"
         # Only main node in known-peers — single sync source
-        known-peers = ["66.228.55.154:6868"]
+        known-peers = ["50.116.30.244:6868"]
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
-        blacklist-exempt = ["66.228.55.154", "172.105.64.89"]
+        blacklist-exempt = ["50.116.30.244", "172.105.64.89"]
         enable-blacklisting = no
         suspension-residence-time = 30s
         # Mirrors main's dcc.conf override — see the matching comment on gen-0's network block
@@ -423,7 +434,12 @@ data:
 
       miner {
         enable = yes
-        quorum = 0
+        # quorum=1 (was 0, 2026-10-01): see gen-0 note above. #80 (78efa95) moved only the FUNDED
+        # gen-0/gen-1 to 1 because val-0 is unfunded at genesis and never forges, so quorum=0 was
+        # moot for it, not deliberate. 1 changes nothing while val-0 does not forge, and stops the
+        # quorum=0 self-fork loop if val-0 is ever funded/promoted. Only the bootstrap seed (main
+        # VPS) keeps quorum=0.
+        quorum = 1
         interval-after-last-block-then-generation-is-allowed = 15d
         # In-process self-commit-to-generation (node-scala PR #60) — see gen-0's note above.
         self-commit-to-generation = yes
@@ -450,6 +466,10 @@ data:
         # can only confirm-forward a block already on this node's own canonical/synced chain, never inject one.
         enabled = true
         authoritative = true
+        # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
+        # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
+        # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
+        slashing-enabled = no
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -571,6 +591,12 @@ spec:
             limits:
               cpu: "420m"
               memory: "1280Mi"
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
             httpGet:
               path: /node/status
@@ -598,7 +624,7 @@ spec:
         accessModes: [ReadWriteOnce]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi
 
 ---
 # ── StatefulSet: dcc-gen-1 ────────────────────────────────────────────────────
@@ -697,6 +723,12 @@ spec:
             limits:
               cpu: "300m"
               memory: "1280Mi"
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
             httpGet:
               path: /node/status
@@ -724,7 +756,7 @@ spec:
         accessModes: [ReadWriteOnce]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi
 
 ---
 # ── StatefulSet: dcc-val-0 ────────────────────────────────────────────────────
@@ -814,6 +846,12 @@ spec:
             limits:
               cpu: "250m"
               memory: "1024Mi"
+          # Liveness stays "REST answers". A height-stall liveness probe can't tell "this pod is wedged"
+          # from "the whole chain halted" (main down, quorum lost). In a chain-wide halt it would restart
+          # every consensus node every ~18 min, dropping in-memory consensus state and making recovery
+          # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
+          # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
+          # Step 2 is deliberately not applied to LKE for this reason.
           livenessProbe:
             httpGet:
               path: /node/status
@@ -843,7 +881,7 @@ spec:
         accessModes: [ReadWriteOnce]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi
 
 ---
 # ── NetworkPolicy: isolate dcc namespace ─────────────────────────────────────

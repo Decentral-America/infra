@@ -8,6 +8,19 @@ sudo cp /tmp/config.alloy /opt/dcc/monitoring/config.alloy
 sudo cp /tmp/alertmanager.yml /opt/dcc/monitoring/alertmanager.yml
 sudo cp /tmp/alert-webhook.py /opt/dcc/monitoring/alert-webhook.py
 sudo cp /tmp/exporter.py /opt/dcc/monitoring/exporter.py
+# Prometheus file_sd target for the LKE chain metrics-exporter NodePort (job
+# lke-chain). Written by deploy-monitoring-stack.yml from the LKE worker's current
+# public IP. Installed via a temp file + mv so Prometheus never reads a partial
+# file. If this deploy did not ship one and none exists yet, install an empty
+# list: Prometheus then has no lke-chain target and LkeGeneratorsDown fires.
+sudo mkdir -p /opt/dcc/monitoring/file_sd
+if [ -f /tmp/lke-chain.json ]; then
+  sudo install -m 644 /tmp/lke-chain.json /opt/dcc/monitoring/file_sd/.lke-chain.json.tmp
+  sudo mv -f /opt/dcc/monitoring/file_sd/.lke-chain.json.tmp /opt/dcc/monitoring/file_sd/lke-chain.json
+elif [ ! -f /opt/dcc/monitoring/file_sd/lke-chain.json ]; then
+  echo '[]' | sudo tee /opt/dcc/monitoring/file_sd/lke-chain.json >/dev/null
+fi
+echo "lke-chain file_sd targets: $(cat /opt/dcc/monitoring/file_sd/lke-chain.json)"
 sudo mkdir -p /opt/dcc/monitoring/datasources
 sudo cp /tmp/loki.yaml /opt/dcc/monitoring/datasources/loki.yaml
 sudo cp /tmp/prometheus.yaml /opt/dcc/monitoring/datasources/prometheus.yaml
@@ -25,7 +38,8 @@ fi
 rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/config.alloy /tmp/alertmanager.yml /tmp/alert-webhook.py \
       /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml \
-      /tmp/grafana.ini /tmp/grafana-compose.yml /tmp/dashboards.yaml /tmp/testnet.json
+      /tmp/grafana.ini /tmp/grafana-compose.yml /tmp/dashboards.yaml /tmp/testnet.json \
+      /tmp/lke-chain.json
 
 # Every compose file in /opt/dcc/compose otherwise shares the same default
 # Compose project name (the directory basename), so --remove-orphans on one
@@ -69,6 +83,12 @@ groups=d.get('data',{}).get('groups',[])
 print('Rule groups:',len(groups))
 for g in groups: print(' ',g.get('name'),':',len(g.get('rules',[])))
 " || echo "(prometheus not reachable)"
+
+echo "=== Start host + Postgres exporters (feed HostDiskSpaceLow / PostgresDatabaseGrowthHigh) ==="
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d node-exporter postgres-exporter
+sleep 4
+curl -s http://127.0.0.1:9100/metrics 2>/dev/null | grep -c '^node_filesystem_avail_bytes' | sed 's/^/  node_filesystem_avail_bytes series: /' || echo "  (node-exporter not reachable)"
+curl -s http://127.0.0.1:9187/metrics 2>/dev/null | grep -E '^pg_up ' || echo "  (postgres-exporter not reachable)"
 
 echo "=== (Re)start Loki + Alloy (removes decommissioned promtail-testnet) ==="
 NETWORK=testnet docker compose -p "$LOKI_PROJECT" -f /opt/dcc/compose/loki.yml up -d --remove-orphans

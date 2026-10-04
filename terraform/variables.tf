@@ -134,7 +134,7 @@ variable "admin_domain" {
 }
 
 variable "grafana_domain" {
-  description = "Public domain for Grafana, proxied by Caddy to the LKE NodePort. Leave empty to skip."
+  description = "Public domain for Grafana, proxied by Caddy (update-caddy.yml) to the VPS-local Grafana on localhost:3002 (compose/grafana.yml). Leave empty to skip."
   type        = string
   default     = ""
 }
@@ -178,7 +178,7 @@ variable "lke_node_count" {
 }
 
 variable "lke_extra_pools" {
-  description = "Additional LKE node pools after the primary peer-node pool, e.g. the testnet exchange-app pool (role=exchange)."
+  description = "Additional LKE node pools after the primary peer-node pool, e.g. a labelled pool for workloads that must not share the consensus nodes. Testnet uses none."
   type = list(object({
     type   = string
     count  = number
@@ -200,24 +200,5 @@ variable "lke_ssh_allowed_ips" {
   validation {
     condition     = length(var.lke_ssh_allowed_ips) > 0
     error_message = "lke_ssh_allowed_ips must contain at least one CIDR. Never use 0.0.0.0/0."
-  }
-}
-
-variable "lke_federate_allowed_ips" {
-  description = <<-EOT
-    IPv4 CIDRs allowed to reach the in-cluster kube-prometheus-stack Prometheus
-    NodePort (see clusters/testnet/monitoring/kube-prometheus-stack.yaml's
-    prometheus.service NodePort override) for cross-site federation into
-    Newark's Prometheus (infra/monitoring/prometheus.yml's federate-lke job).
-    Keep this narrow — only Newark's static IP should be listed here, unlike
-    the hardcoded 0.0.0.0/0 Grafana NodePort rule (allow-grafana-nodeport)
-    elsewhere in this file. This variable exposes the full Prometheus HTTP
-    API (not just /federate), so it must not be 0.0.0.0/0.
-  EOT
-  type        = list(string)
-  default     = []
-  validation {
-    condition     = length(var.lke_federate_allowed_ips) > 0
-    error_message = "lke_federate_allowed_ips must contain at least one CIDR. Never use 0.0.0.0/0."
   }
 }

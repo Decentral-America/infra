@@ -23,8 +23,8 @@ the exact mistake that causes half-deploys and mixed protocol versions. Full inv
 (registers BlockchainUpdates + DEXExtension) and `grpc.jar` (`DccBlockchainApiGrpc` stubs + DEX gRPC +
 14-field `Block$Header`).
 
-**Main node specifics:** host `66.228.55.154`, P2P port `6868`, REST via Caddy at
-`https://testnet-node.decentralchain.io`. SSH: `ssh -i <deploy_key> deploy@66.228.55.154`
+**Main node specifics:** host `50.116.30.244`, P2P port `6868`, REST via Caddy at
+`https://testnet-node.decentralchain.io`. SSH: `ssh -i <deploy_key> deploy@50.116.30.244`
 (verified 2026-08-13 — login user is `deploy`, not `root`). Config: `/opt/dcc/config/node-testnet/dcc.conf`.
 Compose: `/opt/dcc/compose/node-scala.yml`. Newark is **not** GitOps — use `deploy-node-config.yml` for
 config changes, never hand-edit on the host. **Never use `restart-host-network.yml`** — it wipes chain

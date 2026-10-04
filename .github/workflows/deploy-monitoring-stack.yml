@@ -21,6 +21,44 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      # The VPS Prometheus scrapes the LKE chain metrics-exporter directly
+      # (job lke-chain, monitoring/prometheus.yml). Its target is the LKE
+      # worker's public IP, which changes whenever the cluster or node is
+      # recreated, so it is resolved here at deploy time instead of being
+      # hardcoded. LKE_NODE_IP (repo or environment variable) overrides the
+      # lookup. Read-only Linode API calls only. If nothing resolves, an empty
+      # target list is shipped and LkeGeneratorsDown fires on the VPS.
+      - name: Resolve LKE chain-exporter target
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          LKE_NODE_IP: ${{ vars.LKE_NODE_IP }}
+          LKE_CLUSTER_LABEL: dcc-peer-testnet
+          # Keep in sync with clusters/testnet/monitoring/metrics-exporter.yaml
+          # (nodePort) and terraform/lke.tf (local.lke_chain_exporter_nodeport).
+          LKE_EXPORTER_NODEPORT: '32092'
+        run: |
+          set -euo pipefail
+          api() { curl -fsS --max-time 20 -H "Authorization: Bearer ${LINODE_TOKEN}" "https://api.linode.com/v4$1"; }
+          ip="${LKE_NODE_IP:-}"
+          if [[ -z "$ip" && -n "${LINODE_TOKEN:-}" ]]; then
+            cid=$(api /lke/clusters | jq -r --arg l "$LKE_CLUSTER_LABEL" '.data[] | select(.label==$l) | .id' | head -1 || true)
+            if [[ -n "$cid" ]]; then
+              iid=$(api "/lke/clusters/${cid}/pools" | jq -r '[.data[].nodes[] | select(.instance_id != null) | .instance_id] | sort | .[0] // empty' || true)
+              if [[ -n "$iid" ]]; then
+                # Public address only; Linode private addresses are 192.168.128.0/17.
+                ip=$(api "/linode/instances/${iid}" | jq -r '[.ipv4[] | select(startswith("192.168.") | not)] | .[0] // empty' || true)
+              fi
+            fi
+          fi
+          if [[ -n "$ip" ]]; then
+            echo "LKE chain-exporter target: ${ip}:${LKE_EXPORTER_NODEPORT}"
+            jq -n --arg t "${ip}:${LKE_EXPORTER_NODEPORT}" '[{targets: [$t], labels: {cluster: "dcc-peer-testnet"}}]' > lke-chain.json
+          else
+            echo "::warning::Could not resolve the LKE worker IP (no LKE_NODE_IP variable, no cluster '${LKE_CLUSTER_LABEL}', or no LINODE_TOKEN). Shipping an empty lke-chain target list; LkeGeneratorsDown will fire until this is fixed and the stack is redeployed."
+            echo '[]' > lke-chain.json
+          fi
+          cat lke-chain.json
+
       - name: Deploy monitoring config to VPS
         env:
           SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
@@ -35,7 +73,7 @@ jobs:
             monitoring/prometheus.yml monitoring/alerts.yml \
             monitoring/loki-config.yaml monitoring/config.alloy \
             monitoring/alertmanager.yml monitoring/alert-webhook.py monitoring/exporter.py \
-            monitoring/scripts/deploy-monitoring.sh \
+            monitoring/scripts/deploy-monitoring.sh lke-chain.json \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
             monitoring/datasources/loki.yaml \

@@ -118,6 +118,15 @@ resource "linode_instance" "backend" {
   image     = "linode/debian12"
   root_pass = var.root_password
 
+  # Linode backups: the 2026-10-01 non-payment deletion is recoverable only for
+  # 90 days through recovery images; backups make the restore point explicit.
+  backups_enabled = true
+
+  # Assert the instance is powered on. drift-detect (tofu plan) then reports an
+  # Offline VPS as drift. On 2026-09-17 a Linode account-level outage left this
+  # instance powered off for 6+ days, and no check noticed.
+  booted = true
+
   tags = local.tags
 
   # Firewall — allow SSH (22), HTTP (80), HTTPS (443).
@@ -160,7 +169,10 @@ resource "linode_instance" "backend" {
   # consumed only on first boot and must not trigger a replacement on rotation.
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [stackscript_data, root_pass]
+    # image/stackscript_id: an instance restored from a recovery image (Linode
+    # deleted the original on non-payment, 2026-10-01) or otherwise adopted via
+    # provision.yml import-backend must be updated in place, never replaced.
+    ignore_changes = [stackscript_data, root_pass, image, stackscript_id]
   }
 }
 
@@ -221,15 +233,21 @@ resource "linode_firewall" "backend" {
     ipv6     = ["::/0"]
   }
 
-  outbound {
-    # Grafana NodePort on Frankfurt LKE worker — Caddy on Newark reverse-proxies
-    # grafana.testnet.decentralchain.io to 139.162.152.128:32300.
-    # Scoped to the LKE worker IP only to minimise blast radius.
-    label    = "allow-grafana-lke-out"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "32300"
-    ipv4     = ["172.105.64.89/32"]
+  # VPS Prometheus -> LKE chain metrics-exporter NodePort (job lke-chain in
+  # monitoring/prometheus.yml). Scoped to the LKE worker public IPs, read from
+  # the live cluster (lke.tf data.linode_instances.lke_nodes), so a recreated
+  # node needs no edit here. Omitted when LKE is disabled. Replaces
+  # allow-grafana-lke-out (32300 to a hardcoded LKE IP): Grafana is served by
+  # the VPS itself (compose/grafana.yml, Caddy -> localhost:3002).
+  dynamic "outbound" {
+    for_each = var.lke_enabled ? [1] : []
+    content {
+      label    = "allow-lke-exporter-out"
+      action   = "ACCEPT"
+      protocol = "TCP"
+      ports    = tostring(local.lke_chain_exporter_nodeport)
+      ipv4     = local.lke_node_public_ipv4_cidrs
+    }
   }
 
   inbound {

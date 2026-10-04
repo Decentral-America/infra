@@ -123,6 +123,10 @@ jobs:
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: '1.12.6'
+          # Without this the wrapper reported `-detailed-exitcode` as 0: run 37096490854
+          # printed "Plan: 2 to add" (backend Linode and LKE cluster deleted by Linode)
+          # yet recorded status=clean and skipped the failure step.
+          tofu_wrapper: false
 
       - name: Write backend config
         if: >-

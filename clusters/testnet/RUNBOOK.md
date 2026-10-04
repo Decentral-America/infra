@@ -16,7 +16,7 @@ export KUBECONFIG=~/.kube/dcc-testnet.yaml
 
 **What survives automatically:** Block Storage PVCs use `linode-block-storage-retain` with `ReclaimPolicy: Retain`. The 3 chain-data volumes are **not deleted** when the node is lost.
 
-**Cost trade-off:** Retain is deliberate (see Scenario A) but means every PVC delete/recreate — including manual incident-recovery resets — leaves the old PersistentVolume behind, Released and still billed ($2/mo per 20GiB volume), forever, until someone prunes it. 21 of these piled up during the June testnet bring-up (multiple genesis-reset attempts while chasing the height-1798/1799/3325 divergences) before anyone noticed on the bill. `.github/workflows/prune-released-chain-volumes.yml` runs weekly and keeps only the 2 most-recent Released PVs per claim (`chain-data-dcc-gen-0-0`, `chain-data-dcc-gen-1-0`, `chain-data-dcc-val-0-0`), deleting older ones via the proper CSI path (patch `persistentVolumeReclaimPolicy` to `Delete`, then `kubectl delete pv`).
+**Cost trade-off:** Retain is deliberate (see Scenario A) but means every PVC delete/recreate — including manual incident-recovery resets — leaves the old PersistentVolume behind, Released and still billed ($1/mo per 10GiB volume; volumes were 20GiB before the 2026-10 rebuild), forever, until someone prunes it. 21 of these piled up during the June testnet bring-up (multiple genesis-reset attempts while chasing the height-1798/1799/3325 divergences) before anyone noticed on the bill. `.github/workflows/prune-released-chain-volumes.yml` runs weekly and keeps only the 2 most-recent Released PVs per claim (`chain-data-dcc-gen-0-0`, `chain-data-dcc-gen-1-0`, `chain-data-dcc-val-0-0`), deleting older ones via the proper CSI path (patch `persistentVolumeReclaimPolicy` to `Delete`, then `kubectl delete pv`).
 
 **Never delete a chain-data Linode Volume directly via the Linode API/Cloud Manager.** That orphans the k8s PV object (still shows Released, pointing at a disk that no longer exists) instead of cleanly removing it. Always go through kubectl (`kubectl delete pv`, or the prune workflow above) so the CSI driver and k8s stay in sync.
 
@@ -269,7 +269,7 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
 
 | Node | Host | P2P bind | declared-address | known-peers |
 |------|------|----------|------------------|-------------|
-| Newark (compose) | 66.228.55.154 | `dcc.network.port = 6868` | `66.228.55.154:6868` | the 3 Frankfurt nodes |
+| Newark (compose) | 50.116.30.244 | `dcc.network.port = 6868` | `50.116.30.244:6868` | the 3 Frankfurt nodes |
 | dcc-gen-0 (LKE)  | 172.105.64.89 | 6863 | `172.105.64.89:6863` | Newark:6868 + gen-1 + val-0 |
 | dcc-gen-1 (LKE)  | 172.105.64.89 | 6864 | `172.105.64.89:6864` | Newark:6868 + gen-0 + val-0 |
 | dcc-val-0 (LKE)  | 172.105.64.89 | 6865 | `172.105.64.89:6865` | Newark:6868 + gen-0 + gen-1 |
@@ -279,7 +279,7 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
 1. **Newark P2P bind == published port.** `dcc.network.port` MUST equal the compose
    publish (`6868:6868`) and the Linode firewall inbound rule (6868). A mismatch
    (historically `port = 6863` vs publish 6868) makes Newark unreachable even though
-   docker-proxy shows `0.0.0.0:6868 LISTEN`. Verify: `nc -zv 66.228.55.154 6868` from
+   docker-proxy shows `0.0.0.0:6868 LISTEN`. Verify: `nc -zv 50.116.30.244 6868` from
    outside → must succeed.
 2. **Firewall egress.** Newark's Cloud Firewall `outbound_policy = DROP` must allow
    the Frankfurt P2P ports. `terraform/main.tf` `allow-p2p-out` is `6863-6868`. Test

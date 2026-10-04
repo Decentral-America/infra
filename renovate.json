@@ -39,11 +39,6 @@
   ],
   "packageRules": [
     {
-      "description": "clusters/testnet/apps/exchange/ is owned by the exchange team — never open Renovate PRs against it",
-      "matchFileNames": ["clusters/testnet/apps/exchange/**"],
-      "enabled": false
-    },
-    {
       "description": "node-scala image pins are release pins written by pin-node-image-digest.yml / the release process, not dependency updates",
       "matchPackageNames": ["ghcr.io/decentral-america/node-scala"],
       "enabled": false
