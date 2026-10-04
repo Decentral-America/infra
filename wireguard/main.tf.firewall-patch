@@ -9,7 +9,7 @@
     action   = "ACCEPT"
     protocol = "UDP"
     ports    = "51820"
-    ipv4     = ["172.105.64.89/32"]   # LKE egress IP (all 3 spokes NAT out here)
+    ipv4     = ["139.162.144.243/32"]   # LKE egress IP (all 3 spokes NAT out here)
   }
 
   # ── WireGuard — hub-relayed / keepalive replies back to the spokes ────────────
@@ -19,12 +19,12 @@
     action   = "ACCEPT"
     protocol = "UDP"
     ports    = "1-65535"
-    ipv4     = ["172.105.64.89/32"]
+    ipv4     = ["139.162.144.243/32"]
   }
 
 # NOTE: LKE side needs NO firewall change — spokes only make OUTBOUND UDP to
 # main:51820, and linode_firewall.lke_nodes already has outbound_policy=ACCEPT.
 #
 # OPTIONAL hardening AFTER cutover is verified: once all P2P rides WG you may
-# tighten the public P2P rules (main inbound TCP 6868 -> source 172.105.64.89 only;
+# tighten the public P2P rules (main inbound TCP 6868 -> source 139.162.144.243 only;
 # terraform/lke.tf 6863/6864/6865 -> DROP). Do this LAST and separately.

@@ -9,7 +9,7 @@
 #
 # TOPOLOGY at the WG *transport* layer = HUB & SPOKE (not point-to-point mesh).
 #   main (50.116.30.244) is the HUB: public static IP, ListenPort 51820, ip_forward=1.
-#   gen-0/gen-1/val-0 are SPOKES behind ONE shared NAT (LKE egress 172.105.64.89),
+#   gen-0/gen-1/val-0 are SPOKES behind ONE shared NAT (LKE egress 139.162.144.243),
 #   so they CANNOT open direct gen<->gen WG tunnels. Each spoke peers ONLY with main
 #   (AllowedIPs = 10.66.0.0/24) and main ROUTES spoke<->spoke traffic.
 # TOPOLOGY at the node-scala P2P layer = logical mesh via known-peers (see dcc.conf.network-patch).
