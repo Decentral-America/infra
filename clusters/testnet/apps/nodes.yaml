@@ -597,6 +597,16 @@ spec:
           # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
           # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
           # Step 2 is deliberately not applied to LKE for this reason.
+          # startupProbe: on a cold start (empty chain volume, three JVMs booting at once on
+          # one worker) REST can take longer than liveness allows (60s + 3x30s). gen-1 was
+          # killed mid-boot on 2026-10-04. Liveness and readiness only start once this passes.
+          startupProbe:
+            httpGet:
+              path: /node/status
+              port: 6869
+              host: 127.0.0.1
+            periodSeconds: 10
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /node/status
@@ -729,6 +739,16 @@ spec:
           # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
           # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
           # Step 2 is deliberately not applied to LKE for this reason.
+          # startupProbe: on a cold start (empty chain volume, three JVMs booting at once on
+          # one worker) REST can take longer than liveness allows (60s + 3x30s). gen-1 was
+          # killed mid-boot on 2026-10-04. Liveness and readiness only start once this passes.
+          startupProbe:
+            httpGet:
+              path: /node/status
+              port: 6870
+              host: 127.0.0.1
+            periodSeconds: 10
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /node/status
@@ -852,6 +872,16 @@ spec:
           # harder. Height stall is detected by the BlockProductionStalled / FinalizationStalled alerts
           # (monitoring/alerts.yml), which page without restarting anything. TESTNET-FINAL-PLAN Task 2.6
           # Step 2 is deliberately not applied to LKE for this reason.
+          # startupProbe: on a cold start (empty chain volume, three JVMs booting at once on
+          # one worker) REST can take longer than liveness allows (60s + 3x30s). gen-1 was
+          # killed mid-boot on 2026-10-04. Liveness and readiness only start once this passes.
+          startupProbe:
+            httpGet:
+              path: /node/status
+              port: 6871
+              host: 127.0.0.1
+            periodSeconds: 10
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /node/status
