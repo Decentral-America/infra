@@ -10,6 +10,9 @@
 #   - hostNetwork: true  — pods bind P2P ports directly to node IP, no NAT
 #   - secrets as volume files (mode 0400), never env vars
 #   - linode-block-storage-retain StorageClass — survives node replacement
+#   - chain-data PVCs are 10Gi (Linode Block Storage minimum). volumeClaimTemplates
+#     are immutable: a size change applies only to newly created StatefulSets/PVCs;
+#     grow an existing volume by editing its PVC (the StorageClass allows expansion).
 #   - podManagementPolicy: Parallel for generators (independent startup)
 #   - persistentVolumeClaimRetentionPolicy: Retain on all axes
 #
@@ -621,7 +624,7 @@ spec:
         accessModes: [ReadWriteOnce]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi
 
 ---
 # ── StatefulSet: dcc-gen-1 ────────────────────────────────────────────────────
@@ -753,7 +756,7 @@ spec:
         accessModes: [ReadWriteOnce]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi
 
 ---
 # ── StatefulSet: dcc-val-0 ────────────────────────────────────────────────────
@@ -878,7 +881,7 @@ spec:
         accessModes: [ReadWriteOnce]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi
 
 ---
 # ── NetworkPolicy: isolate dcc namespace ─────────────────────────────────────
