@@ -91,7 +91,10 @@ curl -s http://127.0.0.1:9100/metrics 2>/dev/null | grep -c '^node_filesystem_av
 curl -s http://127.0.0.1:9187/metrics 2>/dev/null | grep -E '^pg_up ' || echo "  (postgres-exporter not reachable)"
 
 echo "=== (Re)start Loki + Alloy (removes decommissioned promtail-testnet) ==="
-NETWORK=testnet docker compose -p "$LOKI_PROJECT" -f /opt/dcc/compose/loki.yml up -d --remove-orphans
+# --force-recreate: loki-config.yaml and config.alloy are bind-mounted files, which both programs read only
+# at startup; plain `up -d` leaves running containers on the old config (a Loki config fix deployed
+# 2026-10-07 silently did not apply until a manual restart). Alloy buffers and retries during the restart.
+NETWORK=testnet docker compose -p "$LOKI_PROJECT" -f /opt/dcc/compose/loki.yml up -d --remove-orphans --force-recreate
 docker ps | grep -E "loki|alloy" || echo "(not running)"
 sleep 5
 curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki not ready)"
