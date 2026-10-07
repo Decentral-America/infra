@@ -26,6 +26,13 @@ common:
     kvstore:
       store: inmemory
 
+# The query-frontend advertises an address that the scheduler/querier dial back to return results. By
+# default it reads that address from a private network interface: with host networking that was the docker
+# bridge (172.19.0.1:9096), while gRPC only listens on 127.0.0.1, so every query hung ("error notifying
+# frontend ... connection refused", found 2026-10-06). Advertise the loopback address gRPC actually binds.
+frontend:
+  instance_interface_names: [lo]
+
 schema_config:
   configs:
     - from: 2024-01-01

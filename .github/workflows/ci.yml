@@ -36,6 +36,16 @@ jobs:
       - name: Check node-scala digest parity (VPS vs LKE)
         run: ./scripts/check-digest-parity.sh
 
+      # The main node loads plugins/testnet/*.jar AHEAD of its own classes. A plugin that bundles a copy
+      # of a node class silently replaces it (2026-10-04: stale protobuf classes in grpc.jar crashed the
+      # miner and shut the node down). Checked against the exact pinned image the VPS runs.
+      - name: Check node plugins do not shadow node image classes
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source node-config/testnet/vps-image.env
+          ./scripts/check-plugin-shadowing.sh "$NODE_SCALA_IMAGE" plugins/testnet
+
       # ── OpenTofu ──────────────────────────────────────────────────────────────
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
