@@ -1,6 +1,7 @@
 name: Update Main Node Image (NO DATA WIPE)
 # Updates the node-scala image without wiping chain data.
-# Downloads fresh plugin JARs from the latest matcher CI build (plugin-jars artifact).
+# Deploys the plugin JARs committed in plugins/testnet/ (see the NOTE at the end of this file), after
+# checking that none of them shadows a class or resource of the pinned node image.
 # Use restart-host-network.yml ONLY when a clean chain reset is needed.
 # Image digest is read from node-config/testnet/vps-image.env, the single
 # source of truth shared with deploy-node-config.yml and restart-host-network.yml
@@ -27,6 +28,14 @@ jobs:
           # shellcheck disable=SC1091
           source node-config/testnet/vps-image.env
           echo "image=${NODE_SCALA_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      # Fail closed before touching the server: the node loads plugins AHEAD of its own classes, so a
+      # plugin bundling a node class replaces it (2026-10-04: NoSuchMethodError in the miner and 5 fatal
+      # shutdowns from stale protobuf classes in grpc.jar).
+      - name: Check plugins do not shadow node image classes
+        env:
+          NODE_IMAGE: ${{ steps.image.outputs.image }}
+        run: ./scripts/check-plugin-shadowing.sh "$NODE_IMAGE" plugins/testnet
 
       - name: Deploy plugin JARs and update node image
         env:
@@ -96,7 +105,18 @@ jobs:
              curl -s http://localhost:6869/blocks/height 2>/dev/null || echo '(starting up)'
              echo '=== Version ==='
              curl -s http://localhost:6869/node/version 2>/dev/null || echo '(starting up)'"
+
+          # Post-start: a class-linkage error means a plugin and the image disagree; fail loudly instead of
+          # leaving a node that cannot forge (or that dies on the first peer microblock) looking healthy.
+          sleep 45
+          LINKAGE=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
+            "docker logs --since 2m node-scala-testnet 2>&1 | grep -cE 'NoSuchMethodError|NoClassDefFoundError|LinkageError|IncompatibleClassChangeError' || true")
           rm -f /tmp/id_rsa
+          echo "class-linkage errors in the first minute: ${LINKAGE}"
+          if [ "${LINKAGE:-0}" != "0" ]; then
+            echo "::error::node logged ${LINKAGE} class-linkage error(s) after the image update -- plugin/image mismatch"
+            exit 1
+          fi
 
 # NOTE: Plugin JARs (plugins/testnet/ext.jar, grpc.jar) are committed to this repo.
 # They are built from Ecosystem/matcher @ main and should be updated when matcher changes.
