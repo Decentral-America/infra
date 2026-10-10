@@ -42,10 +42,14 @@ def gh(method: str, path: str, body: dict | None = None) -> dict:
         return {}
 
 def find_open_issue(title_prefix: str) -> int | None:
-    issues = gh('GET', f'issues?state=open&labels=alert&per_page=50')
+    # Matched by title only. GitHub silently drops `labels` on issue creation when the token lacks push
+    # access, so a label filter here missed the webhook's own issues and resolved alerts never closed
+    # (test-fire #186, 2026-10-10). Pull requests also come back from /issues; skip them.
+    issues = gh('GET', 'issues?state=open&per_page=100')
     for issue in (issues if isinstance(issues, list) else []):
-        if issue.get('title', '').startswith(title_prefix):
+        if 'pull_request' not in issue and issue.get('title', '').startswith(title_prefix):
             return issue['number']
+    return None
     return None
 
 def handle_alert(alert: dict) -> None:
@@ -76,6 +80,8 @@ def handle_alert(alert: dict) -> None:
         })
         if result.get('number'):
             log.info('Created issue #%s for alert %s', result['number'], name)
+            # Best effort: labels are dropped from the create call without push access (see find_open_issue).
+            gh('POST', f"issues/{result['number']}/labels", {'labels': ['alert', f'severity:{sev}']})
         else:
             log.warning('Failed to create issue for alert %s', name)
 
@@ -84,7 +90,9 @@ def handle_alert(alert: dict) -> None:
         if num:
             gh('POST', f'issues/{num}/comments', {'body': 'Alert resolved — auto-closing.'})
             gh('PATCH', f'issues/{num}', {'state': 'closed'})
-            log.info('Closed issue #%s for resolved alert %s', num, name)
+            log.info('Closed issue #%s: alert %s resolved', num, name)
+        else:
+            log.warning('Resolved alert %s has no open issue to close', name)
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):

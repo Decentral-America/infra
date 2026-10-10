@@ -100,7 +100,10 @@ sleep 5
 curl -s http://127.0.0.1:3100/ready 2>/dev/null || echo "(loki not ready)"
 
 echo "=== Restart Alertmanager + Alert Webhook ==="
-NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d alertmanager alert-webhook
+# --force-recreate: alertmanager.yml and alert-webhook.py are bind-mounted files read only at startup;
+# plain `up -d` left both on the old version (2026-10-10: Alertmanager kept the broken bearer_token_file
+# for 5 days after the fix was deployed, until a manual /-/reload).
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --force-recreate alertmanager alert-webhook
 
 # Grafana — isolated compose project so --remove-orphans elsewhere can't touch it, and so it
 # doesn't treat the other monitoring containers as orphans (see the 2026-07-04 incident note above).
