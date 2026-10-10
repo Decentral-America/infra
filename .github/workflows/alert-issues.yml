@@ -1,0 +1,58 @@
+name: Alert Issue Lifecycle
+# Labels and closes the GitHub issues that monitoring/alert-webhook.py opens for Alertmanager alerts.
+# The webhook's token (ADMIN_DASHBOARD_GITHUB_PAT) can open issues on this public repo and dispatch
+# workflows, but cannot label, comment on or close issues (403). Those steps run here with the workflow
+# token instead. Event-driven (issues / workflow_dispatch), so GitHub's delayed cron scheduler does not
+# affect it.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Alert issue to close (dispatched by alert-webhook when the alert resolves)'
+        required: true
+      alertname:
+        description: 'Resolved alert name (for the closing comment)'
+        required: false
+        default: ''
+permissions:
+  issues: write
+concurrency:
+  group: alert-issues-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+jobs:
+  label:
+    if: github.event_name == 'issues' && startsWith(github.event.issue.title, '[ALERT]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Label alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          SEV=$(printf '%s' "$BODY" | sed -n 's/^\*\*Severity:\*\* \([a-z]*\).*/\1/p' | head -1)
+          case "$SEV" in critical|high|warning) ;; *) SEV=unknown ;; esac
+          gh issue edit "$NUMBER" -R "$GITHUB_REPOSITORY" --add-label alert --add-label "severity:$SEV"
+  close:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close resolved alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ inputs.issue_number }}
+          ALERT: ${{ inputs.alertname }}
+        run: |
+          set -euo pipefail
+          [[ "$NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::issue_number must be numeric"; exit 1; }
+          TITLE=$(gh issue view "$NUMBER" -R "$GITHUB_REPOSITORY" --json title,state -q 'select(.state=="OPEN") | .title')
+          if [[ "$TITLE" != "[ALERT]"* ]]; then
+            echo "Issue #$NUMBER is not an open [ALERT] issue; nothing to close."
+            exit 0
+          fi
+          gh issue close "$NUMBER" -R "$GITHUB_REPOSITORY" --comment "Alert ${ALERT:-} resolved; auto-closed by alert-webhook."
