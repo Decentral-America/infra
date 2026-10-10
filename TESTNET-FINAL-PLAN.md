@@ -129,6 +129,23 @@ Already done but unticked above: #174 merged via #175; `GRAFANA_ADMIN_PASSWORD` 
 - [x] **Partition drill PASSED** (2026-10-10 02:01–02:12Z, iptables on main blocking the LKE node IP both ways, auto-heal). Per-pod partition impossible: pods are hostNetwork=true (NetworkPolicy no-op), share one node IP, and enable-blacklisting=no makes the blacklist API a no-op. During: main forged alone 49032→49039; gen-0+gen-1 forged their own fork to 49035/49036 (they reach each other on the shared node); val-0 held 49030; **finality frozen at 49027** (no side ≥2/3: no conflicting finality). After heal: all 4 nodes on 49043 within ~60s, fin lag 3; gen-0/gen-1 `rollback to H2EQFTvk… succeeded`; 0 InvalidStateHash, 0 restarts; main's 4 WATCHDOG resets all during the partition; HotStuff resumed (22 commits). Finding: main `quorum=0` + gen-0/gen-1 able to peer each other = a two-sided fork during any main↔cluster split (benign here because neither side can finalize).
 - [x] main `interval-after-last-block-then-generation-is-allowed = 30d` KEPT (bootstrap after >15d outage; no effect on a live chain); fix stale "Genesis 2026-06-24" comment in next infra batch.
 
+**2026-10-10 (cont.):**
+- [x] matcher #33 merged (sbt-2 Dockerfile + temurin base bump); dev = main.
+- [x] Docs #20: chain IDs corrected (! 33 / ? 63 / S 83); sphinx -W passes. link_check stays red only on dead apex/production hosts (DNS/production items).
+- [x] Plan versioned at infra/TESTNET-FINAL-PLAN.md (#191); RELAUNCH link fixed; stale genesis comment fixed.
+- [x] fail2ban: live + bootstrap.sh use backend = systemd (#192); jail active, banned 2 IPs at once.
+- [x] **Deploy SSH key rotated** (new ED25519 SHA256:kib17XTU…): org TESTNET_DEPLOY_SSH_KEY, matcher repo secret, infra env DEPLOY_SSH_KEY (base64 — push-secrets decodes it), TF_VAR_DEPLOY_SSH_PUBLIC_KEY; proven by vps-node-status + push-secrets; old key → "Permission denied". KEEWEB_BACKUP.md no longer holds a private key (operator: attach deploy_key_testnet to KeeWeb #18).
+- [x] **All 4 node REST API keys rotated** (#193): new key 200 / old key 403 verified on main, gen-0, gen-1, val-0; Caddy /peers 200; KeeWeb backup #11–14 updated.
+- [x] **LKE config changes now reach the pods** (#194): checksum/config annotation per StatefulSet + CI check (a ConfigMap change alone never restarted pods; rotated hashes sat unapplied until a manual restart).
+- [x] **Alerts that can fire** (#195): FinalizationStalled lag>20/10m (old >250 unreachable: fallback caps lag ~100), HotStuffCommitNotAdvancing 10m+5m, new CommitteeShrinking, exporter period off-by-one fixed + current committee metric, dead-workflow text removed; promtool tests incl. 4 new. #196: deploy reloads Prometheus (rules were not reloading).
+- [x] Redis + exporter brought to repo pins (8.10 / v1.92.1) on the host (no deploy workflow existed); auth enforced, 715 keys kept.
+- [x] Admin JWT secret rotated (#197), container recreated, verified.
+- [x] drift-detect: "No changes. Your infrastructure matches the configuration." Admin E2E smoke 53/53.
+- [x] Old empty-key matcher state removed.
+- [ ] Accepted / deferred: BPS exits on node gRPC loss and relies on restart (113 restarts = node deploys; always catches up) — reconnect-in-place is a DecentralChain code improvement; env-file sprawl (every service gets testnet.env) → per-service env files for mainnet (testnet seeds are public by decision); main compose healthcheck not applicable (main runs via docker run, not compose; stall alerts cover it); matcher `database = dcc_testnet` unused (order-history off).
+- [ ] Operator: Cloudflare token Workers Scripts:Edit (B10); Mend log for hosted Renovate; Namecheap testnet.decentralscan.com (cert expires 11-05); delete mainnet-node record; SiteGround apex + mail records; equivocation drill decision; KeeWeb sync; OAuth client secret / Sentry token / admin PAT rotation (provider consoles); production decision before 2026-12-30.
+- [ ] Deferred by operator: 72h soak report + sign-off tag.
+
 **Should-fix before sign-off:**
 - [ ] Revert the main `interval-after-last-block-then-generation-is-allowed = 30d` → 15d (LKE is on 15d). Review main `quorum = 0`: an isolated main forges its own fork. Fix the stale "Genesis 2026-06-24" comment.
 - [ ] Main is the only hub: LKE nodes have no LKE↔LKE links, only 3 sockets to main. If main dies, the gens halt.
