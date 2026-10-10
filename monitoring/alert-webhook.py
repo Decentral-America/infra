@@ -14,7 +14,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 PORT       = int(os.getenv('ALERT_WEBHOOK_PORT', '9099'))
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
+# GITHUB_TOKEN if set; otherwise the admin-dashboard's fine-grained PAT, which the shared secrets env file
+# already provides and which can open issues on Decentral-America/infra. No GITHUB_TOKEN was ever
+# provisioned, so the webhook dropped every alert ("GITHUB_TOKEN not set").
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN') or os.getenv('ADMIN_DASHBOARD_GITHUB_PAT', '')
 GITHUB_REPO  = os.getenv('GITHUB_REPO', 'Decentral-America/infra')
 API_BASE     = f'https://api.github.com/repos/{GITHUB_REPO}'
 

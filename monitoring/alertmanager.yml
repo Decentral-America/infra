@@ -19,10 +19,11 @@ route:
 receivers:
   - name: github-issues
     webhook_configs:
+      # Localhost-only receiver (alert-webhook, network_mode: host). It holds the GitHub token itself.
+      # A former `http_config.bearer_token_file: /etc/alertmanager/github_token` was never mounted, so
+      # every notification failed with "unable to read file" and no alert was ever delivered.
       - url: 'http://localhost:9099/alert'
         send_resolved: true
-        http_config:
-          bearer_token_file: /etc/alertmanager/github_token
 
 inhibit_rules:
   # If ExporterDown, suppress all other alerts (no data = no real state)
