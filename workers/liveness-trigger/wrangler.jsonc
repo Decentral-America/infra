@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // External scheduler for the testnet health workflows. GitHub's own cron has run 4-8h late org-wide
+  // since 2026-08-27 (infra-liveness */30 ran on schedule ~once per lag window), so outages went
+  // unnoticed for hours. This Worker dispatches the workflows on time; their GitHub schedules stay as
+  // a backup. Deployed by .github/workflows/deploy-liveness-trigger.yml.
+  "name": "dcc-liveness-trigger",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "vars": {
+    "GITHUB_REPO": "Decentral-America/infra"
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Secret (wrangler secret put, set by the deploy workflow): GITHUB_TOKEN with actions:write on infra.
+}
