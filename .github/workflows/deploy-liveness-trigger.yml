@@ -1,0 +1,53 @@
+name: Deploy Liveness Trigger (Cloudflare Worker)
+# Deploys workers/liveness-trigger, which dispatches canary-transaction.yml (*/15) and infra-liveness.yml
+# (*/30) on time because GitHub's own scheduler runs hours late. Its GITHUB_TOKEN secret is the
+# ADMIN_DASHBOARD_GITHUB_PAT from SOPS (verified able to dispatch infra workflows: HTTP 204).
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'workers/liveness-trigger/**'
+      - '.github/workflows/deploy-liveness-trigger.yml'
+permissions:
+  contents: read
+concurrency:
+  group: deploy-liveness-trigger
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testnet
+    env:
+      WRANGLER_VERSION: 4.149.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install sops (pinned release + verified SHA256)
+        run: |
+          set -euo pipefail
+          SOPS_VERSION="v3.13.3"
+          SOPS_SHA256="e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b"
+          curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" -o /tmp/sops-bin
+          echo "${SOPS_SHA256}  /tmp/sops-bin" | sha256sum --check --status
+          install -m 755 /tmp/sops-bin /usr/local/bin/sops && rm /tmp/sops-bin
+
+      - name: Deploy Worker and set its GitHub token
+        working-directory: workers/liveness-trigger
+        env:
+          SOPS_AGE_KEY: ${{ secrets.AGE_SECRET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy
+          umask 077
+          TOKEN_FILE=$(mktemp)
+          trap 'rm -f "$TOKEN_FILE"' EXIT
+          sops -d ../../secrets/testnet.env | grep '^ADMIN_DASHBOARD_GITHUB_PAT=' | cut -d= -f2- | tr -d '\n' > "$TOKEN_FILE"
+          [ -s "$TOKEN_FILE" ] || { echo "::error::ADMIN_DASHBOARD_GITHUB_PAT missing from SOPS"; exit 1; }
+          npx --yes "wrangler@${WRANGLER_VERSION}" secret put GITHUB_TOKEN < "$TOKEN_FILE"
+          npx --yes "wrangler@${WRANGLER_VERSION}" deployments list | head -5
