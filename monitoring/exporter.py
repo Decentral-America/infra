@@ -121,6 +121,8 @@ def metrics():
         "# TYPE dcc_generation_period_pct_elapsed gauge",
         "# HELP dcc_next_period_committee_size Generator count for the NEXT generation period from GET /generators/at/{nextPeriodStart}. -1 means the endpoint returned a non-200 status (distinct from a genuine HTTP-200 empty committee)",
         "# TYPE dcc_next_period_committee_size gauge",
+        "# HELP dcc_current_period_committee_size Generator count of the CURRENT generation period (GET /generators/at/{currentPeriodStart})",
+        "# TYPE dcc_current_period_committee_size gauge",
     ]
 
     # Web-service liveness for every user-facing service (matcher, data-service,
@@ -193,10 +195,18 @@ def metrics():
         if s and height and "generationPeriodLength" in s:
             period_len = s["generationPeriodLength"]
             if period_len > 0:
-                pct_elapsed = ((height % period_len) / period_len) * 100
+                # Periods are [x01, x00+len]: compute from height-1 so the period's last block (x00)
+                # belongs to the current period. The old (height // len) put x00 in the next period:
+                # pct read 0% and the "next" start was one period too far (404 -> -1) once per period.
+                period_start = ((height - 1) // period_len) * period_len + 1
+                pct_elapsed = ((height - period_start + 1) / period_len) * 100
                 lines.append(f'dcc_generation_period_pct_elapsed{{{lbl}}} {pct_elapsed:.1f}')
 
-                next_period_start = ((height // period_len) + 1) * period_len + 1
+                cur_code, cur = fetch_with_status(f"{base}/generators/at/{period_start}")
+                if cur_code == 200 and isinstance(cur, list):
+                    lines.append(f'dcc_current_period_committee_size{{{lbl}}} {len(cur)}')
+
+                next_period_start = period_start + period_len
                 status_code, committee = fetch_with_status(f"{base}/generators/at/{next_period_start}")
                 if status_code == 200 and isinstance(committee, list):
                     lines.append(f'dcc_next_period_committee_size{{{lbl}}} {len(committee)}')
