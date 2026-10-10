@@ -36,7 +36,8 @@ def gh(method: str, path: str, body: dict | None = None) -> dict:
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return json.load(r)
+            raw = r.read()
+            return json.loads(raw) if raw else {'status': r.status}  # 204 (e.g. workflow dispatch) has no body
     except urllib.error.HTTPError as e:
         log.error('GitHub API %s %s → %s %s', method, path, e.code, e.read()[:200])
         return {}
@@ -80,17 +81,21 @@ def handle_alert(alert: dict) -> None:
         })
         if result.get('number'):
             log.info('Created issue #%s for alert %s', result['number'], name)
-            # Best effort: labels are dropped from the create call without push access (see find_open_issue).
-            gh('POST', f"issues/{result['number']}/labels", {'labels': ['alert', f'severity:{sev}']})
+            # Labels are added by .github/workflows/alert-issues.yml (issues: opened): this token cannot label.
         else:
             log.warning('Failed to create issue for alert %s', name)
 
     elif status == 'resolved':
         num = find_open_issue(prefix)
         if num:
-            gh('POST', f'issues/{num}/comments', {'body': 'Alert resolved — auto-closing.'})
-            gh('PATCH', f'issues/{num}', {'state': 'closed'})
-            log.info('Closed issue #%s: alert %s resolved', num, name)
+            # This token cannot comment on or close issues (403), but can dispatch workflows: the
+            # alert-issues.yml workflow closes it with the workflow token.
+            r = gh('POST', 'actions/workflows/alert-issues.yml/dispatches',
+                   {'ref': 'main', 'inputs': {'issue_number': str(num), 'alertname': name}})
+            if r.get('status') == 204:
+                log.info('Requested close of issue #%s: alert %s resolved', num, name)
+            else:
+                log.warning('Close request for issue #%s failed', num)
         else:
             log.warning('Resolved alert %s has no open issue to close', name)
 
