@@ -507,6 +507,8 @@ spec:
       app: dcc-gen-0
   template:
     metadata:
+      annotations:
+        checksum/config: "2d822ae3006ec07b387a85e6e6d81ce315874014530518c1976da54486c46115"
       labels:
         app: dcc-gen-0
         role: generator
@@ -657,6 +659,8 @@ spec:
       app: dcc-gen-1
   template:
     metadata:
+      annotations:
+        checksum/config: "eab9d02c052e647da19bdd28537fda61cbc77b90ac05ebac73cd1ca861573b8e"
       labels:
         app: dcc-gen-1
         role: generator
@@ -799,6 +803,8 @@ spec:
       app: dcc-val-0
   template:
     metadata:
+      annotations:
+        checksum/config: "1f7f9d689a908208d9b051e7cc3b81856da84c9fd6caab27332db84f75b8c505"
       labels:
         app: dcc-val-0
         role: validator
