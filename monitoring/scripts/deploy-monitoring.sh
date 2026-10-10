@@ -70,6 +70,11 @@ done
 
 echo "=== Restart Prometheus (picks up volume mounts + new config) ==="
 NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --remove-orphans prometheus
+# `up -d` does not restart a running Prometheus when only its bind-mounted prometheus.yml/alerts.yml
+# changed (2026-10-10: a new rule deployed but 14 of 15 rules loaded). Reload in place (lifecycle API is
+# enabled) so rule/config changes always apply without losing the TSDB head.
+for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:9091/-/ready && break; sleep 2; done
+curl -sf -XPOST http://127.0.0.1:9091/-/reload && echo "Prometheus config reloaded" || { echo "ERROR: Prometheus reload failed"; exit 1; }
 
 echo "=== Recreate exporter (mounts exporter.py; force-recreate to reload the new file) ==="
 NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --force-recreate exporter
