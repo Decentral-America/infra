@@ -211,14 +211,17 @@ fi
 echo "[bootstrap] SSH hardened: CIS Debian 12 + Mozilla Modern profile applied via drop-in"
 
 # -- fail2ban (SSH brute-force protection) ------------------------------------
-apt-get install -y -qq fail2ban
+apt-get install -y -qq fail2ban python3-systemd
 # SSH jail: 5 failures in 10 min -> 1-hour ban.
 cat > /etc/fail2ban/jail.d/sshd.conf << 'EOF'
 [sshd]
 enabled  = true
 port     = ssh
 filter   = sshd
-logpath  = /var/log/auth.log
+# Debian 12 logs sshd to the systemd journal; there is no /var/log/auth.log. With logpath set to it the
+# jail failed to start ("Have not found any log file for sshd jail") and fail2ban stayed down from the
+# 2026-10-04 restore until 2026-10-10. Needs python3-systemd (installed below).
+backend  = systemd
 maxretry = 5
 bantime  = 3600
 findtime = 600
