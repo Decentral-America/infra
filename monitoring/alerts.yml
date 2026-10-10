@@ -17,21 +17,21 @@ groups:
       # ── Finality (feature-25 Deterministic Finality — the authoritative finalized height) ──
       # This is the authoritative finalized height from GET /blocks/height/finalized. If generators
       # stop committing or quorum is lost, the lag grows and this fires (covers the old generator-count
-      # alerts). HotStuff's observational commit has its own separate WARNING-level alert below
-      # (HotStuffCommitNotAdvancing) — it is NOT authoritative and must never page.
-      # Normal lag on this testnet is ~100 blocks (finality is per-generation-period,
-      # generation-period-length=100, so finalizedHeight ≈ height − 100). Alert only when lag exceeds
-      # ~2.5 periods, i.e. finality is genuinely falling behind, to avoid false positives at steady state.
+      # alerts). On this testnet HotStuff is authoritative (hotstuff.authoritative = true): its commits
+      # raise the finalized height, and normal lag is ~3 blocks. When HotStuff stalls, finality falls
+      # back to height - max-rollback (100), so the lag is CAPPED near 100 and never grows past it: the
+      # old `lag > 250` could never fire, and the 30-minute stalls of 2026-10-04 paged nobody. Lag > 20
+      # for 10 min means HotStuff stopped committing (empty-committee periods also show lag ~100).
       - alert: FinalizationStalled
         expr: |
-          dcc_finality_lag > 250
-        for: 15m
+          dcc_finality_lag > 20
+        for: 10m
         labels:
           severity: high
           network: testnet
         annotations:
-          summary: "DCC finalization lagging >250 blocks (>2.5 generation periods)"
-          description: "dcc_finality_lag > 250 for 15 min (normal ~100). Generators may not be committed or quorum lost — check auto-commit-generators."
+          summary: "DCC finality lagging >20 blocks for 10 min (normal ~3)"
+          description: "dcc_finality_lag > 20 for 10 min; normal is ~3 with HotStuff committing. Check the committee (GET /generators/at/<period start>), the generators' logs for 'Self-commit ... rejected' and '[HotStuff] WATCHDOG', and that main has its 3 LKE peers."
 
       # ── Exporter health ────────────────────────────────────────────────────
       - alert: ExporterScrapeError
@@ -52,10 +52,9 @@ groups:
       # -1 when the endpoint returned a non-200 status (e.g. 404 out-of-range) -- that is
       # NOT the same as a genuine empty committee, so the alert must match `== 0` exactly,
       # never `<= 0` or "not > 0", to avoid the exact naive-jq-length bug this whole task
-      # exists to fix (see auto-commit-generators.yml / commit-generators-hotstuff.yml
-      # verification steps and CommonGeneratorsApi's HTTP-404-body-"[]" behavior).
-      # Fires BEFORE the period actually runs out empty, so on-call has time to run
-      # auto-commit-generators.yml / commit-generators-hotstuff.yml manually.
+      # exists to fix (CommonGeneratorsApi returns HTTP 404 with body "[]" out of range).
+      # Generators commit in-process (self-commit-to-generation; the external commit workflows were
+      # retired in 849148d). Fires BEFORE the period runs out empty.
       - alert: CommitteeGapUpcoming
         expr: |
           (dcc_generation_period_pct_elapsed > 60) and (dcc_next_period_committee_size == 0)
@@ -65,7 +64,22 @@ groups:
           network: testnet
         annotations:
           summary: "DCC next generation period's committee is EMPTY with current period >60% elapsed on {{ $labels.node }}"
-          description: "dcc_generation_period_pct_elapsed > 60 and dcc_next_period_committee_size == 0 for 5 min. The upcoming generation period has no committed generators -- committee is about to go empty. Run auto-commit-generators.yml and/or commit-generators-hotstuff.yml now to avoid a T0/T2 stall."
+          description: "dcc_generation_period_pct_elapsed > 60 and dcc_next_period_committee_size == 0 for 5 min. The upcoming generation period has no committed generators -- committee is about to go empty. Check each generator's logs for 'Self-commit' lines (rejected / re-broadcast) and that its commit tx reached peers; a node can also commit via POST /transactions/broadcast of a CommitToGeneration tx."
+
+      # A generator that was in the current committee but has not committed for the next period by 80%
+      # of the period will drop out. Earlier than CommitteeGapUpcoming (which waits for an EMPTY committee).
+      - alert: CommitteeShrinking
+        expr: |
+          (dcc_next_period_committee_size < dcc_current_period_committee_size)
+            and (dcc_next_period_committee_size >= 0)
+            and (dcc_generation_period_pct_elapsed > 80)
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "Next committee smaller than current ({{ $value }} generators) with the period >80% elapsed"
+          description: "A generator in the current committee has not committed for the next period. Check its logs for 'Self-commit' rejections/re-broadcasts and its peers; compare GET /generators/at/<current start> with /generators/at/<next start>."
 
   - name: dcc-testnet-infra
     interval: 60s
@@ -92,24 +106,24 @@ groups:
           network: testnet
         annotations:
           summary: "finalizedHeight not advancing for 30 min"
-          description: "dcc_finalized_height has been completely static for 30 min. Generators are not committing or endorsements are not flowing — run auto-commit-generators.yml."
+          description: "dcc_finalized_height has been completely static for 30 min: even the height - max-rollback fallback stopped, so block production itself has stalled. Check BlockProductionStalled and the nodes."
 
-      # ── T2 HotStuff observational commit (NOT authoritative — feature-25 above is) ──────
+      # ── T2 HotStuff commit (AUTHORITATIVE on this testnet: hotstuff.authoritative = true) ──────
       # dcc_hotstuff_finalized_height is emitted only when dcc.hotstuff.enabled AND the node has
       # committed >=1 HotStuff block (see exporter.py). When present it should track the tip at
       # tip-settled-depth. If it goes static while the chain keeps producing, HotStuff QC formation
-      # has regressed (e.g. the 2026-07-13 blockHeight-mismatch class of bug) — worth investigating
-      # but NOT page-worthy, since feature-25 remains the authoritative finality. WARNING only.
+      # has regressed. Healthy commits arrive every ~30 s, so 10 min of none is a real stall (the
+      # 2026-10-04 stalls lasted 30 min; the old 30m window + 30m `for` could never catch them).
       - alert: HotStuffCommitNotAdvancing
         expr: |
-          (increase(dcc_hotstuff_finalized_height[30m]) == 0) and (increase(dcc_block_height[30m]) > 0)
-        for: 30m
+          (increase(dcc_hotstuff_finalized_height[10m]) == 0) and (increase(dcc_block_height[10m]) > 0)
+        for: 5m
         labels:
-          severity: warning
+          severity: high
           network: testnet
         annotations:
-          summary: "observational HotStuff commit static for 30 min while the chain advances"
-          description: "dcc_hotstuff_finalized_height has not advanced in 30 min although dcc_block_height is still increasing. HotStuff QC formation likely regressed (observational only; feature-25 finality is unaffected). Diagnose with hotstuff-status.yml and check for '[HotStuff] QUORUM REACHED but no QC' WARNs."
+          summary: "HotStuff commit static for 15 min while the chain advances"
+          description: "dcc_hotstuff_finalized_height has not advanced for 15 min although blocks are produced. Check '[HotStuff] WATCHDOG' and 'QC rejected' in the node logs, the committee for the current period, and peer connectivity."
 
       # ── T2 HotStuff real equivocations (CRITICAL, unlike other observational T2 alerts) ──────
       # dcc_hotstuff_equivocations_total is emitted only when an equivocation is detected

@@ -70,3 +70,67 @@ tests:
             exp_annotations:
               summary: "fewer than 3 LKE nodes (gen-0/gen-1/val-0) report a block height for 10 min"
               description: "dcc_block_height from the LKE metrics-exporter (job lke-chain) covers fewer than 3 of gen-0/gen-1/val-0. If up{job=\"lke-chain\"} == 0 or the job has no target, the scrape path is down (LKE outage, firewall/NodePort 32092, or an unresolved LKE node IP in file_sd/lke-chain.json); otherwise check pods with cluster-diagnostics.yml."
+
+  # FinalizationStalled: with HotStuff stalled, finality falls back to height - 100, so the lag is capped
+  # near 100. The rule must fire on that (the old `> 250` never could).
+  - interval: 1m
+    input_series:
+      - series: 'dcc_finality_lag{job="dcc-chain", node="main-node"}'
+        values: '3x5 100x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FinalizationStalled
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: FinalizationStalled
+        exp_alerts:
+          - exp_labels: {severity: high, network: testnet, job: dcc-chain, node: main-node}
+            exp_annotations:
+              summary: "DCC finality lagging >20 blocks for 10 min (normal ~3)"
+              description: "dcc_finality_lag > 20 for 10 min; normal is ~3 with HotStuff committing. Check the committee (GET /generators/at/<period start>), the generators' logs for 'Self-commit ... rejected' and '[HotStuff] WATCHDOG', and that main has its 3 LKE peers."
+
+  # Healthy steady state (lag 3): no FinalizationStalled.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_finality_lag{job="dcc-chain", node="main-node"}'
+        values: '3x30'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: FinalizationStalled
+        exp_alerts: []
+
+  # CommitteeShrinking: a generator of the current committee (3) is missing from the next (2) late in
+  # the period. Does not fire while the next committee is still complete.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_generation_period_pct_elapsed{job="dcc-chain", node="main-node"}'
+        values: '85x15'
+      - series: 'dcc_current_period_committee_size{job="dcc-chain", node="main-node"}'
+        values: '3x15'
+      - series: 'dcc_next_period_committee_size{job="dcc-chain", node="main-node"}'
+        values: '3x3 2x12'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CommitteeShrinking
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: CommitteeShrinking
+        exp_alerts:
+          - exp_labels: {severity: high, network: testnet, job: dcc-chain, node: main-node}
+            exp_annotations:
+              summary: "Next committee smaller than current (2 generators) with the period >80% elapsed"
+              description: "A generator in the current committee has not committed for the next period. Check its logs for 'Self-commit' rejections/re-broadcasts and its peers; compare GET /generators/at/<current start> with /generators/at/<next start>."
+
+  # The exporter's -1 (endpoint non-200) must not count as a shrinking committee.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_generation_period_pct_elapsed{job="dcc-chain", node="main-node"}'
+        values: '85x15'
+      - series: 'dcc_current_period_committee_size{job="dcc-chain", node="main-node"}'
+        values: '3x15'
+      - series: 'dcc_next_period_committee_size{job="dcc-chain", node="main-node"}'
+        values: '-1x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CommitteeShrinking
+        exp_alerts: []
