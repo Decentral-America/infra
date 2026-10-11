@@ -545,7 +545,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:e2806d3c62f3f1173363075be24546ff639481f0457fc6cb15ce5a7d74c58556
+          image: ghcr.io/decentral-america/node-scala@sha256:9283525c26aa0100e31911cb4ed63410218ae864b4ccd1c9314c5b63f3629f28
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -691,7 +691,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:e2806d3c62f3f1173363075be24546ff639481f0457fc6cb15ce5a7d74c58556
+          image: ghcr.io/decentral-america/node-scala@sha256:9283525c26aa0100e31911cb4ed63410218ae864b4ccd1c9314c5b63f3629f28
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -826,7 +826,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:e2806d3c62f3f1173363075be24546ff639481f0457fc6cb15ce5a7d74c58556
+          image: ghcr.io/decentral-america/node-scala@sha256:9283525c26aa0100e31911cb4ed63410218ae864b4ccd1c9314c5b63f3629f28
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
