@@ -822,3 +822,11 @@ Tag on sign-off: `cd $NODE && git tag -a testnet-final-$(date +%Y%m%d) -m "Testn
 | 2026-10-04 | 2.2 / 2.5 | `grep` on the live `/opt/dcc/config/node-testnet/dcc.conf` | `self-commit-to-generation = yes`, `peer-stall-threshold = 900`, `slashing-enabled = no` | Claude |
 | 2026-10-04 | 4.1 Step 3 | `select max(height) from blocks_microblocks` (bps_testnet) vs `$MAIN/blocks/height` | 34239 = 34239 (BPS caught up) | Claude |
 | 2026-10-04 | 6.x observation | main `docker logs` HotStuff | T2 stalled 15:12→15:42 UTC at 33997; WATCHDOG reset, then committed 34102 and stayed steady (111 commits / 2 resets in 90 min). Follows today's restarts; watch during the soak | Claude |
+| 2026-10-10 | 9 (E2E) | `gh run view 38020563749` (admin-e2e full) | 213/217: chained txs (transfer from just-funded account, invoke/SetScript after setup) accepted with 200 and then lost | Claude |
+| 2026-10-10 | 9 (E2E) | compare `MicroBlock(X -> Y) appended` log order vs `/blocks/headers/at/H` `.reference` | 4/18 key blocks orphaned the last microblock; UTX cleanup evicted dependents of the re-queued priority txs | Claude |
+| 2026-10-10 | 9 (E2E) | node-scala #68/#70/#71/#72/#73 merged, staggered rollout (infra #199-#203) | all 4 nodes `node-scala@sha256:e2806d3c…` (b07339c), finality lag 3 after each step, Flux no re-roll | Claude |
+| 2026-10-11 | 9 (E2E) | `gh run view 38097076161 / 38097329352 / 38097581676` | 217/217 three consecutive full runs; UTX watcher max wait 17s (was 356s); infra #142 closed | Claude |
+| 2026-10-10 | 2 (val-0) | `curl $MAIN/generators/at/50214` | 4 committee members incl. val-0 31XTtK5S… (self-commit 2PnG1nPg…); infra #153 closed | Claude |
+| 2026-10-10 | 8 (BPS) | DecentralChain #119/#120 deployed; main node restarted | BPS restarts=0 across node restart, synced to tip; logs at info | Claude |
+| 2026-10-10 | 8 (CI) | node-scala #69 genesis-replay dispatch `38048452814` | peer resolved via DNS (50.116.30.244); reached height 3734 (≥2500) | Claude |
+| 2026-10-10 | Open | node-it run history (`gh run list --workflow node-it.yml`) | OneNodeFinalization "finalization activated and works" / FourNodeHotStuff "finalizes on every node" intermittent on main since 2026-07-30; separate investigation | Claude |
