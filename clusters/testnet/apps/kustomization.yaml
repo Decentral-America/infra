@@ -5,3 +5,5 @@ resources:
   - gen-1-wallet.secret.yaml
   - val-0-wallet.secret.yaml
   - nodes.yaml
+  - liveness-trigger.secret.yaml
+  - liveness-trigger.yaml
