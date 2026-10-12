@@ -708,6 +708,16 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 - [ ] **Step 4:** Expected: `HotStuffEquivocationDetected` fires; gen-0 emits the evidence tx; `/transactions/info/<id>` shows the `HotStuffEquivocationProof` applied; the offender's generating balance is penalised per the T5 rules. Other three nodes (slashing off) accept the block containing the evidence.
 - [ ] **Step 5:** Decide fleet-wide `slashing-enabled` and record the decision in `hotstuff-audit-readiness.md:326` and D4 of the source plan.
 
+**Result 2026-10-12 (Claude):** drill run with a throwaway committee member instead of a real node.
+- Offender `31Q7J8cVtBcGDkuUfuppqvm7Cq7BDgDAuVP` was funded at h54946 and committed at h56240 (tx `5p4r2mgS…`) for period 56301, as committee index #4.
+- Tool: node-scala `EquivocationDrill` (#76, test scope). It signed two PREPARE votes for view 56350, epoch 563, blocks `3E8NPnL…` and `CZ1gr7p…`, and sent them to main over P2P at 16:14:24Z.
+- `slashing-enabled = yes` was set on gen-0 only (infra #207) and reverted after the drill (#209).
+- **Detection:** all four nodes logged `EQUIVOCATION DETECTED: voter #4` and report `hotStuffEquivocationsTotal = 1`. The `HotStuffEquivocationDetected` alert fired at 16:15:41Z.
+- **Proof in a block:** gen-0 folded the proof into block **56354** (`7zjDVaTX…`). Every node accepted that block: same id, no fork, finality lag stayed at 3.
+- **Exclusion:** `/generators/at` shows the offender with `conflictHeight = 56355` and committee balance 0.
+- **GAP FOUND, deposit not forfeited:** the offender's balance stayed 1999.9 DCC, and its deposit lock was released at the punishment height. `BlockDiffer.calculatePenalties` charges the 100 DCC only for T0 `voting.conflict` endorsements, never for `voting.hotstuffConflicts`. `RocksDBWriter.collectGenerationDepositChanges` then releases the lock at `punishmentHeight`. So a HotStuff equivocator is excluded but keeps its deposit, which contradicts the T5 design spec. The fix needs a height-gated consensus change; block 56354 is already in the chain unpenalised.
+- **Fleet decision:** `slashing-enabled` stays **off** everywhere until that fix ships and the external audit is done.
+
 ### Task 6.6: 72h soak record (closes runbook §12.1, audit-readiness §8 first box)
 
 - [ ] **Step 1:** Start the clock after Task 3.1 passes with all four on `0346f624`. Log every 6h: height, finalized height, `InvalidStateHash` count (all four), committee size, canary success rate (`gh run list --workflow canary-transaction.yml --limit 24`), any alert fired.
@@ -830,3 +840,4 @@ Tag on sign-off: `cd $NODE && git tag -a testnet-final-$(date +%Y%m%d) -m "Testn
 | 2026-10-10 | 8 (BPS) | DecentralChain #119/#120 deployed; main node restarted | BPS restarts=0 across node restart, synced to tip; logs at info | Claude |
 | 2026-10-10 | 8 (CI) | node-scala #69 genesis-replay dispatch `38048452814` | peer resolved via DNS (50.116.30.244); reached height 3734 (≥2500) | Claude |
 | 2026-10-10 | Open | node-it run history (`gh run list --workflow node-it.yml`) | OneNodeFinalization "finalization activated and works" / FourNodeHotStuff "finalizes on every node" intermittent on main since 2026-07-30; separate investigation | Claude |
+| 2026-10-12 | 6.5 drill | `EquivocationDrill equivocate` + node logs + `/generators/at` | detected on 4/4 nodes, proof in block 56354 accepted by all, offender excluded from h56355; deposit NOT forfeited (gap) | Claude |
