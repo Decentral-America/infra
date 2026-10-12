@@ -174,7 +174,8 @@ data:
         # Equivocation slashing, explicitly OFF fleet-wide (plan decision D4, audit F-1). The default is
         # already off; this line is the switch for the RELAUNCH-20260904.md section 12.4 drill, which turns
         # it on for exactly ONE node. Fleet-wide only after that drill passes. TESTNET-FINAL-PLAN Task 2.5.
-        slashing-enabled = no
+        # TEMPORARY (Task 6.5 equivocation drill, 2026-10-12): gen-0 only; reverted after the drill.
+        slashing-enabled = yes
         round-timeout = 1200ms
         settled-depth = 3
       }
@@ -508,7 +509,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "2d822ae3006ec07b387a85e6e6d81ce315874014530518c1976da54486c46115"
+        checksum/config: "297a70112a10ebc7266af46f1ba3abbe43348df6bfe51491edb448db1abe8fa4"
       labels:
         app: dcc-gen-0
         role: generator
