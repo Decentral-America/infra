@@ -134,3 +134,29 @@ tests:
       - eval_time: 10m
         alertname: CommitteeShrinking
         exp_alerts: []
+
+  # HotStuffEquivocationDetected fires on a NEW detection and resolves afterwards; the counter
+  # staying at 1 for the rest of the process lifetime must not keep it firing forever.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_hotstuff_equivocations_total{job="dcc-chain", node="main-node"}'
+        values: '0x5 1x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HotStuffEquivocationDetected
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: HotStuffEquivocationDetected
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              network: testnet
+              job: dcc-chain
+              node: main-node
+            exp_annotations:
+              summary: "HotStuff equivocation detected -- CRITICAL, unlike T2's other observational alerts"
+              description: "dcc_hotstuff_equivocations_total increased in the last 30 min. A committee member signed conflicting votes at the same view/phase -- either a Byzantine actor or a protocol-violating bug. Check node logs for '[HotStuff] EQUIVOCATION DETECTED' and investigate the named voter index immediately."
+      - eval_time: 50m
+        alertname: HotStuffEquivocationDetected
+        exp_alerts: []
+
