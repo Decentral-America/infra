@@ -65,6 +65,9 @@ data:
             min-block-time = 5s
             delay-delta = 8
             generation-period-length = 100
+            # Equivocation proofs from this height on forfeit the generation deposit (node-scala FunctionalitySettings).
+            # Above the 2026-10-13 drill proof (block 56354), which keeps its original no-forfeit outcome on replay.
+            hot-stuff-equivocation-penalty-height = 60000
           }
           rewards {
             term = 100000
@@ -236,6 +239,9 @@ data:
             min-block-time = 5s
             delay-delta = 8
             generation-period-length = 100
+            # Equivocation proofs from this height on forfeit the generation deposit (node-scala FunctionalitySettings).
+            # Above the 2026-10-13 drill proof (block 56354), which keeps its original no-forfeit outcome on replay.
+            hot-stuff-equivocation-penalty-height = 60000
           }
           rewards {
             term = 100000
@@ -381,6 +387,9 @@ data:
             min-block-time = 5s
             delay-delta = 8
             generation-period-length = 100
+            # Equivocation proofs from this height on forfeit the generation deposit (node-scala FunctionalitySettings).
+            # Above the 2026-10-13 drill proof (block 56354), which keeps its original no-forfeit outcome on replay.
+            hot-stuff-equivocation-penalty-height = 60000
           }
           rewards {
             term = 100000
