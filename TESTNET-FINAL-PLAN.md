@@ -48,7 +48,7 @@
 - [ ] Merge infra **#174** (startupProbe; gen-1 was killed by its liveness probe mid-boot) **after** gen-0, gen-1 and val-0 reach main's height. The merge rolls the pods.
 - [ ] ⛔ operator: add `GRAFANA_ADMIN_PASSWORD` to SOPS `secrets/testnet.env` **before** running `deploy-monitoring-stack.yml`. Grafana refuses to start without it. Then run `deploy-monitoring-stack.yml` (lke-chain scrape, new exporters and alerts).
 - [ ] Phase 2: gen-2 + stake rebalance (⛔ the operator signs the 2B transfer from main).
-- [ ] Production is NOT in scope: its own decision, and its recovery images also expire 2026-12-30.
+- [x] Production recovery: econode-1, crypto-core, turbo-team and dcc-exchange were recreated 2026-10-10. Mainnet was live on 2026-10-14 (econode-1, h=2529373, last block 36s old). The private recovery images that expire 2026-12-30 are either already restored or superseded by the relaunch, so letting them expire loses nothing. What remains for mainnet is the Phase 3 migration (see "Explicitly deferred").
 
 ## Gap audit 2026-10-04 (4 read-only audits: VPS host, LKE + consensus, repos/docs/secrets, CI). Supersedes the "what's next" list
 
@@ -721,6 +721,7 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 - **Exclusion:** `/generators/at` shows the offender with `conflictHeight = 56355` and committee balance 0.
 - **GAP FOUND, deposit not forfeited:** the offender's balance stayed 1999.9 DCC, and its deposit lock was released at the punishment height. `BlockDiffer.calculatePenalties` charges the 100 DCC only for T0 `voting.conflict` endorsements, never for `voting.hotstuffConflicts`. `RocksDBWriter.collectGenerationDepositChanges` then releases the lock at `punishmentHeight`. So a HotStuff equivocator is excluded but keeps its deposit, which contradicts the T5 design spec. The fix needs a height-gated consensus change; block 56354 is already in the chain unpenalised.
 - **Fleet decision:** `slashing-enabled` stays **off** everywhere until that fix ships and the external audit is done.
+- **Fix (2026-10-14):** node-scala `fix/hotstuff-equivocation-penalty`. `calculatePenalties` now also debits `hotstuffConflicts` voters, for proofs at or above `functionality.hot-stuff-equivocation-penalty-height`. Testnet sets that to 60000 (this branch), above block 56354, so the drill block replays unchanged. Three new unit tests cover it: forfeit at the gate, no forfeit below it, and the block JSON now shows `hotstuffConflicts`. Rollout comes after the 72h soak, with the config and the image in the same Flux-suspended window.
 
 ### Task 6.6: 72h soak record (closes runbook §12.1, audit-readiness §8 first box)
 
