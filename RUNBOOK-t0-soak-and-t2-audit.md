@@ -28,6 +28,10 @@ recorded here with a name and date attached.
 |---|---|---|---|
 | _(not yet started)_ | — | — | NOT STARTED |
 
+Testnet-final 72h soak (2026-10-12T04:15:35Z → 2026-10-15T04:15:35Z, PASS): [SOAK-2026-10-12.md](SOAK-2026-10-12.md).
+It is recorded here for reference only. Per Step 1, a testnet soak does **not** start or count toward this
+60-day gate, which still needs a mainnet-candidate or stagenet chain.
+
 ### Step 2 — What resets the clock (do not fudge this)
 
 Any of the following during the soak window means **restart the clock from zero**, not "subtract the
