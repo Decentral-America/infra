@@ -65,6 +65,9 @@ data:
             min-block-time = 5s
             delay-delta = 8
             generation-period-length = 100
+            # Equivocation proofs from this height on forfeit the generation deposit (node-scala FunctionalitySettings).
+            # Above the 2026-10-13 drill proof (block 56354), which keeps its original no-forfeit outcome on replay.
+            hot-stuff-equivocation-penalty-height = 60000
           }
           rewards {
             term = 100000
@@ -236,6 +239,9 @@ data:
             min-block-time = 5s
             delay-delta = 8
             generation-period-length = 100
+            # Equivocation proofs from this height on forfeit the generation deposit (node-scala FunctionalitySettings).
+            # Above the 2026-10-13 drill proof (block 56354), which keeps its original no-forfeit outcome on replay.
+            hot-stuff-equivocation-penalty-height = 60000
           }
           rewards {
             term = 100000
@@ -381,6 +387,9 @@ data:
             min-block-time = 5s
             delay-delta = 8
             generation-period-length = 100
+            # Equivocation proofs from this height on forfeit the generation deposit (node-scala FunctionalitySettings).
+            # Above the 2026-10-13 drill proof (block 56354), which keeps its original no-forfeit outcome on replay.
+            hot-stuff-equivocation-penalty-height = 60000
           }
           rewards {
             term = 100000
@@ -508,7 +517,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "2d822ae3006ec07b387a85e6e6d81ce315874014530518c1976da54486c46115"
+        checksum/config: "edbde8f9e9724dcf987c0615f8a1e92457c685f6b48b8c9239ab4f37f7fd12a7"
       labels:
         app: dcc-gen-0
         role: generator
@@ -545,7 +554,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:9283525c26aa0100e31911cb4ed63410218ae864b4ccd1c9314c5b63f3629f28
+          image: ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -660,7 +669,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "eab9d02c052e647da19bdd28537fda61cbc77b90ac05ebac73cd1ca861573b8e"
+        checksum/config: "a7b412726647d9a1bfc5ae2075609dcd224a7da291df54c441bd3b41b96e18df"
       labels:
         app: dcc-gen-1
         role: generator
@@ -691,7 +700,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:9283525c26aa0100e31911cb4ed63410218ae864b4ccd1c9314c5b63f3629f28
+          image: ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -804,7 +813,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "1f7f9d689a908208d9b051e7cc3b81856da84c9fd6caab27332db84f75b8c505"
+        checksum/config: "406b6430360db72da96a75a0995f3186db111a10827c75e7d066ba6027474251"
       labels:
         app: dcc-val-0
         role: validator
@@ -826,7 +835,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: node
-          image: ghcr.io/decentral-america/node-scala@sha256:9283525c26aa0100e31911cb4ed63410218ae864b4ccd1c9314c5b63f3629f28
+          image: ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
