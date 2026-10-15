@@ -688,7 +688,9 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 ### Task 6.2: Live epoch transition + committee rotation evidence (T10)
 
 - [ ] **Step 1:** Identify the next committee-period boundary height. Capture 10 min before and after: `/generators/at/<h>`, `/blocks/height/finalized`, `/debug/hotstuff` (or the actual HotStuff status route in `FinalityApiRoute`), and Kamon counters `hotstuff.stale-target-*` from Prometheus.
-- [ ] **Step 2:** Expected: committee set changes or is re-confirmed at the boundary; finalized height continues without a >2-period gap; `stale-target` counters do not grow unboundedly. Paste into the Soak Log and into `hotstuff-audit-readiness.md:108,333` as the T10 live evidence.
+- [x] **Step 2:** Expected: committee set changes or is re-confirmed at the boundary; finalized height continues without a >2-period gap; `stale-target` counters do not grow unboundedly. Paste into the Soak Log and into `hotstuff-audit-readiness.md:108,333` as the T10 live evidence.
+
+**Result (soak window):** about 85 boundaries with no finality gap (max lag 4). The committee went from 4 to 5 members at 56301 (drill offender), excluded the offender at 56355, and was back to 4 at 56401. Recorded in [SOAK-2026-10-12.md](SOAK-2026-10-12.md). The `stale-target` Kamon counters are not exported to Prometheus, so continuous finality stands in for that check.
 
 ### Task 6.3: T0 finality watch (the 2026-07-30 pin was never diagnosed)
 
@@ -698,7 +700,9 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 
 - [ ] **Step 1 (crash):** `kubectl -n dcc delete pod dcc-gen-1-0` during a period in which gen-1 is in the committee. Expected: pod back `Running` < 3 min, height and finalized height keep advancing on main, no `InvalidStateHash`, gen-1 rejoins (`/peers/connected` on main includes gen-1 within 5 min — proves the in-process peer-stall path is not needed for the ordinary case).
 - [ ] **Step 2 (partition):** Temporarily add a Calico NetworkPolicy denying egress from `dcc-gen-0-0` to the VPS IP for 20 min, then remove. Expected: main continues with the remaining quorum; after removal, gen-0 reconnects without manual `peers/connect`. Confirm the stall detector log line ("cleared N suspensions") appears at most once and only if suspensions actually existed.
-- [ ] **Step 3:** Record both in the Soak Log; mark `hotstuff-audit-readiness.md:97,324`.
+- [x] **Step 3:** Record both in the Soak Log; mark `hotstuff-audit-readiness.md:97,324`.
+
+**Result:** the crash drill passed 2026-10-10; inside the soak window, gen-0 was deliberately recreated twice and rejoined cleanly. The partition drill was re-run **inside** the soak window on 2026-10-15 04:22–04:32Z: finality froze at 63442 while partitioned, all 4 nodes converged within 30s of the heal, 0 InvalidStateHash, 0 restarts. Details in [SOAK-2026-10-12.md](SOAK-2026-10-12.md).
 
 ### Task 6.5: Equivocation drill with slashing on exactly ONE node ⛔ (runbook §12.4)
 
@@ -720,9 +724,11 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 
 ### Task 6.6: 72h soak record (closes runbook §12.1, audit-readiness §8 first box)
 
-- [ ] **Step 1:** Start the clock after Task 3.1 passes with all four on `0346f624`. Log every 6h: height, finalized height, `InvalidStateHash` count (all four), committee size, canary success rate (`gh run list --workflow canary-transaction.yml --limit 24`), any alert fired.
-- [ ] **Step 2:** Pass criteria: zero `InvalidStateHash`; finalized-height lag max recorded and < 2 periods; canary ≥ 95% success; all drills (6.2, 6.4) inside the window; no pod restarts other than deliberate.
-- [ ] **Step 3:** Write `$INFRA/SOAK-2026-XX-XX.md` from the Soak Log; link from `RUNBOOK-t0-soak-and-t2-audit.md` and set its T0-soak start timestamp (the 60-day mainnet clock starts here too).
+- [x] **Step 1:** Start the clock after Task 3.1 passes with all four on `0346f624`. Log every 6h: height, finalized height, `InvalidStateHash` count (all four), committee size, canary success rate (`gh run list --workflow canary-transaction.yml --limit 24`), any alert fired.
+- [x] **Step 2:** Pass criteria: zero `InvalidStateHash`; finalized-height lag max recorded and < 2 periods; canary ≥ 95% success; all drills (6.2, 6.4) inside the window; no pod restarts other than deliberate.
+- [x] **Step 3:** Write `$INFRA/SOAK-2026-XX-XX.md` from the Soak Log; link from `RUNBOOK-t0-soak-and-t2-audit.md`. (Correction: this does **not** start the 60-day mainnet T0 clock. The runbook's Step 1 says testnet soaks don't count.)
+
+**Result: PASS**, see [SOAK-2026-10-12.md](SOAK-2026-10-12.md). 72h, 2026-10-12T04:15:35Z → 2026-10-15T04:15:35Z, on node-scala `sha256:9283525c…` throughout. Results: 0 InvalidStateHash; max finality lag 4 (Prometheus, full window); canary 301/301; drills 6.2, 6.4 and 6.5 inside the window; no unplanned restarts. Sign-off tag `testnet-final-2026-10-14`.
 
 ---
 
@@ -796,7 +802,7 @@ Tag on sign-off: `cd $NODE && git tag -a testnet-final-$(date +%Y%m%d) -m "Testn
 ## Explicitly deferred to stagenet/mainnet (not testnet-gating; listed so nobody re-derives them)
 
 - Reference §7 Phase 2/3: legacy node build (untouched since 2024), stagenet legacy→modern handoff at 10k blocks, storage compatibility, Phase 3 mainnet migration.
-- `hotstuff.authoritative` advisory vs enforcing decision (F-1); external consensus audit; 60-day T0 soak (clock starts at Task 6.6); mainnet LKE HA (`lke_ha=true`, dedicated CPU, ≥2 pool); gen nodes on separate LKE nodes.
+- `hotstuff.authoritative` advisory vs enforcing decision (F-1); external consensus audit; 60-day T0 soak (not started: needs a mainnet-candidate or stagenet chain, per the runbook); mainnet LKE HA (`lke_ha=true`, dedicated CPU, ≥2 pool); gen nodes on separate LKE nodes.
 - HotStuff design item "view = height under Waves-NG" (memory `hotstuff-t2-step5:129`), C1 single-active-view pacemaker, P3 100MB frame cap, E1/P5 defaults.
 - Consensus rule changes SC-575 / SC-580 / SC-695 (network governance via a new feature id).
 - Audit item 01 (pruning), `committedGeneratorsHash` None-acceptance hardening, `maxCommittedGenerators` cap.
@@ -841,3 +847,5 @@ Tag on sign-off: `cd $NODE && git tag -a testnet-final-$(date +%Y%m%d) -m "Testn
 | 2026-10-10 | 8 (CI) | node-scala #69 genesis-replay dispatch `38048452814` | peer resolved via DNS (50.116.30.244); reached height 3734 (≥2500) | Claude |
 | 2026-10-10 | Open | node-it run history (`gh run list --workflow node-it.yml`) | OneNodeFinalization "finalization activated and works" / FourNodeHotStuff "finalizes on every node" intermittent on main since 2026-07-30; separate investigation | Claude |
 | 2026-10-12 | 6.5 drill | `EquivocationDrill equivocate` + node logs + `/generators/at` | detected on 4/4 nodes, proof in block 56354 accepted by all, offender excluded from h56355; deposit NOT forfeited (gap) | Claude |
+| 2026-10-15 | 6.4 partition (in window) | iptables on main vs LKE node IP, 04:22–04:32Z, systemd-run auto-heal | fin frozen 63442 during; all 4 at 63454 within 30s of heal, same id at 63458, lag 3; 0 ISH, 0 restarts | Claude |
+| 2026-10-15 | 6.6 soak | full-window `grep InvalidStateHash`; Prometheus `max_over_time(dcc_finality_lag[72h])`; canary runs in window | 0 / max 4 (avg 3.01) / 301/301: PASS, SOAK-2026-10-12.md | Claude |
