@@ -1,4 +1,4 @@
-# docker-compose for Grafana — Newark backend node
+# docker-compose for Grafana — main VPS (Dallas, 50.116.30.244)
 # Embedded in the admin dashboard via iframe at grafana.testnet.decentralchain.io.
 # Location on server: /opt/dcc/compose/grafana.yml
 #
@@ -56,9 +56,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256m
+          # 256m OOM-killed Grafana 4 times (2026-10-11..16) and sat at 99.9% after a fresh
+          # start. 512m leaves headroom; HostOomKill pages if it is ever hit again.
+          memory: 512m
         reservations:
-          memory: 64m
+          memory: 128m
     logging:
       driver: "json-file"
       options:
