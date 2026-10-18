@@ -60,6 +60,8 @@ jobs:
           [[ -n "${NODE_API_KEY}" ]] || { echo "::error::MAIN_NODE_REST_API_KEY is not in secrets/${NETWORK}.env"; exit 1; }
           [[ -n "${E2E_BYPASS_KEY}" ]] || { echo "::error::secret E2E_RATE_LIMIT_BYPASS_KEY is empty"; exit 1; }
           export NODE_API_KEY E2E_BYPASS_KEY SELF_IP
+          # The rendered file embeds both keys: keep every runner-local copy owner-only.
+          umask 077
           bash scripts/render-caddyfile.sh terraform/testnet.tfvars > /tmp/Caddyfile
           echo "Caddyfile rendered ($(wc -l < /tmp/Caddyfile) lines)"
 
@@ -89,17 +91,20 @@ jobs:
           NETWORK:     ${{ inputs.network }}
         run: |
           set -euo pipefail
-          scp /tmp/Caddyfile "$DEPLOY_USER@$DEPLOY_HOST:/tmp/Caddyfile.new"
+          # Stream the Caddyfile over stdin: it never lands in /tmp on the VPS. It is a single-file
+          # bind mount into caddy-testnet, so it must be rewritten IN PLACE (same inode): `install`
+          # unlinks and recreates the target, which would leave the container on the old file.
+          # tee truncates and rewrites the existing file; umask 077 makes a first-time create 0600.
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+            'sudo bash -c "umask 077; tee /opt/dcc/caddy/Caddyfile >/dev/null; chown root:root /opt/dcc/caddy/Caddyfile; chmod 600 /opt/dcc/caddy/Caddyfile"' \
+            < /tmp/Caddyfile
           # compose/caddy.yml too: an image pin change must reach the server (it used to sync only
           # the Caddyfile, so `compose pull` kept resolving a stale on-disk file).
           scp compose/caddy.yml "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/compose/caddy.yml"
           # shellcheck disable=SC2087  # NETWORK is expanded locally on purpose
           ssh "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
           set -euo pipefail
-          # root:root 0600: the file embeds the node API key and the bypass key. The caddy
-          # container runs as uid 0, which owns the file, so it needs no extra capability to read it.
-          sudo install -m 0600 -o root -g root /tmp/Caddyfile.new /opt/dcc/caddy/Caddyfile
-          rm -f /tmp/Caddyfile.new
+          # The Caddyfile (root:root 0600, embeds both keys) was already written in place above.
           # compose up -d recreates the container only when its own config (e.g. the image pin)
           # changed; the reload below applies Caddyfile-only changes without downtime.
           NETWORK="${NETWORK}" docker compose --project-name "caddy-${NETWORK}" -f /opt/dcc/compose/caddy.yml pull

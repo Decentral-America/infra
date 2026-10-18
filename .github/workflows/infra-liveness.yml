@@ -89,6 +89,8 @@ jobs:
           set -euo pipefail
           CID=$(curl -sf -m 15 -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/lke/clusters \
             | jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+          test -n "$CID" || { echo "::error::LKE cluster dcc-peer-testnet not found"; exit 1; }
+          umask 077
           curl -sf -m 15 -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/$CID/kubeconfig" \
             | jq -r .kubeconfig | base64 -d > "$RUNNER_TEMP/kubeconfig"
           chmod 600 "$RUNNER_TEMP/kubeconfig"

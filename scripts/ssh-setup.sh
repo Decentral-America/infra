@@ -16,6 +16,7 @@ if ! grep -qE "^${HOST//./\\.} ssh-ed25519 " "${PIN}"; then
   exit 1
 fi
 
+umask 077
 install -d -m 700 "${HOME}/.ssh"
 if printf '%s' "${DEPLOY_KEY}" | grep -q -- '-----BEGIN '; then
   printf '%s\n' "${DEPLOY_KEY}" > "${HOME}/.ssh/deploy_key"

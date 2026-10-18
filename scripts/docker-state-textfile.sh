@@ -22,7 +22,9 @@ trap 'rm -f "${TMP}"' EXIT
   ids="$(docker ps -aq)"
   if [[ -n "${ids}" ]]; then
     # shellcheck disable=SC2086
-    docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.Running}} {{.State.OOMKilled}}' ${ids} |
+    # A container can be removed between `ps` and `inspect`; inspect then exits non-zero for the
+    # missing ID but still prints the others, so tolerate that (`|| true`) and skip it.
+    { docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.Running}} {{.State.OOMKilled}}' ${ids} 2>/dev/null || true; } |
       while read -r name restarts running oom; do
         name="${name#/}"
         echo "dcc_container_restart_count{name=\"${name}\"} ${restarts}"
