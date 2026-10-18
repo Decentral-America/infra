@@ -30,8 +30,8 @@ Also verified:
   `/opt/dcc/secrets/testnet.env`. Terraform defaults it to **`bps_testnet`**
   (`terraform/main.tf:141`), and every workflow that queries it uses `bps_testnet`.
   Read it from the env file rather than assuming (step 1).
-  - Careful: `bootstrap.sh:383-387` creates a different database, `dcc_testnet`. The matcher
-    uses that one for Postgres (`push-secrets.yml:295-302`). Do not drop `dcc_testnet`.
+  - There is no `dcc_testnet` database (live databases 2026-10-18: `postgres`, `admin_testnet`,
+    `bps_testnet`). The matcher uses no Postgres database, and `bootstrap.sh` now creates `bps_<network>`.
 - **Schema:** the consumer does **not** migrate on start. Migrations are a separate binary,
   `/app/migration up`, in the same image (BPS `Dockerfile:55-56`, `src/bin/migration.rs`).
   No infra or DecentralChain workflow runs it, so after a drop you must run it by hand
