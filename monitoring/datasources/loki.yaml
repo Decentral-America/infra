@@ -1,18 +1,9 @@
+# Loki is NOT exposed through Grafana. grafana.testnet is public with anonymous Viewer access
+# (embedded in the admin dashboard), and Grafana OSS has no per-datasource permissions, so any
+# provisioned Loki datasource let anyone on the internet run log queries -- including over access
+# logs that carried API keys (2026-10-18 audit). No dashboard uses Loki. Operators query logs on
+# the VPS instead:  ssh ... 'docker exec loki-testnet wget -qO- "http://127.0.0.1:3100/loki/api/v1/query_range?query=..."'
 apiVersion: 1
-datasources:
+deleteDatasources:
   - name: Loki
-    type: loki
-    uid: loki
-    url: http://127.0.0.1:3100
-    access: proxy
-    isDefault: false
-    editable: false
-    jsonData:
-      # Maximum number of lines returned per query — keeps Grafana responsive.
-      maxLines: 1000
-      # Derived fields: link node-scala log lines to the relevant Prometheus
-      # metrics by correlating on container label.
-      derivedFields:
-        - name: TraceID
-          matcherRegex: '"trace_id":"(\w+)"'
-          url: ''
+    orgId: 1
