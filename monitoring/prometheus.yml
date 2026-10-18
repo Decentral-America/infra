@@ -104,3 +104,19 @@ scrape_configs:
     relabel_configs:
       - target_label: network
         replacement: testnet
+
+  # Self-monitoring (AUD-049): without these, TargetDown and AlertmanagerNotificationsFailing
+  # have nothing to evaluate. Both listen on localhost only (compose/prometheus.yml).
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9091']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['127.0.0.1:9093']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet

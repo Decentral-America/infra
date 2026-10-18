@@ -9,6 +9,11 @@ route:
   receiver: github-issues
 
   routes:
+    # Deadman heartbeat (alerts.yml `Watchdog`): always firing, never notified. infra-liveness.yml
+    # checks off-box that Alertmanager holds it, proving Prometheus -> rules -> Alertmanager works.
+    - matchers:
+        - alertname = Watchdog
+      receiver: blackhole
     # Critical alerts fire immediately with no grouping wait
     - matchers:
         - severity = critical
@@ -17,6 +22,7 @@ route:
       receiver: github-issues
 
 receivers:
+  - name: blackhole
   - name: github-issues
     webhook_configs:
       # Localhost-only receiver (alert-webhook, network_mode: host). It holds the GitHub token itself.
@@ -31,4 +37,6 @@ inhibit_rules:
       - alertname = ExporterDown
     target_matchers:
       - network = testnet
+      # Watchdog is the deadman heartbeat; it must still reach the blackhole receiver during an ExporterDown.
+      - alertname != Watchdog
     equal: ['network']

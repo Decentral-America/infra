@@ -290,18 +290,17 @@ jobs:
           echo "Deploying \$SERVICE on \$NETWORK..."
           cd "\$COMPOSE_DIR"
 
-          # docker compose up --wait blocks until the container is running/healthy
-          # (respects healthcheck if defined, otherwise just waits for running state).
-          # --wait-timeout caps the wait. --project-name isolates this service's
-          # compose project so other services in the same directory (e.g. caddy) are
-          # not treated as orphans and removed. Never use --remove-orphans here.
+          # docker compose up --wait blocks until every service in <service>.yml is running/healthy
+          # (respects healthchecks). All services of the file come up, so companion services that
+          # share the image (data-service's pairs-daemon) move to the new image together.
+          # --project-name isolates this file's project so other services in the same directory
+          # (e.g. caddy) are not treated as orphans. Never use --remove-orphans here.
           if ! docker compose \
             --project-name "\${SERVICE}-\${NETWORK}" \
             --file "\${SERVICE}.yml" up \
             --detach \
             --wait \
-            --wait-timeout "\$INPUT_WAIT_TIMEOUT" \
-            "\$SERVICE"; then
+            --wait-timeout "\$INPUT_WAIT_TIMEOUT"; then
 
             echo "::error::Health check failed for \$SERVICE on \$NETWORK."
 
@@ -315,7 +314,6 @@ jobs:
                 --detach \
                 --wait \
                 --wait-timeout "\$INPUT_WAIT_TIMEOUT" \
-                "\$SERVICE" \
                 && echo "Rollback successful: \$PREV_IMAGE is running." \
                 || echo "::error::Rollback also failed — manual intervention required."
             else

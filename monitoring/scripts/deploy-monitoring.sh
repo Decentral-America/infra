@@ -35,6 +35,18 @@ if [ -f /tmp/grafana.ini ]; then
   sudo cp /tmp/testnet.json /opt/dcc/monitoring/dashboards/testnet.json
   sudo cp /tmp/grafana-compose.yml /opt/dcc/compose/grafana.yml
 fi
+# Container restart/OOM metrics for ContainerRestartLoop: a root systemd timer writes them each
+# minute into node-exporter's textfile directory (read through its /host mount).
+if [ -f /tmp/docker-state-textfile.sh ]; then
+  sudo install -d -m 0755 /opt/dcc/scripts /var/lib/node_exporter/textfile
+  sudo install -m 0755 -o root -g root /tmp/docker-state-textfile.sh /opt/dcc/scripts/docker-state-textfile.sh
+  sudo install -m 0644 -o root -g root /tmp/dcc-docker-state.service /etc/systemd/system/dcc-docker-state.service
+  sudo install -m 0644 -o root -g root /tmp/dcc-docker-state.timer /etc/systemd/system/dcc-docker-state.timer
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now dcc-docker-state.timer
+  sudo systemctl start dcc-docker-state.service
+  rm -f /tmp/docker-state-textfile.sh /tmp/dcc-docker-state.service /tmp/dcc-docker-state.timer
+fi
 rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/config.alloy /tmp/alertmanager.yml /tmp/alert-webhook.py \
       /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml \

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCC chain metrics exporter for Newark backend.
+DCC chain metrics exporter for the testnet main VPS (Dallas, 50.116.30.244).
 Scrapes the public node REST API over HTTPS — no extra firewall rules needed.
 Exposes Prometheus metrics on :9101/metrics.
 
@@ -19,12 +19,15 @@ Metrics exposed:
                                       activation height, so this ignores the one-time zero-period
                                       offset near activation (fine long after activation, which is
                                       this testnet's actual state).
+  dcc_tls_cert_expiry_timestamp_seconds — notAfter (unix s) of each public host's TLS certificate
+                                      (refreshed every 10 min; feeds TlsCertExpiringSoon)
+  dcc_tls_cert_probe_ok             — 1 if the TLS handshake with the host succeeded
   dcc_next_period_committee_size    — generator count from GET /generators/at/{nextPeriodStart}.
                                       -1 if the endpoint returned a non-200 status (distinct from
                                       a genuine empty committee at HTTP 200 — see CommitteeGapUpcoming
                                       alert comment in alerts.yml for why this distinction matters).
 """
-import concurrent.futures, http.server, json, os, ssl, time, urllib.request
+import concurrent.futures, http.server, json, os, socket, ssl, time, urllib.request
 
 PORT = int(os.getenv("EXPORTER_PORT", "9101"))
 
@@ -68,7 +71,7 @@ def fetch_with_status(url):
 # Each user-facing service is probed with a plain GET; "up" means it answered with
 # any HTTP status < 500 (a 400/403/404 still proves the service is serving). A
 # connection failure / timeout / 5xx => down. Health URLs are chosen so a healthy
-# service returns <500 (ws/faucet answer 4xx to a bare GET, which is still "up").
+# service returns <500 (ws answers 4xx to a bare GET, which is still "up").
 _svc_raw = os.getenv(
     "SERVICE_URLS",
     "matcher=https://testnet-matcher.decentralchain.io/matcher,"
@@ -76,14 +79,43 @@ _svc_raw = os.getenv(
     "explorer=https://testnet.decentralscan.com/,"
     "websocket=https://testnet-ws.decentralchain.io/ws,"
     "grafana=https://grafana.testnet.decentralchain.io/api/health,"
-    "admin=https://testnet-admin.decentralchain.io/,"
-    "faucet=https://testnet.decentralscan.com/api/faucet",
+    "admin=https://testnet-admin.decentralchain.io/",
 )
+# No faucet entry: GET /api/faucet has no loader (HTTP 400) and this probe alone sent
+# ~5k requests/day into the faucet's 5/h per-IP edge limit (2026-10-18 audit, AUD-141).
+# The explorer probe already covers the scanner process that serves the faucet.
 # Grafana datasources whose health must be OK (HTTP 200, status "OK"). /api/health above only
 # proves Grafana serves; on 2026-10-18 it was 200 for days while the Prometheus and Loki plugins were
 # unregistered and every dashboard was empty. The anonymous Viewer may call the health endpoint.
 GRAFANA_URL = os.getenv("GRAFANA_URL", "https://grafana.testnet.decentralchain.io")
 GRAFANA_DATASOURCES = [d.strip() for d in os.getenv("GRAFANA_DATASOURCES", "prometheus").split(",") if d.strip()]
+
+# Public hosts whose TLS certificate expiry is exported (TlsCertExpiringSoon).
+TLS_HOSTS = [h.strip() for h in os.getenv(
+    "TLS_HOSTS",
+    "testnet-node.decentralchain.io,testnet-matcher.decentralchain.io,"
+    "testnet-data-service.decentralchain.io,testnet-ws.decentralchain.io,"
+    "testnet.decentralscan.com,testnet-admin.decentralchain.io,grafana.testnet.decentralchain.io",
+).split(",") if h.strip()]
+TLS_REFRESH_SECONDS = 600
+_tls_cache = {}  # host -> (checked_at, not_after_seconds or None)
+
+def tls_not_after(host):
+    """notAfter of host:443's certificate as unix seconds, or None if the handshake failed.
+    Cached for TLS_REFRESH_SECONDS so a 30s scrape does not open 7 TLS sessions every time."""
+    now = time.time()
+    hit = _tls_cache.get(host)
+    if hit and now - hit[0] < TLS_REFRESH_SECONDS:
+        return hit[1]
+    value = None
+    try:
+        with socket.create_connection((host, 443), timeout=5) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+                value = ssl.cert_time_to_seconds(tls.getpeercert()["notAfter"])
+    except Exception:
+        value = None
+    _tls_cache[host] = (now, value)
+    return value
 
 SERVICES = []
 for entry in _svc_raw.split(","):
@@ -132,7 +164,7 @@ def metrics():
     ]
 
     # Web-service liveness for every user-facing service (matcher, data-service,
-    # explorer, websocket, grafana, admin, faucet) — so an outage of any of them pages.
+    # explorer, websocket, grafana, admin) — so an outage of any of them pages.
     # Probed in parallel: sequentially, every dead service added its full 6s timeout, so
     # two unreachable hosts (explorer + faucet during the 2026-10-04 DNS move) pushed a
     # scrape to ~25s. That is past Prometheus' 10s scrape timeout, which then dropped the
@@ -143,6 +175,19 @@ def metrics():
     for (svc, _), code in zip(SERVICES, codes):
         up = 1 if (code is not None and code < 500) else 0
         lines.append(f'dcc_service_up{{service="{svc}"}} {up}')
+
+    lines += [
+        "# HELP dcc_tls_cert_expiry_timestamp_seconds notAfter of the host's TLS certificate (unix seconds)",
+        "# TYPE dcc_tls_cert_expiry_timestamp_seconds gauge",
+        "# HELP dcc_tls_cert_probe_ok 1 if a TLS handshake with host:443 succeeded",
+        "# TYPE dcc_tls_cert_probe_ok gauge",
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(TLS_HOSTS))) as pool:
+        not_afters = list(pool.map(tls_not_after, TLS_HOSTS))
+    for host, not_after in zip(TLS_HOSTS, not_afters):
+        lines.append(f'dcc_tls_cert_probe_ok{{host="{host}"}} {0 if not_after is None else 1}')
+        if not_after is not None:
+            lines.append(f'dcc_tls_cert_expiry_timestamp_seconds{{host="{host}"}} {not_after:.0f}')
 
     lines += [
         "# HELP dcc_grafana_datasource_up 1 if GET /api/datasources/uid/<uid>/health returns HTTP 200 with status OK",
@@ -251,5 +296,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-http.server.HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+if __name__ == "__main__":
+    http.server.HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
 

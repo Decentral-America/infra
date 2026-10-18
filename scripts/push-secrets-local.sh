@@ -132,9 +132,7 @@ extract() { printf '%s' "${SECRETS}" | grep "^${1}=" | cut -d= -f2- || true; }
 PG_PASS=$(        extract 'POSTGRES_PASSWORD')
 WALLET_SEED=$(    extract 'MAIN_NODE_WALLET_SEED')
 WALLET_PASS=$(    extract 'MAIN_NODE_WALLET_PASSWORD')
-MATCHER_PASS=$(   extract 'MATCHER_ACCOUNT_PASSWORD')
 MATCHER_HASH=$(   extract 'MATCHER_API_KEY_HASH')
-MATCHER_SEED=$(   extract 'MATCHER_SEED')
 REDIS_PASS=$(     extract 'REDIS_PASSWORD')
 NODE_API_KEY=$(   extract 'MAIN_NODE_REST_API_KEY')
 DEFAULT_MATCHER=$(extract 'DEFAULT_MATCHER')
@@ -145,9 +143,14 @@ ADMIN_JWT=$(      extract 'ADMIN_DASHBOARD_JWT_SECRET')
 GITHUB_PAT=$(     extract 'ADMIN_DASHBOARD_GITHUB_PAT')
 GRAFANA_URL=$(    extract 'GRAFANA_URL')
 SENTRY_TOKEN=$(   extract 'SENTRY_AUTH_TOKEN')
+TREASURY_SEED=$(  extract 'TREASURY_SEED')
 
-if [[ -z "${DEFAULT_MATCHER:-}" ]]; then
-  DEFAULT_MATCHER=$(curl -sf "https://${NETWORK}-matcher.decentralchain.io/matcher" 2>/dev/null | tr -d '"' || echo "")
+MATCHER_SEED_B64=$(extract 'MATCHER_SEED_BASE64')
+# The matcher key comes from SOPS only (never read back from the live matcher: it echoes whatever
+# key it runs on, including an empty-seed key).
+if [[ -z "${DEFAULT_MATCHER:-}" || -z "${MATCHER_SEED_B64:-}" || -z "${DEFAULT_MATCHER_ADDRESS:-}" ]]; then
+  echo "[push-secrets] FATAL: DEFAULT_MATCHER, MATCHER_SEED_BASE64 and DEFAULT_MATCHER_ADDRESS must all be in ${SECRETS_FILE}"
+  exit 1
 fi
 
 echo "[push-secrets] Keys extracted: PG=${#PG_PASS} WALLET=${#WALLET_SEED} REDIS=${#REDIS_PASS} NODE_API=${#NODE_API_KEY} GRAFANA=${#GRAFANA_URL} SENTRY=${#SENTRY_TOKEN}"
@@ -178,6 +181,9 @@ echo "[push-secrets] Uploading secrets patch..."
   [[ -n "${GITHUB_PAT:-}" ]] && printf 'ADMIN_DASHBOARD_GITHUB_PAT=%s\n' "${GITHUB_PAT}"
   [[ -n "${GRAFANA_URL:-}" ]]  && printf 'GRAFANA_URL=%s\n'        "${GRAFANA_URL}"
   [[ -n "${SENTRY_TOKEN:-}" ]] && printf 'SENTRY_AUTH_TOKEN=%s\n'  "${SENTRY_TOKEN}"
+  # Last line of the group: an `if`, not `[[ ]] &&`, so an absent TREASURY_SEED does not make
+  # the group return 1 and abort the script under `set -o pipefail`.
+  if [[ -n "${TREASURY_SEED:-}" ]]; then printf 'TREASURY_SEED=%s\n' "${TREASURY_SEED}"; fi
 } | $SSH "sudo tee /tmp/secrets-patch.env > /dev/null && \
   sudo touch /opt/dcc/secrets/${NETWORK}.env && \
   sudo bash -c 'cat /tmp/secrets-patch.env /opt/dcc/secrets/${NETWORK}.env \
@@ -188,66 +194,62 @@ echo "[push-secrets] Uploading secrets patch..."
     && chown root:deploy /opt/dcc/secrets/${NETWORK}.env'"
 echo "[push-secrets] Secrets file updated (upsert — no duplicates)."
 
+# ── 1-seed. Seed-if-absent keys the per-service renderer requires ────────────
+# A freshly provisioned host has none of these in the master file. An existing line is never
+# overwritten (live values stay byte-identical). Values go over stdin, never into the log.
+case "${NETWORK}" in
+  testnet)  SEED_CHAIN_ID="33" ;;
+  stagenet) SEED_CHAIN_ID="83" ;;
+  mainnet)  SEED_CHAIN_ID="63" ;;
+  *)        echo "[push-secrets] ERROR: unknown NETWORK '${NETWORK}' -- cannot derive DCC_CHAIN_ID"; exit 1 ;;
+esac
+# shellcheck disable=SC2016  # runs on the server, not here
+SEED_SH='f=$1; [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ] && echo >> "$f"; while IFS= read -r l; do k=${l%%=*}; grep -q "^${k}=" "$f" || printf "%s\n" "$l" >> "$f"; done'
+{
+  printf 'DCC_CHAIN_ID=%s\n'                      "${SEED_CHAIN_ID}"
+  printf 'ADMIN_DASHBOARD_PG_DATABASE=admin_%s\n' "${NETWORK}"
+  if [[ -n "${REDIS_PASS:-}" ]]; then
+    printf 'REDIS_URL=redis://:%s@127.0.0.1:6379/\n' "${REDIS_PASS}"
+  fi
+} | $SSH "sudo bash -c '${SEED_SH}' seed /opt/dcc/secrets/${NETWORK}.env"
+echo "[push-secrets] Seeded absent DCC_CHAIN_ID / ADMIN_DASHBOARD_PG_DATABASE / REDIS_URL (existing lines untouched)."
+
 # ── 2. Set postgres password ──────────────────────────────────────────────────
 $SSH "sudo -u postgres psql" << PGEOF
 ALTER ROLE dcc WITH PASSWORD \$dccpw\$${PG_PASS}\$dccpw\$;
 PGEOF
 echo "[push-secrets] Postgres password set."
 
-# ── 3. Write matcher local.conf ───────────────────────────────────────────────
-MATCHER_PASS_ESC=$(printf '%s' "${MATCHER_PASS}" | python3 -c "
-import sys, json
-raw = sys.stdin.read()
-print(json.dumps(raw)[1:-1], end='')
-")
-CHAIN_ID=$($SSH "grep '^CHAIN_ID=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2")
-case "${CHAIN_ID}" in
-  63) ADDR_SCHEME="?" ;;
-  83) ADDR_SCHEME="S" ;;
-  33) ADDR_SCHEME="!" ;;
-  *)  ADDR_SCHEME="D" ;;
-esac
-{
-  printf '# DecentralChain DEX Matcher local config -- written by SSH push (SOPS)\n'
-  printf 'dcc.dex {\n'
-  printf '  address-scheme-character = "%s"\n'  "${ADDR_SCHEME}"
-  printf '  dcc-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
-  printf '  dcc-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"\n'
-  printf '  account-storage {\n'
-  printf '    type = "encrypted-file"\n'
-  printf '    encrypted-file {\n'
-  printf '      path = "/var/lib/decentralchain-dex/account.dat"\n'
-  printf '      password = "%s"\n' "${MATCHER_PASS_ESC}"
-  printf '    }\n'
-  printf '  }\n'
-  printf '  rest-api.api-key-hashes = ["%s"]\n' "${MATCHER_HASH}"
-  printf '}\n'
-} | $SSH "sudo tee /opt/dcc/config/matcher-${NETWORK}/local.conf > /dev/null && \
-          sudo chmod 644 /opt/dcc/config/matcher-${NETWORK}/local.conf && \
-          sudo chown root:deploy /opt/dcc/config/matcher-${NETWORK}/local.conf"
-echo "[push-secrets] Matcher config written."
+# ── 3. Write matcher local.conf (same renderer as push-secrets.yml) ──────────
+CHAIN_ID=$($SSH "grep '^CHAIN_ID=' /opt/dcc/secrets/${NETWORK}.env | cut -d= -f2" || true)
+if [[ -z "${CHAIN_ID}" ]]; then
+  case "${NETWORK}" in
+    testnet)  CHAIN_ID="33" ;;
+    stagenet) CHAIN_ID="83" ;;
+    mainnet)  CHAIN_ID="63" ;;
+    *) echo "[push-secrets] FATAL: unknown network ${NETWORK}"; exit 1 ;;
+  esac
+fi
+MATCHER_CONF=$(NETWORK="${NETWORK}" CHAIN_ID="${CHAIN_ID}" MATCHER_SEED_B64="${MATCHER_SEED_B64}" \
+  MATCHER_HASH="${MATCHER_HASH}" bash "${REPO_ROOT}/scripts/render-matcher-local-conf.sh")
+printf '%s\n' "${MATCHER_CONF}" | $SSH "sudo tee /opt/dcc/config/matcher-${NETWORK}/local.conf.new > /dev/null && \
+  sudo chown root:113 /opt/dcc/config/matcher-${NETWORK}/local.conf.new && \
+  sudo chmod 640 /opt/dcc/config/matcher-${NETWORK}/local.conf.new && \
+  sudo mv -f /opt/dcc/config/matcher-${NETWORK}/local.conf.new /opt/dcc/config/matcher-${NETWORK}/local.conf"
+unset MATCHER_CONF
+echo "[push-secrets] Matcher config written (in-mem account storage)."
 
-# ── 4. Generate matcher account.dat if MATCHER_SEED is set ───────────────────
-if [[ -n "${MATCHER_SEED:-}" ]]; then
-  MATCHER_IMAGE="ghcr.io/decentral-america/matcher:matcher-${NETWORK}-latest"
-  GEN_SCRIPT="
-    set -euo pipefail
-    ACCOUNT_DAT=/opt/dcc/data/matcher-${NETWORK}/account.dat
-    if [ -f \"\$ACCOUNT_DAT\" ]; then echo '[push-secrets] account.dat exists — skip.'; exit 0; fi
-    if ! docker image inspect '${MATCHER_IMAGE}' >/dev/null 2>&1; then
-      echo '[push-secrets] WARNING: matcher image not pulled — account.dat deferred.'; exit 0
-    fi
-    printf '%s\n%s\n%s\n' '${MATCHER_SEED}' '${MATCHER_PASS}' '${MATCHER_PASS}' \
-      | docker run --rm -i --network none \
-          -v /opt/dcc/data/matcher-${NETWORK}:/var/lib/decentralchain-dex \
-          '${MATCHER_IMAGE}' \
-          /usr/share/decentralchain-dex/bin/decentralchain-dex \
-          create-account-storage \
-          --output-directory /var/lib/decentralchain-dex \
-          --seed-format raw-string
-    echo '[push-secrets] account.dat created.'
-  "
-  $SSH "bash -s" <<< "${GEN_SCRIPT}"
+# ── 6. Per-service env files (same as push-secrets.yml) ───────────────────────
+# Runs LAST so a missing required key cannot abort the postgres/matcher steps;
+# the script still exits non-zero (below) if any service file was skipped.
+RENDER_RC=0
+$SSH "sudo OWNER=root:deploy bash -s -- ${NETWORK} /opt/dcc/secrets/${NETWORK}.env /opt/dcc/secrets" \
+  < "${REPO_ROOT}/scripts/render-service-env.sh" || RENDER_RC=$?
+if [[ "${RENDER_RC}" -eq 0 ]]; then
+  echo "[push-secrets] Per-service env files written."
+else
+  echo "[push-secrets] FATAL: per-service env render failed (exit ${RENDER_RC}); see render-service-env lines above."
+  exit "${RENDER_RC}"
 fi
 
 # ── 5. Inject backup credentials into postgres crontab ───────────────────────
@@ -255,3 +257,4 @@ echo ""
 echo "[push-secrets] Done. All secrets pushed to ${NETWORK} @ ${SERVER_IP}."
 echo "[push-secrets] Restart services to pick up new secrets:"
 echo "  ssh deploy@${SERVER_IP} 'sudo systemctl restart dcc-stack'"
+exit "${RENDER_RC}"

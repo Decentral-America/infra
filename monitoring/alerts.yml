@@ -147,7 +147,7 @@ groups:
 
       # ── User-facing service uptime (MON-1) ─────────────────────────────────
       # dcc_service_up is emitted by exporter.py for each hosted service (matcher,
-      # data-service, explorer, websocket, grafana, admin, faucet). 0 = the service
+      # data-service, explorer, websocket, grafana, admin). 0 = the service
       # failed to answer (connection error/timeout/5xx). Previously NONE of these had
       # any alert, so an outage of the DEX/explorer/faucet paged nobody.
       - alert: ServiceDown
@@ -260,3 +260,132 @@ groups:
         annotations:
           summary: "{{ $labels.job }} exporter unreachable for 10 min"
           description: "Prometheus cannot scrape the {{ $labels.job }} exporter (compose/prometheus.yml). Disk/Postgres capacity alerts are blind until it is back. For postgres, check pg_hba/role dcc and PG* vars in /opt/dcc/secrets/testnet.env."
+
+  # ── Platform coverage the 2026-10-18 audit found missing (AUD-049) ──────────────────────
+  # Every rule here has a promtool test in monitoring/tests/alerts_test.yml.
+  - name: dcc-testnet-platform
+    interval: 60s
+    rules:
+      # BPS feeds the explorer, data-service and the websocket pipeline. bps_last_synced_height was
+      # scraped but unused, so a stalled indexer made every downstream page silently stale.
+      - alert: BpsDown
+        expr: |
+          (up{job="bps"} == 0) or (bps_up{job="bps"} == 0)
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "blockchain-postgres-sync (BPS) is down"
+          description: "Prometheus cannot scrape BPS at 127.0.0.1:9090, or it reports bps_up=0, for 5 min. The explorer, data-service and websocket-api are serving stale data. Check `docker logs blockchain-postgres-sync-testnet` on the VPS."
+
+      - alert: BpsLagging
+        expr: |
+          max(dcc_block_height{job="dcc-chain", node="main-node"}) - on() max(bps_last_synced_height{job="bps"}) > 20
+        for: 10m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "BPS is {{ $value }} blocks behind the main node"
+          description: "bps_last_synced_height trails dcc_block_height by more than 20 blocks for 10 min (normal: 0-2). Indexing is stuck or crash-looping; downstream services are stale."
+
+      # Generic scrape-target liveness for the services that had no `up == 0` rule at all.
+      # (dcc-chain: ExporterDown; node/postgres: CapacityExporterDown; bps: BpsDown; lke-chain: LkeGeneratorsDown.)
+      - alert: TargetDown
+        expr: |
+          up{job=~"redis|loki|alloy|alertmanager|prometheus"} == 0
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "{{ $labels.job }} is down (scrape failing for 5 min)"
+          description: "Prometheus cannot scrape job {{ $labels.job }} ({{ $labels.instance }}). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery."
+
+      # A failing receiver means alerts fire but nobody hears them.
+      - alert: AlertmanagerNotificationsFailing
+        expr: |
+          increase(alertmanager_notifications_failed_total{job="alertmanager"}[30m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "Alertmanager failed to deliver notifications via {{ $labels.integration }}"
+          description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching GitHub issues. Check alert-webhook-testnet (/healthz) and its GitHub token."
+
+      # Early TLS warning. ServiceDown only fires after a certificate has already failed.
+      # dcc_tls_cert_expiry_timestamp_seconds comes from exporter.py (refreshed every 10 min).
+      - alert: TlsCertExpiringSoon
+        expr: |
+          (dcc_tls_cert_expiry_timestamp_seconds - time()) < 14 * 86400
+        for: 1h
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "TLS certificate for {{ $labels.host }} expires in less than 14 days"
+          description: "Caddy renews Let's Encrypt certificates 30 days before expiry, so under 14 days left means renewal is failing (DNS moved, port 80/443 blocked, ACME rate limit). Check `docker logs caddy-testnet | grep -i acme`."
+
+      - alert: TlsCertProbeFailed
+        expr: |
+          dcc_tls_cert_probe_ok == 0
+        for: 30m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "Cannot read the TLS certificate of {{ $labels.host }}"
+          description: "exporter.py could not complete a TLS handshake with {{ $labels.host }}:443 for 30 min, so its expiry is unknown."
+
+      # Kernel OOM kills (memcg included): Grafana was OOM-killed 4 times at its 256 MiB limit
+      # before anyone noticed (2026-10-11..16).
+      - alert: HostOomKill
+        expr: |
+          increase(node_vmstat_oom_kill{job="node"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "The kernel OOM-killed a process on the VPS"
+          description: "node_vmstat_oom_kill increased in the last 15 min. Find the victim with `sudo dmesg -T | grep -i 'killed process'` and raise that container's memory limit in compose/."
+
+      # Restart loops. dcc_container_restart_count comes from the host textfile collector
+      # (scripts/docker-state-textfile.sh, systemd timer dcc-docker-state.timer).
+      - alert: ContainerRestartLoop
+        expr: |
+          increase(dcc_container_restart_count[30m]) >= 3
+        for: 0m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "Container {{ $labels.name }} restarted {{ $value }} times in 30 min"
+          description: "Docker restarted {{ $labels.name }} repeatedly (restart policy unless-stopped). Check `docker logs --tail 200 {{ $labels.name }}` and whether State.OOMKilled is true in `docker inspect {{ $labels.name }}`."
+
+      - alert: DockerStateCollectorStale
+        expr: |
+          (time() - node_textfile_mtime_seconds{job="node", file=~".*docker_state.prom"}) > 600
+          or
+          absent(node_textfile_mtime_seconds{job="node", file=~".*docker_state.prom"})
+        for: 5m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "Container restart metrics are stale"
+          description: "/var/lib/node_exporter/textfile/docker_state.prom has not been rewritten for over 10 min, so ContainerRestartLoop is blind. Check `systemctl status dcc-docker-state.timer` on the VPS."
+
+      # Deadman. Always firing by design. Alertmanager routes it to a receiver with no
+      # notifier; infra-liveness.yml (off-box, LKE-triggered) fails if it is missing from
+      # Alertmanager, which proves Prometheus -> rules -> Alertmanager end to end.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+          network: testnet
+        annotations:
+          summary: "Deadman heartbeat (always firing)"
+          description: "Checked off-box by infra-liveness.yml. If this alert is ever absent from Alertmanager, the alerting pipeline is broken."

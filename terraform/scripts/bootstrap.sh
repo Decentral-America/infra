@@ -338,30 +338,25 @@ case "$CHAIN_ID" in
   *)  ADDR_SCHEME="D" ;;   # devnet / unknown -- fail loudly at matcher startup
 esac
 
-# Write matcher config skeleton -- sensitive values injected by SSH push.
-# MATCHER_ACCOUNT_PASSWORD and MATCHER_API_KEY_HASH are never passed via UDF.
-# provision.yml SSH push rewrites this file with real values after boot.
+# Fail-closed matcher config skeleton. The matcher's built-in default is in-mem
+# storage with an EMPTY seed, i.e. KeyPair(empty) that anyone can derive, so it
+# must never start on defaults. This skeleton points account storage at a file
+# that does not exist: the matcher refuses to start until push-secrets.yml
+# writes the real local.conf (scripts/render-matcher-local-conf.sh).
 {
-  printf '# DecentralChain DEX Matcher local config -- skeleton written by bootstrap\n'
+  printf '# DecentralChain DEX Matcher local config -- FAIL-CLOSED skeleton written by bootstrap\n'
   printf '# Network: %s  Chain ID: %s\n' "${NETWORK}" "${CHAIN_ID}"
-  printf '# SENSITIVE VALUES (password, api-key-hashes) are injected by SSH push (SOPS).\n'
+  printf '# push-secrets.yml replaces this file (scripts/render-matcher-local-conf.sh).\n'
   printf 'dcc.dex {\n'
-  printf '  address-scheme-character = "%s"\n'                             "${ADDR_SCHEME}"
-  printf '  dcc-blockchain-client.grpc.target = "127.0.0.1:6887"\n'
-  printf '  dcc-blockchain-client.blockchain-updates-grpc.target = "127.0.0.1:6881"\n'
-  printf '  account-storage {\n'
-  printf '    type = "encrypted-file"\n'
-  printf '    encrypted-file {\n'
-  printf '      path = "/var/lib/decentralchain-dex/account.dat"\n'
-  printf '      password = "PLACEHOLDER_INJECTED_BY_SSH_PUSH"\n'
-  printf '    }\n'
-  printf '  }\n'
-  printf '  rest-api.api-key-hashes = ["PLACEHOLDER_INJECTED_BY_SSH_PUSH"]\n'
+  printf '  address-scheme-character = "%s"\n' "${ADDR_SCHEME}"
+  printf '  account-storage.type = "encrypted-file"\n'
+  printf '  account-storage.encrypted-file.path = "/var/lib/decentralchain-dex/NO-KEY-UNTIL-PUSH-SECRETS"\n'
+  printf '  account-storage.encrypted-file.password = "none"\n'
   printf '}\n'
 } > "/opt/dcc/config/matcher-${NETWORK}/local.conf"
 
 chmod 640 "/opt/dcc/config/matcher-${NETWORK}/local.conf"
-chown root:deploy "/opt/dcc/config/matcher-${NETWORK}/local.conf"
+chown root:113 "/opt/dcc/config/matcher-${NETWORK}/local.conf"
 
 # -- PostgreSQL setup ----------------------------------------------------------
 systemctl enable --now postgresql
@@ -384,10 +379,12 @@ sudo -u postgres psql -c "
 TEMP_POSTGRES_PASS=""
 unset TEMP_POSTGRES_PASS
 
+# The indexing database BPS writes and data-service reads (PGDATABASE /
+# POSTGRES__DATABASE above). Nothing uses a dcc_<network> database.
 sudo -u postgres psql -tc \
-  "SELECT 1 FROM pg_database WHERE datname = 'dcc_${NETWORK}'" \
+  "SELECT 1 FROM pg_database WHERE datname = '${POSTGRES_DATABASE}'" \
   | grep -q 1 || \
-  sudo -u postgres createdb -O dcc "dcc_${NETWORK}"
+  sudo -u postgres createdb -O dcc "${POSTGRES_DATABASE}"
 
 # Admin dashboard operational database (load test history, future admin metadata).
 # Kept separate from the blockchain indexing database to avoid mixing concerns.
