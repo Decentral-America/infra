@@ -379,6 +379,12 @@ jobs:
               reverse_proxy localhost:6886 {
                   header_up -Origin
                   header_up -Referer
+                  # The matcher itself answers Access-Control-Allow-Origin: *. Together with the
+                  # allowlisted origin reflected below, browsers got TWO values and rejected every
+                  # matcher call, so DEX trading on the exchange and the scanner's DEX Pairs page
+                  # were dead (2026-10-18 audit). Caddy is the single CORS authority here.
+                  header_down -Access-Control-Allow-Origin
+                  header_down -Access-Control-Allow-Credentials
               }
               header {
                   Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
