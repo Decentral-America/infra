@@ -83,7 +83,7 @@ _svc_raw = os.getenv(
 # proves Grafana serves; on 2026-10-18 it was 200 for days while the Prometheus and Loki plugins were
 # unregistered and every dashboard was empty. The anonymous Viewer may call the health endpoint.
 GRAFANA_URL = os.getenv("GRAFANA_URL", "https://grafana.testnet.decentralchain.io")
-GRAFANA_DATASOURCES = [d.strip() for d in os.getenv("GRAFANA_DATASOURCES", "prometheus,loki").split(",") if d.strip()]
+GRAFANA_DATASOURCES = [d.strip() for d in os.getenv("GRAFANA_DATASOURCES", "prometheus").split(",") if d.strip()]
 
 SERVICES = []
 for entry in _svc_raw.split(","):

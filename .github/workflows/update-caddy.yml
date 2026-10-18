@@ -111,6 +111,24 @@ jobs:
               @cors_allowed_origin header_regexp Origin ^https://([a-z0-9-]+\.)?(decentralchain\.io|decentralscan\.com|decentral\.exchange)$
           }
 
+          # Access logs (shipped to Loki by alloy) must never carry credentials. Caddy logs
+          # request headers verbatim, so X-Api-Key and the X-E2E-Bypass rate-limit key were
+          # stored in Loki in plaintext (2026-10-18 audit). Header names are logged in Go's
+          # canonical form, hence X-E2e-Bypass.
+          (redacted_log) {
+              log {
+                  format filter {
+                      wrap json
+                      fields {
+                          request>headers>X-Api-Key delete
+                          request>headers>X-E2e-Bypass delete
+                          request>headers>Authorization delete
+                          request>headers>Cookie delete
+                      }
+                  }
+              }
+          }
+
           ${SCANNER} {
               handle /api/geo/* {
                   uri strip_prefix /api/geo
@@ -155,7 +173,7 @@ jobs:
                   -Server
               }
               encode gzip zstd
-              log
+              import redacted_log
           }
 
           ${DATA_SVC} {
@@ -167,7 +185,7 @@ jobs:
                   -Server
               }
               encode gzip zstd
-              log
+              import redacted_log
           }
 
           ${WEBSOCKET} {
@@ -178,7 +196,7 @@ jobs:
                   Referrer-Policy "strict-origin-when-cross-origin"
                   -Server
               }
-              log
+              import redacted_log
           }
 
           ${NODE} {
@@ -328,7 +346,7 @@ jobs:
               }
               header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
               header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-              log
+              import redacted_log
           }
 
           ${MATCHER} {
@@ -371,7 +389,7 @@ jobs:
               }
               header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
               header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-              log
+              import redacted_log
           }
 
           ${ADMIN} {
@@ -384,7 +402,7 @@ jobs:
                   -Server
               }
               encode gzip zstd
-              log
+              import redacted_log
           }
 
           $([ -n "${GRAFANA}" ] && cat << GRAFANA_BLOCK
@@ -400,7 +418,7 @@ jobs:
                   -Server
               }
               encode gzip zstd
-              log
+              import redacted_log
           }
           GRAFANA_BLOCK
           )
