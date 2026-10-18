@@ -75,8 +75,11 @@ jobs:
           package:       ${{ matrix.package }}
           # Always keep the last 10 tagged versions (sha + semver tags).
           keep-n-tagged: 10
-          # Always protect `latest` and the buildcache tag regardless of age.
-          exclude-tags:  'latest,buildcache'
+          # Always protect `latest` and the buildcache tag regardless of age, and every node-scala
+          # digest a testnet pin ever pointed at (pin-node-image-digest.yml tags it
+          # testnet-pinned-<rev>). Without that, the live pinned digest became untagged on the next
+          # build and was deleted here: 0346f624, e2806d3c and 9283525c are all gone.
+          exclude-tags:  'latest,buildcache,testnet-pinned-*'
           # Delete all untagged (dangling) image layers — these accumulate
           # with every build-push and have no referencing tag.
           delete-untagged: true

@@ -53,6 +53,13 @@ jobs:
 
       - uses: regclient/actions/regctl-installer@1b705e32d40851370799ea5814e83d0a5f6a70dc  # v0.1.0
 
+      # node-scala is a private package: anonymous reads are denied. GHCR_TOKEN (classic PAT with
+      # write:packages, shared with ghcr-cleanup.yml) also lets the tag step below write.
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | regctl registry login ghcr.io -u decentral-america --pass-stdin
+
       - name: Resolve digest
         id: resolve
         run: |
@@ -62,6 +69,20 @@ jobs:
           echo "Resolved ${{ env.IMAGE_NAME }}:${REF} -> ${DIGEST}"
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+
+      # Give the pinned digest a permanent tag. Its only other tag is the floating testnet-latest:
+      # once the next build moves that, the digest is untagged and ghcr-cleanup.yml's
+      # delete-untagged removes it, and with imagePullPolicy: Always every restart of a pinned
+      # pod would then fail to pull. That is how every earlier pin (0346f624, e2806d3c, 9283525c,
+      # the 72h soak image) was already deleted. ghcr-cleanup.yml excludes testnet-pinned-*.
+      - name: Tag the pinned digest testnet-pinned-<revision>
+        run: |
+          set -euo pipefail
+          SRC="${{ env.IMAGE_NAME }}@${{ steps.resolve.outputs.digest }}"
+          REV=$(regctl image config "$SRC" --platform linux/amd64 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          [ -n "$REV" ] || { echo "::error::$SRC has no org.opencontainers.image.revision label"; exit 1; }
+          regctl image copy "$SRC" "${{ env.IMAGE_NAME }}:testnet-pinned-${REV:0:7}"
+          echo "Tagged $SRC as testnet-pinned-${REV:0:7}"
 
       - name: Update nodes.yaml
         id: update
