@@ -160,3 +160,24 @@ tests:
         alertname: HotStuffEquivocationDetected
         exp_alerts: []
 
+  # Grafana datasource health: healthy stays quiet; an unregistered plugin fires after 10m, not before.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_grafana_datasource_up{datasource="prometheus"}'
+        values: '1x20'
+      - series: 'dcc_grafana_datasource_up{datasource="loki"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: GrafanaDatasourceDown
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: GrafanaDatasourceDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              network: testnet
+              datasource: loki
+            exp_annotations:
+              summary: "Grafana datasource loki is not healthy"
+              description: "GET /api/datasources/uid/loki/health has not returned status OK for 10 min, so dashboards using it are empty. Check grafana-testnet logs for plugin errors (\"Plugin not registered\", plugin.backgroundinstaller)."
