@@ -1,14 +1,9 @@
 name: Update Caddy
-# Reads domain config from testnet.tfvars, reads MAIN_NODE_REST_API_KEY from SOPS,
-# generates the complete Caddyfile locally in the runner, SCPs it to the server,
-# then restarts Caddy. No variable passing through SSH env — generates locally,
-# pushes atomically.
-#
-# ⚠ The generated Caddyfile below uses `rate_limit` (NODE/MATCHER domains),
-# which requires the custom image built by build-caddy-ratelimit.yml — the
-# stock Caddy image doesn't ship that module. Do NOT run this workflow until
-# compose/caddy.yml's `image:` has been updated to that custom build's digest
-# (see the comment there), or Caddy will fail to start on restart.
+# Renders the Caddyfile with scripts/render-caddyfile.sh: domains from terraform/testnet.tfvars,
+# MAIN_NODE_REST_API_KEY from SOPS, the admin-e2e bypass key from the secret store. The output is
+# validated with the exact caddy-ratelimit image pinned in compose/caddy.yml (stock Caddy lacks
+# the rate_limit module). Then, with dry_run, prints a key-masked diff against the live file and
+# stops; otherwise installs it root-owned 0600 (it embeds two keys) and reloads Caddy in place.
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +12,11 @@ on:
         default: 'testnet'
         type: choice
         options: [testnet]
+      dry_run:
+        description: 'Only print a diff (keys masked) against the live Caddyfile; change nothing'
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 jobs:
@@ -33,37 +33,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Generate Caddyfile
-        id: gen
+      - name: Set up SSH (pinned host key)
         env:
-          SOPS_AGE_KEY: ${{ secrets.AGE_KEY_TESTNET }}
-          NETWORK:      ${{ inputs.network }}
-          E2E_RATE_LIMIT_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
+          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+        run: ./scripts/ssh-setup.sh "$DEPLOY_HOST"
+
+      - name: Render, validate and diff the Caddyfile
+        env:
+          SOPS_AGE_KEY:   ${{ secrets.AGE_KEY_TESTNET }}
+          NETWORK:        ${{ inputs.network }}
+          E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
+          SELF_IP:        ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_HOST:    ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER:    ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
           set -euo pipefail
-
-          # ── Read domains from tfvars ──────────────────────────────────────────
-          parse() { grep "^${1}" terraform/testnet.tfvars | awk -F'"' '{print $2}'; }
-          SCANNER=$(parse scanner_domain)
-          DATA_SVC=$(parse data_service_domain)
-          WEBSOCKET=$(parse websocket_domain)
-          NODE=$(parse node_domain)
-          MATCHER=$(parse matcher_domain)
-          ADMIN=$(parse admin_domain)
-          GRAFANA=$(parse grafana_domain)
-          ACME=$(parse acme_email)
-
-          echo "Domains read from testnet.tfvars:"
-          echo "  scanner:      $SCANNER"
-          echo "  data_service: $DATA_SVC"
-          echo "  websocket:    $WEBSOCKET"
-          echo "  node:         $NODE"
-          echo "  matcher:      $MATCHER"
-          echo "  admin:        $ADMIN"
-          echo "  grafana:      $GRAFANA"
-          echo "  acme:         $ACME"
-
-          # ── Read MAIN_NODE_REST_API_KEY from SOPS ─────────────────────────────────
           SOPS_VERSION="v3.13.3"
           SOPS_SHA256="e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b"
           curl -fsSL "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" -o /tmp/sops-bin
@@ -71,455 +56,54 @@ jobs:
           install -m 755 /tmp/sops-bin /usr/local/bin/sops
           rm /tmp/sops-bin
 
-          SECRETS=$(sops --decrypt "secrets/${NETWORK}.env" 2>/dev/null || echo "")
-          NODE_API_KEY=$(printf '%s' "${SECRETS}" | grep '^MAIN_NODE_REST_API_KEY=' | cut -d= -f2- || true)
-          if [[ -z "${NODE_API_KEY:-}" ]]; then
-            echo "WARNING: MAIN_NODE_REST_API_KEY not in SOPS — /peers/* will return 403"
-            NODE_API_KEY="missing"
-          else
-            echo "MAIN_NODE_REST_API_KEY found in SOPS"
-          fi
+          NODE_API_KEY=$(sops --decrypt "secrets/${NETWORK}.env" | grep '^MAIN_NODE_REST_API_KEY=' | cut -d= -f2- || true)
+          [[ -n "${NODE_API_KEY}" ]] || { echo "::error::MAIN_NODE_REST_API_KEY is not in secrets/${NETWORK}.env"; exit 1; }
+          [[ -n "${E2E_BYPASS_KEY}" ]] || { echo "::error::secret E2E_RATE_LIMIT_BYPASS_KEY is empty"; exit 1; }
+          export NODE_API_KEY E2E_BYPASS_KEY SELF_IP
+          bash scripts/render-caddyfile.sh terraform/testnet.tfvars > /tmp/Caddyfile
+          echo "Caddyfile rendered ($(wc -l < /tmp/Caddyfile) lines)"
 
-          # Rate-limit bypass for our own trusted automated testing (admin-e2e.yml)
-          # -- a secret header, not an IP allowlist (GH Actions runner IPs are
-          # public and shared, so an IP-based bypass would be a real hole).
-          # Anyone without this exact header still gets full rate limiting.
-          E2E_BYPASS_KEY="${E2E_RATE_LIMIT_BYPASS_KEY}"
+          IMG=$(grep -oE 'ghcr.io/decentral-america/caddy-ratelimit@sha256:[0-9a-f]{64}' compose/caddy.yml)
+          docker run --rm -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro "$IMG" \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
-          # ── Generate complete Caddyfile ───────────────────────────────────────
-          cat > /tmp/Caddyfile << EOF
-          # Generated by update-caddy.yml — do not edit manually
-          {
-              admin unix//run/caddy/admin.sock
-              email ${ACME}
-          }
+          # Key-masked diff against the live file (always printed; the only output in dry_run).
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'sudo cat /opt/dcc/caddy/Caddyfile' > /tmp/Caddyfile.live
+          python3 - <<'PY'
+          import os
+          keys = {os.environ["NODE_API_KEY"]: "<NODE_API_KEY>", os.environ["E2E_BYPASS_KEY"]: "<E2E_BYPASS_KEY>"}
+          for src in ("/tmp/Caddyfile", "/tmp/Caddyfile.live"):
+              text = open(src).read()
+              for k, v in keys.items():
+                  text = text.replace(k, v)
+              open(src + ".masked", "w").write(text)
+          PY
+          rm -f /tmp/Caddyfile.live
+          diff -u /tmp/Caddyfile.live.masked /tmp/Caddyfile.masked || true
 
-          # Shared CORS origin allowlist for credentialed endpoints (node, matcher).
-          # Reflecting Origin unconditionally alongside Allow-Credentials: true lets
-          # any website make authenticated cross-origin requests on a visitor's
-          # behalf (CWE-942) — @cors_allowed_origin matches the three domains the
-          # actual first-party apps are deployed under: decentralchain.io (data
-          # service, websocket, admin), decentralscan.com (scanner — its own
-          # scanner_domain in testnet.tfvars is testnet.decentralscan.com, NOT a
-          # decentralchain.io subdomain), and decentral.exchange (exchange, deployed
-          # via Cloudflare Pages — see DecentralChain's deploy-exchange.yml). Missing
-          # the latter two meant every scanner/exchange page load got zero CORS
-          # headers back from the node/matcher, silently failing every direct
-          # client-side fetch (empty height/version/last-block on the scanner's
-          # Network Overview, confirmed live 2026-08-13).
-          (cors_allowlist) {
-              @cors_allowed_origin header_regexp Origin ^https://([a-z0-9-]+\.)?(decentralchain\.io|decentralscan\.com|decentral\.exchange)$
-          }
-
-          # Access logs (shipped to Loki by alloy) must never carry credentials. Caddy logs
-          # request headers verbatim, so X-Api-Key and the X-E2E-Bypass rate-limit key were
-          # stored in Loki in plaintext (2026-10-18 audit). Header names are logged in Go's
-          # canonical form, hence X-E2e-Bypass.
-          (redacted_log) {
-              log {
-                  format filter {
-                      wrap json
-                      fields {
-                          request>headers>X-Api-Key delete
-                          request>headers>X-E2e-Bypass delete
-                          request>headers>Authorization delete
-                          request>headers>Cookie delete
-                      }
-                  }
-              }
-          }
-
-          ${SCANNER} {
-              handle /api/geo/* {
-                  uri strip_prefix /api/geo
-                  reverse_proxy https://ipinfo.io {
-                      header_up Host ipinfo.io
-                      # Strip upstream headers that should not be forwarded to the browser
-                      header_down -Alt-Svc
-                      header_down -Access-Control-Allow-Origin
-                      header_down -Via
-                  }
-              }
-              handle /api/greencheck/* {
-                  uri replace /api/greencheck /api/v3/greencheck
-                  reverse_proxy https://api.thegreenwebfoundation.org {
-                      header_up Host api.thegreenwebfoundation.org
-                      header_down -Alt-Svc
-                      header_down -Via
-                  }
-              }
-              # Faucet abuse control (SEC-3): strict per-IP limit at the edge — persistent
-              # (survives scanner container restarts, unlike the app's in-memory 24h/address
-              # limiter) and IP-scoped, so one host can't script-drain the faucet across many
-              # addresses. 5 requests/hour/IP is ample for legitimate testers.
-              @faucet path /api/faucet
-              rate_limit @faucet {
-                  zone faucet_per_ip {
-                      key    {remote_host}
-                      events 5
-                      window 1h
-                  }
-              }
-              reverse_proxy localhost:3000
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  X-Frame-Options "DENY"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  X-XSS-Protection "0"
-                  Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.decentralchain.io wss://*.decentralchain.io https://ipinfo.io https://api.thegreenwebfoundation.org; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
-                  Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
-                  Cross-Origin-Opener-Policy "same-origin"
-                  -Server
-              }
-              encode gzip zstd
-              import redacted_log
-          }
-
-          ${DATA_SVC} {
-              reverse_proxy localhost:8080
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  -Server
-              }
-              encode gzip zstd
-              import redacted_log
-          }
-
-          ${WEBSOCKET} {
-              reverse_proxy localhost:8081
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  -Server
-              }
-              import redacted_log
-          }
-
-          ${NODE} {
-              import cors_allowlist
-
-              # -- Rate limiting -------------------------------------------------------
-              # Requires the custom image built by build-caddy-ratelimit.yml (stock
-              # caddy:*-alpine doesn't ship github.com/mholt/caddy-ratelimit). Verified
-              # locally: each zone below is isolated (a burst on one path doesn't
-              # consume another path's budget) and correctly returns 429 once exhausted.
-              #
-              # X-E2E-Bypass exempts our own admin-e2e.yml test traffic: with ~20+
-              # parallel e2e spec files each funding test accounts via one broadcast
-              # apiece, legitimate CI traffic alone exceeds broadcast_per_ip's budget.
-              # A secret header (not an IP allowlist -- GH Actions IPs are public and
-              # shared) -- anyone without the exact header still gets fully rate
-              # limited. See docs/comment in DecentralChain's env.ts for the client side.
-              @blocks_path {
-                  path /blocks/*
-                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
-              }
-              rate_limit @blocks_path {
-                  zone blocks_per_ip {
-                      key    {remote_host}
-                      events 1000
-                      window 1m
-                  }
-              }
-              @broadcast {
-                  path /transactions/broadcast
-                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
-              }
-              rate_limit @broadcast {
-                  zone broadcast_per_ip {
-                      key    {remote_host}
-                      events 50
-                      window 1m
-                  }
-              }
-              @other_api {
-                  not path /blocks/* /transactions/broadcast
-                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
-              }
-              rate_limit @other_api {
-                  zone api_per_ip {
-                      key    {remote_host}
-                      events 300
-                      window 1m
-                  }
-              }
-              # RIDE compile/evaluate endpoints are CPU-bound and unauthenticated on the node — cap them far
-              # tighter than the general 300/min so they can't be used as a cheap CPU-DoS. Both zones apply, so
-              # the effective limit is the tighter one.
-              @utils_script {
-                  path /utils/script/*
-                  not header X-E2E-Bypass ${E2E_BYPASS_KEY}
-              }
-              rate_limit @utils_script {
-                  zone utils_script_per_ip {
-                      key    {remote_host}
-                      events 30
-                      window 1m
-                  }
-              }
-
-              @options method OPTIONS
-              handle @options {
-                  # Reflect origin only if it's on the allowlist (see @cors_allowed_origin
-                  # above) — required when the exchange sends credentials (cookies/auth).
-                  # Vary tells caches this header varies. No match = no CORS headers at
-                  # all, so the browser correctly refuses to expose the response.
-                  header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
-                  header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-                  header @cors_allowed_origin Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-                  header @cors_allowed_origin Access-Control-Allow-Headers "Content-Type, Authorization, Accept, X-API-Key, timestamp, signature"
-                  header @cors_allowed_origin Access-Control-Max-Age "3600"
-                  header Vary "Origin"
-                  respond "" 204
-              }
-              # Inject the node API key ONLY for the specific read-only peer endpoints the
-              # explorer/admin need. Do NOT key-inject the whole /debug/* or /consensus/*
-              # namespaces: /debug/* includes destructive/heavy endpoints (rollback, print,
-              # state, configInfo) that must never be publicly reachable, and POST /peers/*
-              # (connect, clearblacklist) must not be callable either. Everything outside
-              # this matcher falls through to the un-keyed proxy below, so the node's own
-              # api-key auth returns 403 for protected routes.
-              # -- Defense-in-depth denylist -------------------------------------------
-              # Hard-404 the endpoints that must NEVER be public, regardless of the node's
-              # own api-key auth, so a single blank/mis-set api-key-hash cannot expose them.
-              # These are admin/secret/destructive; the explorer and DEX never call them.
-              # GET reads (balances, blocks, tx info) and POST /transactions/broadcast are
-              # deliberately NOT matched here.
-              @admin_paths path /debug/* /wallet/* /node/stop /addresses/seed/*
-              handle @admin_paths {
-                  respond "Not found" 404
-              }
-              @admin_sign {
-                  method POST
-                  path /transactions/sign /transactions/sign/*
-              }
-              handle @admin_sign {
-                  respond "Not found" 404
-              }
-              @admin_peers_write {
-                  method POST
-                  path /peers/connect /peers/clearblacklist
-              }
-              handle @admin_peers_write {
-                  respond "Not found" 404
-              }
-              @wallet_write {
-                  method POST DELETE PUT
-                  path /addresses /addresses/*
-              }
-              handle @wallet_write {
-                  respond "Not found" 404
-              }
-
-              @protected {
-                  method GET
-                  path /peers/connected /peers/all /peers/blacklisted /peers/suspended
-              }
-              handle @protected {
-                  reverse_proxy localhost:6869 {
-                      header_up X-API-Key "${NODE_API_KEY}"
-                      header_up -Origin
-                      header_up -Referer
-                  }
-                  header {
-                      Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                      Vary "Origin"
-                      -Server
-                  }
-                  header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
-                  header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-              }
-              reverse_proxy localhost:6869 {
-                  header_up -Origin
-                  header_up -Referer
-              }
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  Vary "Origin"
-                  -Server
-              }
-              header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
-              header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-              import redacted_log
-          }
-
-          ${MATCHER} {
-              import cors_allowlist
-
-              # -- Rate limiting (matcher) ----------------------------------------------
-              # Same custom image requirement as NODE_DOMAIN above. Same X-E2E-Bypass
-              # exemption as NODE_DOMAIN -- see the comment there.
-              @rate_limited not header X-E2E-Bypass ${E2E_BYPASS_KEY}
-              rate_limit @rate_limited {
-                  zone matcher_per_ip {
-                      key    {remote_host}
-                      events 300
-                      window 1m
-                  }
-              }
-
-              @options method OPTIONS
-              handle @options {
-                  # timestamp and signature are custom headers sent by the exchange DEX client.
-                  # Origin reflected only if it's on the allowlist (@cors_allowed_origin above).
-                  header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
-                  header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-                  header @cors_allowed_origin Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-                  header @cors_allowed_origin Access-Control-Allow-Headers "Content-Type, Authorization, Accept, timestamp, signature, X-API-Key"
-                  header @cors_allowed_origin Access-Control-Max-Age "3600"
-                  header Vary "Origin"
-                  respond "" 204
-              }
-              reverse_proxy localhost:6886 {
-                  header_up -Origin
-                  header_up -Referer
-                  # The matcher itself answers Access-Control-Allow-Origin: *. Together with the
-                  # allowlisted origin reflected below, browsers got TWO values and rejected every
-                  # matcher call, so DEX trading on the exchange and the scanner's DEX Pairs page
-                  # were dead (2026-10-18 audit). Caddy is the single CORS authority here.
-                  header_down -Access-Control-Allow-Origin
-                  header_down -Access-Control-Allow-Credentials
-              }
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  Vary "Origin"
-                  -Server
-              }
-              header @cors_allowed_origin Access-Control-Allow-Origin {http.request.header.Origin}
-              header @cors_allowed_origin Access-Control-Allow-Credentials "true"
-              import redacted_log
-          }
-
-          ${ADMIN} {
-              reverse_proxy localhost:3001
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  X-Frame-Options "DENY"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  -Server
-              }
-              encode gzip zstd
-              import redacted_log
-          }
-
-          $([ -n "${GRAFANA}" ] && cat << GRAFANA_BLOCK
-          ${GRAFANA} {
-              # Grafana runs on this VPS (compose/grafana.yml, port 3002); the
-              # cluster has no Grafana. No X-Frame-Options, so the admin
-              # dashboard can embed it in an iframe.
-              reverse_proxy localhost:3002
-              header {
-                  Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-                  X-Content-Type-Options "nosniff"
-                  Referrer-Policy "strict-origin-when-cross-origin"
-                  -Server
-              }
-              encode gzip zstd
-              import redacted_log
-          }
-          GRAFANA_BLOCK
-          )
-          EOF
-
-          echo "Caddyfile generated ($(wc -l < /tmp/Caddyfile) lines)"
-
-      - name: Set up SSH credentials
-        env:
-          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-
-      - name: Upload Caddyfile to server
-        env:
-          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          scp -i ~/.ssh/deploy_key \
-            /tmp/Caddyfile \
-            "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/caddy/Caddyfile"
-
-      # This workflow previously only synced the Caddyfile, never
-      # compose/caddy.yml itself -- so image: pin changes (e.g. the
-      # caddy-ratelimit rollout) silently never reached the server; the
-      # remote `docker compose pull` kept resolving against a stale on-disk
-      # compose file and re-pulling the old stock image. Sync it for real.
-      - name: Upload compose/caddy.yml to server
-        env:
-          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          scp -i ~/.ssh/deploy_key \
-            compose/caddy.yml \
-            "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/compose/caddy.yml"
-
-      - name: Set permissions and restart Caddy
+      - name: Install Caddyfile + compose file and reload Caddy
+        if: ${{ !inputs.dry_run }}
         env:
           DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
           NETWORK:     ${{ inputs.network }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
-            "$DEPLOY_USER@$DEPLOY_HOST" bash -s << REMOTE
+          scp /tmp/Caddyfile "$DEPLOY_USER@$DEPLOY_HOST:/tmp/Caddyfile.new"
+          # compose/caddy.yml too: an image pin change must reach the server (it used to sync only
+          # the Caddyfile, so `compose pull` kept resolving a stale on-disk file).
+          scp compose/caddy.yml "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/compose/caddy.yml"
+          # shellcheck disable=SC2087  # NETWORK is expanded locally on purpose
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
           set -euo pipefail
-          NETWORK="${NETWORK}"
-          CF=/opt/dcc/caddy/Caddyfile
-          sudo chmod 644 "\$CF"
-          sudo chown deploy:deploy "\$CF"
-          echo "=== Caddyfile lines ==="
-          wc -l "\$CF"
-          echo "=== Geo proxy block ==="
-          grep -A5 "handle /api/geo" "\$CF" | head -8
-          echo "=== CSP ==="
-          grep "Content-Security" "\$CF" | head -1
-
-          # Always go through compose pull+up, not a plain docker restart:
-          # a restart reuses whatever image the existing container was
-          # created from, so it would silently keep running a stale image
-          # (e.g. the pre-caddy-ratelimit stock build) even after
-          # compose/caddy.yml's image: pin changes. compose up -d recreates
-          # the container only when its config (including the resolved
-          # image digest) actually changed -- a no-op restart when only the
-          # Caddyfile changed and the image didn't.
-          if [ -f /opt/dcc/compose/caddy.yml ]; then
-            NETWORK="\${NETWORK}" docker compose --project-name "caddy-\${NETWORK}" \
-              -f /opt/dcc/compose/caddy.yml pull \
-            && NETWORK="\${NETWORK}" docker compose --project-name "caddy-\${NETWORK}" \
-              -f /opt/dcc/compose/caddy.yml up -d \
-            && echo "OK (compose pull + up)" || echo "FAILED (compose pull/up)"
-          else
-            echo "FAILED — /opt/dcc/compose/caddy.yml not found"
-            ls /opt/dcc/compose/ 2>/dev/null || true
-          fi
-
-          # compose up -d above only recreates the container when ITS OWN
-          # config changed (image digest, env, volume list) -- it has no
-          # visibility into the CONTENTS of a bind-mounted file, so editing
-          # only the Caddyfile (e.g. adding a new rate-limit matcher) was
-          # silently never picked up: the running Caddy process kept serving
-          # whatever config it last loaded at its own startup. Confirmed via
-          # a real repro: the container reported "up to date" after a
-          # Caddyfile-only change, and live traffic kept hitting the OLD
-          # rate-limit rules until this reload was added. Caddy supports a
-          # zero-downtime in-place reload for exactly this case, keyed off
-          # the same admin socket compose already mounts (caddy-admin
-          # volume -> /run/caddy/admin.sock).
-          echo "=== Reloading Caddy config (picks up Caddyfile-only changes) ==="
-          docker exec "caddy-\${NETWORK}" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          # root:root 0600: the file embeds the node API key and the bypass key. The caddy
+          # container runs as uid 0, which owns the file, so it needs no extra capability to read it.
+          sudo install -m 0600 -o root -g root /tmp/Caddyfile.new /opt/dcc/caddy/Caddyfile
+          rm -f /tmp/Caddyfile.new
+          # compose up -d recreates the container only when its own config (e.g. the image pin)
+          # changed; the reload below applies Caddyfile-only changes without downtime.
+          NETWORK="${NETWORK}" docker compose --project-name "caddy-${NETWORK}" -f /opt/dcc/compose/caddy.yml pull
+          NETWORK="${NETWORK}" docker compose --project-name "caddy-${NETWORK}" -f /opt/dcc/compose/caddy.yml up -d
+          docker exec "caddy-${NETWORK}" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          stat -c '%U:%G %a %n' /opt/dcc/caddy/Caddyfile
           REMOTE

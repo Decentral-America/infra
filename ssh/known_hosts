@@ -1,0 +1,6 @@
+# Pinned SSH host keys of hosts that CI deploys to (2026-10-18 audit: workflows
+# used StrictHostKeyChecking=no or a fresh ssh-keyscan, i.e. trust-on-first-use).
+# Read over an authenticated session, never from ssh-keyscan:
+#   ssh deploy@<host> 'cat /etc/ssh/ssh_host_ed25519_key.pub'
+# A rebuilt host gets a new key: update this file in a PR before deploying to it.
+50.116.30.244 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPm4rg6GbJfduCdaTe5WY7rwhCpHdbiGw0IpQSv5ZpWt
