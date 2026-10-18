@@ -123,6 +123,9 @@ services:
       - '--path.rootfs=/host'
       - '--web.listen-address=127.0.0.1:9100'
       - '--collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+)($$|/)'
+      # Per-container restart/OOM state written each minute by dcc-docker-state.timer
+      # (scripts/docker-state-textfile.sh). Feeds ContainerRestartLoop.
+      - '--collector.textfile.directory=/host/var/lib/node_exporter/textfile'
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9100/metrics | grep -q '^node_filesystem_avail_bytes'"]
       interval: 60s

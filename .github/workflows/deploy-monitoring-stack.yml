@@ -74,6 +74,8 @@ jobs:
             monitoring/loki-config.yaml monitoring/config.alloy \
             monitoring/alertmanager.yml monitoring/alert-webhook.py monitoring/exporter.py \
             monitoring/scripts/deploy-monitoring.sh lke-chain.json \
+            scripts/docker-state-textfile.sh \
+            monitoring/systemd/dcc-docker-state.service monitoring/systemd/dcc-docker-state.timer \
             "${SSH_USER}@${SSH_HOST}:/tmp/"
           scp -i /tmp/id_rsa -o StrictHostKeyChecking=yes \
             monitoring/datasources/loki.yaml \

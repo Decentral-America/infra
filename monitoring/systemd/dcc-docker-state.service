@@ -1,0 +1,8 @@
+[Unit]
+Description=Write Docker container state for node-exporter's textfile collector (infra scripts/docker-state-textfile.sh)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dcc/scripts/docker-state-textfile.sh /var/lib/node_exporter/textfile/docker_state.prom
