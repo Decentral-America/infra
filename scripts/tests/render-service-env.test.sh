@@ -36,6 +36,11 @@ DCC_MATCHER_URL=https://matcher.example
 DCC_DATA_SERVICE_URL=https://ds.example/v0
 DCC_FAUCET_AMOUNT=100
 DCC_FAUCET_RATE_HOURS=24
+DCC_RECAPTCHA_SECRET=recaptcha
+IPINFO_TOKEN=ipinfo
+MATCHER_SETTINGS_URL=https://matcher.example/matcher/settings
+RATE_BASE_ASSET_ID=DCC
+LOG_LEVEL=info
 PGHOST=localhost
 PGPORT=5432
 PGUSER=dcc
@@ -93,4 +98,15 @@ grep -vE '^DCC_FAUCET_(AMOUNT|RATE_HOURS)=' "${T}/master.env" > "${T}/no-faucet-
 bash "${SUT}" testnet "${T}/no-faucet-limits.env" "${T}/out5" >/dev/null || fail "exit non-zero without faucet limits"
 [[ -f "${T}/out5/scanner-testnet.env" ]] || fail "scanner file not written without faucet limits"
 grep -q '^DCC_FAUCET_SEED=' "${T}/out5/scanner-testnet.env" || fail "scanner lost DCC_FAUCET_SEED"
+# 9. Optional scanner/data-service keys: present -> copied byte-identical; absent -> no-op.
+grep -qxF 'DCC_RECAPTCHA_SECRET=recaptcha' "${T}/out/scanner-testnet.env" || fail "scanner lacks DCC_RECAPTCHA_SECRET"
+grep -qxF 'IPINFO_TOKEN=ipinfo' "${T}/out/scanner-testnet.env" || fail "scanner lacks IPINFO_TOKEN"
+for l in 'MATCHER_SETTINGS_URL=https://matcher.example/matcher/settings' 'RATE_BASE_ASSET_ID=DCC' 'LOG_LEVEL=info'; do
+  grep -qxF -- "${l}" "${T}/out/data-service-testnet.env" || fail "data-service lacks ${l%%=*}"
+done
+grep -vE '^(DCC_RECAPTCHA_SECRET|IPINFO_TOKEN|MATCHER_SETTINGS_URL|RATE_BASE_ASSET_ID|LOG_LEVEL)=' "${T}/master.env" > "${T}/no-opt.env"
+bash "${SUT}" testnet "${T}/no-opt.env" "${T}/out6" >/dev/null || fail "exit non-zero without optional app keys"
+for k in DCC_RECAPTCHA_SECRET IPINFO_TOKEN MATCHER_SETTINGS_URL RATE_BASE_ASSET_ID LOG_LEVEL; do
+  ! grep -q "^${k}=" "${T}/out6/scanner-testnet.env" "${T}/out6/data-service-testnet.env" || fail "${k} appeared from nowhere"
+done
 echo "PASS render-service-env"

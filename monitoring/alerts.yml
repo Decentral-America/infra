@@ -368,6 +368,8 @@ groups:
       - alert: DockerStateCollectorStale
         expr: |
           (time() - node_textfile_mtime_seconds{job="node", file=~".*docker_state.prom"}) > 600
+          or
+          absent(node_textfile_mtime_seconds{job="node", file=~".*docker_state.prom"})
         for: 5m
         labels:
           severity: warning

@@ -368,6 +368,23 @@ tests:
               summary: "Container restart metrics are stale"
               description: "/var/lib/node_exporter/textfile/docker_state.prom has not been rewritten for over 10 min, so ContainerRestartLoop is blind. Check `systemctl status dcc-docker-state.timer` on the VPS."
 
+  # DockerStateCollectorStale: metric absent entirely (collector never ran / file deleted).
+  - interval: 1m
+    input_series:
+      - series: 'node_textfile_mtime_seconds{job="node", file="/host/var/lib/node_exporter/textfile/other.prom"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DockerStateCollectorStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              network: testnet
+              job: node
+            exp_annotations:
+              summary: "Container restart metrics are stale"
+              description: "/var/lib/node_exporter/textfile/docker_state.prom has not been rewritten for over 10 min, so ContainerRestartLoop is blind. Check `systemctl status dcc-docker-state.timer` on the VPS."
+
   # Watchdog is always firing.
   - interval: 1m
     alert_rule_test:

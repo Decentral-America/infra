@@ -74,7 +74,7 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 \
   -c "CREATE DATABASE \"$DB\" OWNER \"$OWNER\";"
 
 # 5. Apply the schema (the consumer does not migrate on its own)
-docker run --rm --network host --env-file /opt/dcc/secrets/testnet.env \
+docker run --rm --network host --env-file /opt/dcc/secrets/blockchain-postgres-sync-testnet.env \
   "$IMG" ./migration up
 # expect: "Applied migration: ..." lines, ending with 2026-06-28-000000_add_txs_19_commit_to_generation
 

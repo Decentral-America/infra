@@ -36,7 +36,8 @@ required_keys() {
 optional_keys() {
   case "$1" in
     admin-dashboard) echo "TREASURY_SEED" ;;
-    scanner)         echo "DCC_FAUCET_AMOUNT DCC_FAUCET_RATE_HOURS" ;;  # app defaults: 10 and 24
+    scanner)         echo "DCC_FAUCET_AMOUNT DCC_FAUCET_RATE_HOURS DCC_RECAPTCHA_SECRET IPINFO_TOKEN" ;;  # faucet defaults: 10 and 24
+    data-service)    echo "MATCHER_SETTINGS_URL RATE_BASE_ASSET_ID LOG_LEVEL" ;;
     *) echo "" ;;
   esac
 }

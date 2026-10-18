@@ -249,6 +249,7 @@ if [[ "${RENDER_RC}" -eq 0 ]]; then
   echo "[push-secrets] Per-service env files written."
 else
   echo "[push-secrets] FATAL: per-service env render failed (exit ${RENDER_RC}); see render-service-env lines above."
+  exit "${RENDER_RC}"
 fi
 
 # ── 5. Inject backup credentials into postgres crontab ───────────────────────

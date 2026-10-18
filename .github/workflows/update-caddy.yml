@@ -57,6 +57,7 @@ jobs:
           rm /tmp/sops-bin
 
           NODE_API_KEY=$(sops --decrypt "secrets/${NETWORK}.env" | grep '^MAIN_NODE_REST_API_KEY=' | cut -d= -f2- || true)
+          echo "::add-mask::${NODE_API_KEY}"
           [[ -n "${NODE_API_KEY}" ]] || { echo "::error::MAIN_NODE_REST_API_KEY is not in secrets/${NETWORK}.env"; exit 1; }
           [[ -n "${E2E_BYPASS_KEY}" ]] || { echo "::error::secret E2E_RATE_LIMIT_BYPASS_KEY is empty"; exit 1; }
           export NODE_API_KEY E2E_BYPASS_KEY SELF_IP
@@ -72,12 +73,13 @@ jobs:
           # Key-masked diff against the live file (always printed; the only output in dry_run).
           ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'sudo cat /opt/dcc/caddy/Caddyfile' > /tmp/Caddyfile.live
           python3 - <<'PY'
-          import os
+          import os, re
           keys = {os.environ["NODE_API_KEY"]: "<NODE_API_KEY>", os.environ["E2E_BYPASS_KEY"]: "<E2E_BYPASS_KEY>"}
           for src in ("/tmp/Caddyfile", "/tmp/Caddyfile.live"):
               text = open(src).read()
               for k, v in keys.items():
                   text = text.replace(k, v)
+              text = re.sub(r'(X-API-Key\s+")[^"]*(")', r'\1<MASKED>\2', text)
               open(src + ".masked", "w").write(text)
           PY
           rm -f /tmp/Caddyfile.live
@@ -94,10 +96,25 @@ jobs:
           # Stream the Caddyfile over stdin: it never lands in /tmp on the VPS. It is a single-file
           # bind mount into caddy-testnet, so it must be rewritten IN PLACE (same inode): `install`
           # unlinks and recreates the target, which would leave the container on the old file.
-          # tee truncates and rewrites the existing file; umask 077 makes a first-time create 0600.
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            'sudo bash -c "umask 077; tee /opt/dcc/caddy/Caddyfile >/dev/null; chown root:root /opt/dcc/caddy/Caddyfile; chmod 600 /opt/dcc/caddy/Caddyfile"' \
-            < /tmp/Caddyfile
+          # Fail-safe: stage to a 0600 temp, verify its sha256 against the runner's rendered file,
+          # and only then overwrite the live file in place (`cat >` truncates + rewrites, same inode).
+          # A failed or truncated transfer therefore never reaches the live Caddyfile.
+          EXPECTED_SHA=$(sha256sum /tmp/Caddyfile | cut -d' ' -f1)
+          read -r -d '' REMOTE_WRITE <<'SCRIPT' || true
+          set -euo pipefail
+          umask 077
+          tmp=/opt/dcc/caddy/.Caddyfile.new
+          trap 'rm -f "$tmp"' EXIT
+          cat > "$tmp"
+          actual=$(sha256sum "$tmp" | cut -d' ' -f1)
+          [[ "$actual" == "$1" ]] || { echo "Caddyfile sha256 mismatch (got $actual)" >&2; exit 1; }
+          cat "$tmp" > /opt/dcc/caddy/Caddyfile
+          chown root:root /opt/dcc/caddy/Caddyfile
+          chmod 600 /opt/dcc/caddy/Caddyfile
+          rm -f "$tmp"
+          SCRIPT
+          # shellcheck disable=SC2029  # script + hash are expanded locally on purpose
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "sudo bash -c $(printf '%q' "$REMOTE_WRITE") _ ${EXPECTED_SHA}" < /tmp/Caddyfile
           # compose/caddy.yml too: an image pin change must reach the server (it used to sync only
           # the Caddyfile, so `compose pull` kept resolving a stale on-disk file).
           scp compose/caddy.yml "$DEPLOY_USER@$DEPLOY_HOST:/opt/dcc/compose/caddy.yml"
