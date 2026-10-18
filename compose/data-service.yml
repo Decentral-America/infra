@@ -1,7 +1,7 @@
 # docker-compose for DCC Data Service
 # Location on server: /opt/dcc/compose/data-service.yml
 #
-# Deploy via: docker compose -p data-service-testnet -f data-service.yml up -d --remove-orphans data-service
+# Deploy via: docker compose -p data-service-testnet -f data-service.yml up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -57,4 +57,50 @@ services:
       driver: "json-file"
       options:
         max-size: "50m"
+        max-file: "3"
+
+  # Fills the `pairs` table that /v0/pairs and /v0/matchers/{address}/pairs read. Without it the
+  # table stayed empty and /v0/pairs returned [] (2026-10-18 audit). Same image and env file as
+  # data-service (it needs only PG*). deploy-container.yml brings up every service in this file,
+  # so a data-service deploy moves both to the same image.
+  pairs-daemon:
+    image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
+    container_name: "data-service-pairs-${NETWORK:-mainnet}"
+    restart: unless-stopped
+    network_mode: host
+    command: ["node", "dist/daemons/pairs/index.mjs"]
+    env_file:
+      - /opt/dcc/secrets/data-service-${NETWORK:-mainnet}.env
+    environment:
+      NODE_ENV: production
+      PGSSLMODE: "disable"
+      PGSTATEMENTTIMEOUT: "25000"
+      # Rebuild the table every 60s (default 2.5s); a ~30s-block testnet needs no more.
+      PAIRS_UPDATE_INTERVAL: "60000"
+      PAIRS_UPDATE_TIMEOUT: "30000"
+    healthcheck:
+      # No HTTP server here, so the image's HEALTHCHECK (GET :3000/health) does not apply.
+      # PID 1 is the node process: alive = healthy; a crash exits and restarts the container.
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
         max-file: "3"
