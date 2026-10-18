@@ -192,10 +192,25 @@ echo "[push-secrets] Uploading secrets patch..."
     && chown root:deploy /opt/dcc/secrets/${NETWORK}.env'"
 echo "[push-secrets] Secrets file updated (upsert — no duplicates)."
 
-# ── 1a. Per-service env files (same as push-secrets.yml step 1a) ─────────────
-$SSH "sudo OWNER=root:deploy bash -s -- ${NETWORK} /opt/dcc/secrets/${NETWORK}.env /opt/dcc/secrets" \
-  < "${REPO_ROOT}/scripts/render-service-env.sh"
-echo "[push-secrets] Per-service env files written."
+# ── 1-seed. Seed-if-absent keys the per-service renderer requires ────────────
+# A freshly provisioned host has none of these in the master file. An existing line is never
+# overwritten (live values stay byte-identical). Values go over stdin, never into the log.
+case "${NETWORK}" in
+  testnet)  SEED_CHAIN_ID="33" ;;
+  stagenet) SEED_CHAIN_ID="83" ;;
+  mainnet)  SEED_CHAIN_ID="63" ;;
+  *)        echo "[push-secrets] ERROR: unknown NETWORK '${NETWORK}' -- cannot derive DCC_CHAIN_ID"; exit 1 ;;
+esac
+# shellcheck disable=SC2016  # runs on the server, not here
+SEED_SH='f=$1; while IFS= read -r l; do k=${l%%=*}; grep -q "^${k}=" "$f" || printf "%s\n" "$l" >> "$f"; done'
+{
+  printf 'DCC_CHAIN_ID=%s\n'                      "${SEED_CHAIN_ID}"
+  printf 'ADMIN_DASHBOARD_PG_DATABASE=admin_%s\n' "${NETWORK}"
+  if [[ -n "${REDIS_PASS:-}" ]]; then
+    printf 'REDIS_URL=redis://:%s@127.0.0.1:6379/\n' "${REDIS_PASS}"
+  fi
+} | $SSH "sudo bash -c '${SEED_SH}' seed /opt/dcc/secrets/${NETWORK}.env"
+echo "[push-secrets] Seeded absent DCC_CHAIN_ID / ADMIN_DASHBOARD_PG_DATABASE / REDIS_URL (existing lines untouched)."
 
 # ── 2. Set postgres password ──────────────────────────────────────────────────
 $SSH "sudo -u postgres psql" << PGEOF
@@ -259,8 +274,21 @@ if [[ -n "${MATCHER_SEED:-}" ]]; then
   $SSH "bash -s" <<< "${GEN_SCRIPT}"
 fi
 
+# ── 6. Per-service env files (same as push-secrets.yml) ───────────────────────
+# Runs LAST so a missing required key cannot abort the postgres/matcher/account.dat steps;
+# the script still exits non-zero (below) if any service file was skipped.
+RENDER_RC=0
+$SSH "sudo OWNER=root:deploy bash -s -- ${NETWORK} /opt/dcc/secrets/${NETWORK}.env /opt/dcc/secrets" \
+  < "${REPO_ROOT}/scripts/render-service-env.sh" || RENDER_RC=$?
+if [[ "${RENDER_RC}" -eq 0 ]]; then
+  echo "[push-secrets] Per-service env files written."
+else
+  echo "[push-secrets] FATAL: per-service env render failed (exit ${RENDER_RC}); see render-service-env lines above."
+fi
+
 # ── 5. Inject backup credentials into postgres crontab ───────────────────────
 echo ""
 echo "[push-secrets] Done. All secrets pushed to ${NETWORK} @ ${SERVER_IP}."
 echo "[push-secrets] Restart services to pick up new secrets:"
 echo "  ssh deploy@${SERVER_IP} 'sudo systemctl restart dcc-stack'"
+exit "${RENDER_RC}"

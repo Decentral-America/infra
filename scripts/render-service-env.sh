@@ -22,7 +22,7 @@ OUT_DIR="${3:?usage: render-service-env.sh <network> <master-env> <out-dir>}"
 required_keys() {
   case "$1" in
     node-scala)               echo "DCC_WALLET_SEED DCC_WALLET_PASSWORD" ;;
-    scanner)                  echo "DCC_NODE_URL DCC_MATCHER_URL DCC_DATA_SERVICE_URL DCC_CHAIN_ID DCC_FAUCET_SEED DCC_FAUCET_AMOUNT DCC_FAUCET_RATE_HOURS REDIS_URL" ;;
+    scanner)                  echo "DCC_NODE_URL DCC_MATCHER_URL DCC_DATA_SERVICE_URL DCC_CHAIN_ID DCC_FAUCET_SEED REDIS_URL" ;;
     data-service)             echo "PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE DEFAULT_MATCHER RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD RATE_THRESHOLD_ASSET_ID" ;;
     blockchain-postgres-sync) echo "BPS_BLOCKCHAIN_UPDATES_URL BPS_CHAIN_ID BPS_REDIS_URL POSTGRES__HOST POSTGRES__PORT POSTGRES__USER POSTGRES__PASSWORD POSTGRES__DATABASE" ;;
     websocket-api)            echo "REPO__PASSWORD" ;;
@@ -36,6 +36,7 @@ required_keys() {
 optional_keys() {
   case "$1" in
     admin-dashboard) echo "TREASURY_SEED" ;;
+    scanner)         echo "DCC_FAUCET_AMOUNT DCC_FAUCET_RATE_HOURS" ;;  # app defaults: 10 and 24
     *) echo "" ;;
   esac
 }

@@ -75,4 +75,22 @@ grep -v '^REPO__PASSWORD=' "${T}/master.env" > "${T}/broken.env"
 if bash "${SUT}" testnet "${T}/broken.env" "${T}/out2" >/dev/null 2>&1; then fail "expected exit 1 on missing key"; fi
 [[ ! -f "${T}/out2/websocket-api-testnet.env" ]] || fail "websocket-api file written despite missing key"
 [[ -f "${T}/out2/scanner-testnet.env" ]] || fail "unrelated service not written"
+# 6. A non-last service missing a required key must not stop the others: later services still
+#    render and the exit code stays non-zero.
+grep -v '^DCC_WALLET_PASSWORD=' "${T}/master.env" > "${T}/broken-first.env"
+if bash "${SUT}" testnet "${T}/broken-first.env" "${T}/out3" >/dev/null 2>&1; then fail "expected exit 1 when node-scala key missing"; fi
+[[ ! -f "${T}/out3/node-scala-testnet.env" ]] || fail "node-scala written despite missing key"
+for svc in scanner data-service blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
+  [[ -f "${T}/out3/${svc}-testnet.env" ]] || fail "${svc} not rendered after an earlier service failed"
+done
+# 7. Optional TREASURY_SEED absent -> admin file still written, exit 0.
+grep -v '^TREASURY_SEED=' "${T}/master.env" > "${T}/no-treasury.env"
+bash "${SUT}" testnet "${T}/no-treasury.env" "${T}/out4" >/dev/null || fail "exit non-zero without TREASURY_SEED"
+[[ -f "${T}/out4/admin-dashboard-testnet.env" ]] || fail "admin file not written without TREASURY_SEED"
+! grep -q '^TREASURY_SEED=' "${T}/out4/admin-dashboard-testnet.env" || fail "TREASURY_SEED appeared from nowhere"
+# 8. Faucet amount/rate absent (app defaults 10 / 24) -> scanner file written, exit 0.
+grep -vE '^DCC_FAUCET_(AMOUNT|RATE_HOURS)=' "${T}/master.env" > "${T}/no-faucet-limits.env"
+bash "${SUT}" testnet "${T}/no-faucet-limits.env" "${T}/out5" >/dev/null || fail "exit non-zero without faucet limits"
+[[ -f "${T}/out5/scanner-testnet.env" ]] || fail "scanner file not written without faucet limits"
+grep -q '^DCC_FAUCET_SEED=' "${T}/out5/scanner-testnet.env" || fail "scanner lost DCC_FAUCET_SEED"
 echo "PASS render-service-env"
