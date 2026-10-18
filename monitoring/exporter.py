@@ -79,6 +79,12 @@ _svc_raw = os.getenv(
     "admin=https://testnet-admin.decentralchain.io/,"
     "faucet=https://testnet.decentralscan.com/api/faucet",
 )
+# Grafana datasources whose health must be OK (HTTP 200, status "OK"). /api/health above only
+# proves Grafana serves; on 2026-10-18 it was 200 for days while the Prometheus and Loki plugins were
+# unregistered and every dashboard was empty. The anonymous Viewer may call the health endpoint.
+GRAFANA_URL = os.getenv("GRAFANA_URL", "https://grafana.testnet.decentralchain.io")
+GRAFANA_DATASOURCES = [d.strip() for d in os.getenv("GRAFANA_DATASOURCES", "prometheus,loki").split(",") if d.strip()]
+
 SERVICES = []
 for entry in _svc_raw.split(","):
     if "=" in entry:
@@ -137,6 +143,15 @@ def metrics():
     for (svc, _), code in zip(SERVICES, codes):
         up = 1 if (code is not None and code < 500) else 0
         lines.append(f'dcc_service_up{{service="{svc}"}} {up}')
+
+    lines += [
+        "# HELP dcc_grafana_datasource_up 1 if GET /api/datasources/uid/<uid>/health returns HTTP 200 with status OK",
+        "# TYPE dcc_grafana_datasource_up gauge",
+    ]
+    for uid in GRAFANA_DATASOURCES:
+        code, body = fetch_with_status(f"{GRAFANA_URL}/api/datasources/uid/{uid}/health")
+        ok = 1 if (code == 200 and isinstance(body, dict) and body.get("status") == "OK") else 0
+        lines.append(f'dcc_grafana_datasource_up{{datasource="{uid}"}} {ok}')
 
     for name, base in NODES:
         lbl = f'node="{name}"'

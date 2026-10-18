@@ -169,6 +169,19 @@ groups:
       # down, ExporterDown fires and inhibits this. LIMITATION: this Prometheus runs ON the VPS,
       # so a whole-VPS outage (2026-09-17) cannot page from here. That case needs an off-box
       # probe (TESTNET-FINAL-PLAN Task 0.2, infra-liveness.yml).
+      # Grafana answering /api/health is not enough: its datasource plugins can be unregistered
+      # while it serves (2026-10-18: Prometheus + Loki "Plugin not registered", dashboards empty).
+      - alert: GrafanaDatasourceDown
+        expr: |
+          dcc_grafana_datasource_up == 0
+        for: 10m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "Grafana datasource {{ $labels.datasource }} is not healthy"
+          description: "GET /api/datasources/uid/{{ $labels.datasource }}/health has not returned status OK for 10 min, so dashboards using it are empty. Check grafana-testnet logs for plugin errors (\"Plugin not registered\", plugin.backgroundinstaller)."
+
       - alert: MainNodeUnreachable
         expr: |
           absent(dcc_block_height{job="dcc-chain", node="main-node"})
