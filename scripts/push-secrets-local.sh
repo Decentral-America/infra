@@ -138,6 +138,7 @@ MATCHER_SEED=$(   extract 'MATCHER_SEED')
 REDIS_PASS=$(     extract 'REDIS_PASSWORD')
 NODE_API_KEY=$(   extract 'MAIN_NODE_REST_API_KEY')
 DEFAULT_MATCHER=$(extract 'DEFAULT_MATCHER')
+DEFAULT_MATCHER_ADDRESS=$(extract 'DEFAULT_MATCHER_ADDRESS')
 ADMIN_CLIENT_ID=$(extract 'ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_ID')
 ADMIN_CLIENT_SEC=$(extract 'ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_SECRET')
 ADMIN_JWT=$(      extract 'ADMIN_DASHBOARD_JWT_SECRET')
@@ -162,10 +163,11 @@ echo "[push-secrets] Uploading secrets patch..."
   if [[ -n "${REDIS_PASS:-}" ]]; then
     printf 'REDIS_PASSWORD=%s\n'     "${REDIS_PASS}"
     printf 'REPO__PASSWORD=%s\n'     "${REDIS_PASS}"
-    printf 'REDIS_URL=redis://:%s@127.0.0.1:6379/\n' "${REDIS_PASS}"
+    printf 'BPS_REDIS_URL=redis://:%s@127.0.0.1:6379/\n' "${REDIS_PASS}"  # BPS reads envy::prefixed("BPS_")
   fi
   [[ -n "${NODE_API_KEY:-}" ]] && printf 'MAIN_NODE_REST_API_KEY=%s\n' "${NODE_API_KEY}"
-  printf 'DEFAULT_MATCHER=%s\n'                       "${DEFAULT_MATCHER}"
+  # data-service's DEFAULT_MATCHER is the matcher ADDRESS, not the public key.
+  printf 'DEFAULT_MATCHER=%s\n'                       "${DEFAULT_MATCHER_ADDRESS:?DEFAULT_MATCHER_ADDRESS missing from SOPS}"
   printf 'RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=%s\n' "${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD:-1}"
   printf 'RATE_THRESHOLD_ASSET_ID=%s\n'               "${RATE_THRESHOLD_ASSET_ID:-DCC}"
   if [[ -n "${ADMIN_CLIENT_ID:-}" ]]; then
