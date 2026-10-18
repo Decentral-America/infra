@@ -114,6 +114,14 @@ jobs:
           docker run --rm --entrypoint promtool -v "$PWD/monitoring:/work:ro" -w /work "$IMG" \
             test rules tests/alerts_test.yml
 
+      - name: amtool check-config
+        run: |
+          set -euo pipefail
+          AM=$(grep -oE 'prom/alertmanager:[^ ]+@sha256:[0-9a-f]+' compose/prometheus.yml)
+          docker run --rm --entrypoint amtool -v "$PWD/monitoring:/w:ro" "$AM" check-config /w/alertmanager.yml
+          docker run --rm --entrypoint amtool -v "$PWD/monitoring:/w:ro" "$AM" \
+            config routes test --config.file=/w/alertmanager.yml alertname=Watchdog severity=none | grep -qx blackhole
+
       # ── Shell script linting ──────────────────────────────────────────────────
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
