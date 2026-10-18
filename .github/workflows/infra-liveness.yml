@@ -49,6 +49,73 @@ jobs:
           echo "not-ready pool nodes: $NOTREADY"
           test "$NOTREADY" -eq 0 || { echo "::error::$NOTREADY LKE pool node(s) not ready"; exit 1; }
 
+      - name: Checkout (pinned SSH host key + scripts)
+        if: ${{ !cancelled() }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Prometheus + Alertmanager run on the VPS they watch, so they cannot report their own death.
+      # alerts.yml `Watchdog` is always firing and routed to a silent receiver; if Alertmanager does
+      # not hold it, rule evaluation or delivery to Alertmanager is broken. The GitHub-issue
+      # receiver (alert-webhook) must also be healthy.
+      - name: Alerting pipeline alive (deadman)
+        if: ${{ !cancelled() }}
+        env:
+          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ./scripts/ssh-setup.sh "$DEPLOY_HOST"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          curl -sf -m 10 'http://127.0.0.1:9093/api/v2/alerts?filter=alertname%3D%22Watchdog%22' \
+            | python3 -c 'import json,sys; a=json.load(sys.stdin); sys.exit(0 if any(x["labels"].get("alertname")=="Watchdog" for x in a) else 1)' \
+            || { echo "::error::Watchdog is missing from Alertmanager: Prometheus rule evaluation or alert delivery is down"; exit 1; }
+          curl -sf -m 10 -o /dev/null http://127.0.0.1:9099/healthz \
+            || { echo "::error::alert-webhook /healthz failing: alerts cannot reach GitHub issues"; exit 1; }
+          echo "deadman OK: Watchdog held by Alertmanager, alert-webhook healthy"
+          REMOTE
+
+      # Flux has no notification-controller and no metrics scrape, so a failing reconcile used to
+      # freeze the cluster spec silently. Suspended Kustomizations only warn: staggered rollouts
+      # (runbooks/staggered-node-rollout.md) suspend on purpose.
+      - name: Flux reconciling
+        if: ${{ !cancelled() }}
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -sf -m 15 -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/lke/clusters \
+            | jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+          curl -sf -m 15 -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/$CID/kubeconfig" \
+            | jq -r .kubeconfig | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          kubectl get kustomizations.kustomize.toolkit.fluxcd.io -n flux-system -o json > "$RUNNER_TEMP/ks.json"
+          python3 - "$RUNNER_TEMP/ks.json" <<'PY'
+          import json, sys
+          bad = []
+          for k in json.load(open(sys.argv[1]))["items"]:
+              name = k["metadata"]["name"]
+              if k["spec"].get("suspend"):
+                  print(f"::warning::Kustomization {name} is SUSPENDED (expected only during a staggered rollout)")
+                  continue
+              ready = next((c for c in k.get("status", {}).get("conditions", []) if c["type"] == "Ready"), {})
+              print(f"{name}: Ready={ready.get('status')} rev={k.get('status', {}).get('lastAppliedRevision', '?')}")
+              if ready.get("status") != "True":
+                  bad.append(f"{name}: {ready.get('reason')} {ready.get('message', '')[:200]}")
+          if bad:
+              print("::error::Flux Kustomization(s) not Ready: " + "; ".join(bad))
+              sys.exit(1)
+          PY
+          # AUD-195: controller restarts are recorded on every run (the 45h co-restart was never explained).
+          kubectl get pods -n flux-system --no-headers \
+            -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount
+          NOTREADY=$(kubectl get pods -n flux-system -o json | jq '[.items[] | select(.status.containerStatuses[0].ready != true)] | length')
+          test "$NOTREADY" -eq 0 || { echo "::error::$NOTREADY flux-system controller pod(s) not ready"; exit 1; }
+
       - name: Open or update alert issue on failure
         if: ${{ failure() }}
         env:
@@ -56,7 +123,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          TITLE="[ALERT] InfraLiveness: testnet unreachable or not advancing"
+          TITLE="[ALERT] InfraLiveness: testnet liveness, alerting deadman or Flux check failed"
           N=$(gh issue list -R "$GITHUB_REPOSITORY" --search "\"$TITLE\" in:title" --state open --json number -q '.[0].number')
           if [ -z "$N" ]; then
             gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "Run: $RUN_URL"
