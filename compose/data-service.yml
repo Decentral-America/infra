@@ -15,20 +15,23 @@ services:
     # Caddy (also host-network) still reaches data-service on localhost:8080.
     # The ports: section is removed — incompatible with host networking.
     network_mode: host
+    # PG*, DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD, RATE_THRESHOLD_ASSET_ID
+    # (scripts/render-service-env.sh). Do NOT add them under environment: — it overrides
+    # env_file, so an unset shell var would silently clear the value.
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+      - /opt/dcc/secrets/data-service-${NETWORK:-mainnet}.env
     environment:
       NODE_ENV: production
       # PORT is a hardcoded infrastructure constant, safe to set here.
-      # Container binds to 127.0.0.1:8080; Caddy proxies it with TLS on 443.
+      # Caddy proxies 127.0.0.1:8080 with TLS on 443.
       PORT: "8080"
       # data-service defaults to PGSSLMODE=require. For on-server PostgreSQL
       # (127.0.0.1 loopback), SSL adds no security benefit and requires a
       # trusted cert. Disable it for all local deployments.
       PGSSLMODE: "disable"
-    # DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD, RATE_THRESHOLD_ASSET_ID
-    # come from env_file. Do NOT add them here — environment: overrides env_file,
-    # so an unset shell var would silently clear the value.
+      # Cap every query at 25s so an aborted HTTP request cannot hold a pool
+      # connection indefinitely (loadConfig.ts reads PGSTATEMENTTIMEOUT, ms).
+      PGSTATEMENTTIMEOUT: "25000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 30s

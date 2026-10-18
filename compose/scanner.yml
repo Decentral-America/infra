@@ -16,11 +16,11 @@ services:
     # reach Caddy (also on host network) at localhost:443 without issue.
     # Port 3000 is still on the host loopback; Caddy forwards to it normally.
     network_mode: host
+    # Only the scanner's own keys (scripts/render-service-env.sh): node/matcher/DS URLs,
+    # chain id, faucet seed + limits, REDIS_URL (faucet limiter). Do NOT duplicate them in
+    # environment: — environment: overrides env_file, so an unset shell var would clear them.
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
-    # DCC_NODE_URL, DCC_MATCHER_URL, DCC_DATA_SERVICE_URL come from env_file.
-    # Do NOT duplicate them in environment: — Docker Compose environment: always
-    # overrides env_file, so an unset shell var would silently clear the value.
+      - /opt/dcc/secrets/scanner-${NETWORK:-mainnet}.env
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s

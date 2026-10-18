@@ -154,7 +154,7 @@ services:
     # PGPASSWORD/PGDATABASE from env_file (written by bootstrap.sh + push-secrets.yml),
     # so no new secret is needed. Same env_file pattern as BPS/data-service.
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-testnet}.env
+      - /opt/dcc/secrets/postgres-exporter-${NETWORK:-testnet}.env
     environment:
       DATA_SOURCE_NAME: "sslmode=disable"
     command:
@@ -238,7 +238,7 @@ services:
       ALERT_WEBHOOK_PORT: "9099"
       # GITHUB_TOKEN injected via env_file (SOPS-managed)
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+      - /opt/dcc/secrets/alert-webhook-${NETWORK:-testnet}.env
     # Was `wget ... || exit 0`, which could never fail. It also could not have
     # worked: python:3.14-slim ships no wget, and the webhook served no
     # /healthz route (GET returned 501). Now it uses python3 (present in the

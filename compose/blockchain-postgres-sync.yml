@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
     network_mode: host  # Needs access to local PostgreSQL on 127.0.0.1:5432
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+      - /opt/dcc/secrets/blockchain-postgres-sync-${NETWORK:-mainnet}.env
     environment:
       # All BPS config uses BPS_ prefix via envy::prefixed("BPS_").
       # BPS_BLOCKCHAIN_UPDATES_URL and BPS_CHAIN_ID come from env_file.

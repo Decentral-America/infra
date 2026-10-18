@@ -29,9 +29,8 @@ services:
     # This is the standard Typesafe Config override pattern — no hardcoded env vars.
     command: /var/lib/decentralchain-dex/config/local.conf
 
-    # Secrets are written by bootstrap.sh; never baked into the image.
-    env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+    # No env_file: the matcher reads no secret from the environment. Its seed and API key
+    # hash live in local.conf (written by push-secrets.yml).
 
     # Constants only — never duplicate env_file keys here.
     environment:

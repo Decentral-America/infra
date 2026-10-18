@@ -145,6 +145,7 @@ ADMIN_JWT=$(      extract 'ADMIN_DASHBOARD_JWT_SECRET')
 GITHUB_PAT=$(     extract 'ADMIN_DASHBOARD_GITHUB_PAT')
 GRAFANA_URL=$(    extract 'GRAFANA_URL')
 SENTRY_TOKEN=$(   extract 'SENTRY_AUTH_TOKEN')
+TREASURY_SEED=$(  extract 'TREASURY_SEED')
 
 if [[ -z "${DEFAULT_MATCHER:-}" ]]; then
   DEFAULT_MATCHER=$(curl -sf "https://${NETWORK}-matcher.decentralchain.io/matcher" 2>/dev/null | tr -d '"' || echo "")
@@ -178,6 +179,9 @@ echo "[push-secrets] Uploading secrets patch..."
   [[ -n "${GITHUB_PAT:-}" ]] && printf 'ADMIN_DASHBOARD_GITHUB_PAT=%s\n' "${GITHUB_PAT}"
   [[ -n "${GRAFANA_URL:-}" ]]  && printf 'GRAFANA_URL=%s\n'        "${GRAFANA_URL}"
   [[ -n "${SENTRY_TOKEN:-}" ]] && printf 'SENTRY_AUTH_TOKEN=%s\n'  "${SENTRY_TOKEN}"
+  # Last line of the group: an `if`, not `[[ ]] &&`, so an absent TREASURY_SEED does not make
+  # the group return 1 and abort the script under `set -o pipefail`.
+  if [[ -n "${TREASURY_SEED:-}" ]]; then printf 'TREASURY_SEED=%s\n' "${TREASURY_SEED}"; fi
 } | $SSH "sudo tee /tmp/secrets-patch.env > /dev/null && \
   sudo touch /opt/dcc/secrets/${NETWORK}.env && \
   sudo bash -c 'cat /tmp/secrets-patch.env /opt/dcc/secrets/${NETWORK}.env \
@@ -187,6 +191,11 @@ echo "[push-secrets] Uploading secrets patch..."
     && chmod 640 /opt/dcc/secrets/${NETWORK}.env \
     && chown root:deploy /opt/dcc/secrets/${NETWORK}.env'"
 echo "[push-secrets] Secrets file updated (upsert — no duplicates)."
+
+# ── 1a. Per-service env files (same as push-secrets.yml step 1a) ─────────────
+$SSH "sudo OWNER=root:deploy bash -s -- ${NETWORK} /opt/dcc/secrets/${NETWORK}.env /opt/dcc/secrets" \
+  < "${REPO_ROOT}/scripts/render-service-env.sh"
+echo "[push-secrets] Per-service env files written."
 
 # ── 2. Set postgres password ──────────────────────────────────────────────────
 $SSH "sudo -u postgres psql" << PGEOF

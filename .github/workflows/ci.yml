@@ -44,6 +44,11 @@ jobs:
           python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet 'pyyaml==6.0.3'
           python3 scripts/config-checksums.py --check
 
+      # Unit tests for the scripts workflows call (render-*, ssh-setup, node-up, ...),
+      # the exporter, and the matcher canary helpers.
+      - name: Unit tests
+        run: bash scripts/tests/run-all.sh
+
       # The main node loads plugins/testnet/*.jar AHEAD of its own classes. A plugin that bundles a copy
       # of a node class silently replaces it (2026-10-04: stale protobuf classes in grpc.jar crashed the
       # miner and shut the node down). Checked against the exact pinned image the VPS runs.
@@ -81,6 +86,9 @@ jobs:
           # Create dummy env/config files so compose config can parse references
           sudo mkdir -p /opt/dcc/secrets /opt/dcc/caddy
           sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/secrets/testnet.env /opt/dcc/secrets/stagenet.env /opt/dcc/secrets/grafana-testnet.env /opt/dcc/caddy/Caddyfile
+          for svc in node-scala scanner data-service blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
+            for net in mainnet testnet stagenet; do sudo touch "/opt/dcc/secrets/${svc}-${net}.env"; done
+          done
           for f in compose/*.yml; do
             echo "Validating $f..."
             docker compose -f "$f" config --quiet

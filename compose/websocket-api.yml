@@ -23,7 +23,7 @@ services:
     # Caddy forwards WSS → ws://127.0.0.1:8080 on the same host.
     network_mode: host
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+      - /opt/dcc/secrets/websocket-api-${NETWORK:-mainnet}.env
     environment:
       PORT: "8081"
       SHARD_COUNT: "20"
