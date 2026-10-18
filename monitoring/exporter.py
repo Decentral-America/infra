@@ -71,7 +71,7 @@ def fetch_with_status(url):
 # Each user-facing service is probed with a plain GET; "up" means it answered with
 # any HTTP status < 500 (a 400/403/404 still proves the service is serving). A
 # connection failure / timeout / 5xx => down. Health URLs are chosen so a healthy
-# service returns <500 (ws/faucet answer 4xx to a bare GET, which is still "up").
+# service returns <500 (ws answers 4xx to a bare GET, which is still "up").
 _svc_raw = os.getenv(
     "SERVICE_URLS",
     "matcher=https://testnet-matcher.decentralchain.io/matcher,"
@@ -164,7 +164,7 @@ def metrics():
     ]
 
     # Web-service liveness for every user-facing service (matcher, data-service,
-    # explorer, websocket, grafana, admin, faucet) — so an outage of any of them pages.
+    # explorer, websocket, grafana, admin) — so an outage of any of them pages.
     # Probed in parallel: sequentially, every dead service added its full 6s timeout, so
     # two unreachable hosts (explorer + faucet during the 2026-10-04 DNS move) pushed a
     # scrape to ~25s. That is past Prometheus' 10s scrape timeout, which then dropped the

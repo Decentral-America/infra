@@ -37,4 +37,6 @@ inhibit_rules:
       - alertname = ExporterDown
     target_matchers:
       - network = testnet
+      # Watchdog is the deadman heartbeat; it must still reach the blackhole receiver during an ExporterDown.
+      - alertname != Watchdog
     equal: ['network']
