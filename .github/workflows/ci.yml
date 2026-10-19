@@ -142,7 +142,8 @@ jobs:
       - name: Validate Docker Compose files
         env:
           IMAGE_TAG: 'ghcr.io/decentral-america/ci-validation:latest'
-          NODE_SCALA_IMAGE: 'ghcr.io/decentral-america/node-scala@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+          # Any non-empty value: `compose config` only needs the variable set (the real digest is never hardcoded in a workflow, rule D6).
+          NODE_SCALA_IMAGE: 'ghcr.io/decentral-america/node-scala:ci-validation'
         run: |
           # Create dummy env/config files so compose config can parse references
           sudo mkdir -p /opt/dcc/secrets /opt/dcc/caddy
