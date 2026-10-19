@@ -3,49 +3,65 @@
 ## Prerequisites
 
 ```bash
-# All commands require a working kubeconfig for the Frankfurt LKE cluster.
-# Download from Linode Cloud Manager → Kubernetes → dcc-peer-testnet → Download kubeconfig
+# kubeconfig for LKE cluster 663401 (dcc-peer-testnet, Frankfurt), fetched from the Linode API:
+CID=$(curl -fsS -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/lke/clusters \
+  | jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+curl -fsS -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/$CID/kubeconfig" \
+  | jq -r .kubeconfig | base64 -d > ~/.kube/dcc-testnet.yaml
+chmod 600 ~/.kube/dcc-testnet.yaml
 export KUBECONFIG=~/.kube/dcc-testnet.yaml
 ```
 
 ---
 
-## Scenario A — LKE Worker Node Terminates Unexpectedly
+## Scenario A — LKE Worker Node Terminates or Is Recycled
 
-**Symptom:** Pod enters `Pending` state, `kubectl get pods -n dcc` shows nodes as `NotReady`.
+**Symptom:** `kubectl get nodes` shows the worker `NotReady` or gone; pods `Pending`; `LkeGeneratorsDown` fires.
 
-**What survives automatically:** Block Storage PVCs use `linode-block-storage-retain` with `ReclaimPolicy: Retain`. The 3 chain-data volumes are **not deleted** when the node is lost.
+**Why "recycle and wait" is not enough:** the pool has ONE worker (`lke_node_count = 1`) running gen-0, gen-1
+and val-0 with `hostNetwork: true`. A recycled worker gets a **new Linode ID and a new public IP**, and:
 
-**Cost trade-off:** Retain is deliberate (see Scenario A) but means every PVC delete/recreate — including manual incident-recovery resets — leaves the old PersistentVolume behind, Released and still billed ($1/mo per 10GiB volume; volumes were 20GiB before the 2026-10 rebuild), forever, until someone prunes it. 21 of these piled up during the June testnet bring-up (multiple genesis-reset attempts while chasing the height-1798/1799/3325 divergences) before anyone noticed on the bill. `.github/workflows/prune-released-chain-volumes.yml` runs weekly and keeps only the 2 most-recent Released PVs per claim (`chain-data-dcc-gen-0-0`, `chain-data-dcc-gen-1-0`, `chain-data-dcc-val-0-0`), deleting older ones via the proper CSI path (patch `persistentVolumeReclaimPolicy` to `Delete`, then `kubectl delete pv`).
+- the IP is hardcoded in `clusters/testnet/apps/nodes.yaml` (`declared-address` ×3, `blacklist-exempt` ×3) and in
+  main's `node-config/testnet/dcc.conf` (`blacklist-exempt`); `scripts/set-lke-node-ip.sh` rewrites all of them;
+- the LKE Cloud Firewall attaches **by Linode ID** (`terraform/lke.tf` `linode_firewall.lke_nodes`): until
+  `provision.yml apply` the new worker runs with NO cloud firewall (kubelet 10250 and NodePorts public);
+- the VPS egress rule `allow-lke-exporter-out` (`terraform/main.tf`) and the Prometheus `lke-chain` target
+  (`deploy-monitoring-stack.yml` → `file_sd/lke-chain.json`) still point at the old IP.
 
-**Never delete a chain-data Linode Volume directly via the Linode API/Cloud Manager.** That orphans the k8s PV object (still shows Released, pointing at a disk that no longer exists) instead of cleanly removing it. Always go through kubectl (`kubectl delete pv`, or the prune workflow above) so the CSI driver and k8s stay in sync.
+**Volumes:** chain-data PVCs use `linode-block-storage-retain`. Retain protects against a pod/PVC delete, NOT an
+account-level action: on 2026-10-01 Linode's deletion removed the volumes too. A node that lost its volume
+re-syncs from main over P2P (IR-5).
 
-**Recovery steps:**
+**Recovery steps (in order):**
 
-1. Confirm the node is gone and PVCs still exist:
+1. **Confirm and record the new IP.**
    ```bash
-   kubectl get nodes
-   kubectl get pvc -n dcc
-   # All 3 PVCs should still show Bound or Released, not Deleted
+   kubectl get nodes -o wide          # STATUS Ready; note EXTERNAL-IP = NEW_IP
+   kubectl get pvc -n dcc             # Bound (or Pending if the volumes are gone)
    ```
-
-2. In Linode Cloud Manager, go to **Kubernetes → dcc-peer-testnet → Node Pools** and click **Recycle** on the node pool. This provisions a new node with the same plan/region.
-
-3. Wait for the new node to reach `Ready` (typically 3–5 minutes):
+   If the worker is gone and nothing replaced it: Linode Cloud Manager → Kubernetes → dcc-peer-testnet → Node
+   Pools → **Recycle**, then wait for `Ready` (3–5 min).
+2. **Close the firewall gap first.**
+   `gh workflow run provision.yml -f action=plan -f network=testnet`. The plan must change only
+   `linode_firewall.lke_nodes` (`linodes` = the new ID) and the VPS rule `allow-lke-exporter-out`. Then run the same
+   command with `-f action=apply`. Verify:
+   `curl -fsS -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/networking/firewalls?page_size=100 | jq '.data[] | select(.label|test("lke")) | .entities'`
+   lists the new Linode ID.
+3. **Point the configs at the new IP (PR).**
+   `scripts/set-lke-node-ip.sh <NEW_IP>`. It rewrites nodes.yaml + main's dcc.conf and refreshes the
+   `checksum/config` annotations. Open the PR, then roll it with `runbooks/staggered-node-rollout.md` (main via
+   `deploy-node-config.yml --ref <branch>` because dcc.conf changed, then the three pods one at a time), merge last.
+4. **Monitoring.** `gh workflow run deploy-monitoring-stack.yml`, then on the VPS check
+   `curl -s 127.0.0.1:9091/api/v1/query?query=up%7Bjob%3D%22lke-chain%22%7D` → value `1`.
+5. **Verify the mesh.**
    ```bash
-   kubectl get nodes -w
+   curl -s -H "X-API-Key: <main key>" http://127.0.0.1:6869/peers/connected   # on the VPS: 3 peers at NEW_IP:6863-6865
+   for p in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do kubectl -n dcc exec $p -c node -- wget -qO- localhost:6869/blocks/height; done
    ```
+   Every pod's height is within 2 of main's, and `LkeGeneratorsDown` resolves.
 
-4. Once the node is `Ready`, Flux reconciles automatically within 5 minutes. Pods reschedule and the CSI driver re-attaches the Block Storage volumes.
-
-5. Verify recovery:
-   ```bash
-   kubectl get pods -n dcc
-   kubectl logs -n dcc dcc-gen-0-0 --tail=20
-   # Expect: "Node started" and block height resuming
-   ```
-
-**Expected downtime:** 5–10 minutes (node recycle + CSI re-attach + JVM warm-up).
+**Expected downtime:** 15–30 minutes. The LKE generators cannot peer until step 3. Main holds over 2/3 of the
+committee stake (AUD-182), so finality continues on main's commits meanwhile.
 
 ---
 
