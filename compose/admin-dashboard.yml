@@ -25,6 +25,9 @@ services:
       ADMIN_DASHBOARD_ALLOWED_NODE_URLS: "https://${NETWORK:-mainnet}-node.decentralchain.io"
       # The image default (testnet-scanner.decentralchain.io) has no DNS record.
       ADMIN_DASHBOARD_SCANNER_URL: "https://${NETWORK:-mainnet}.decentralscan.com"
+      # The admin image refuses to start in production without its own public URL (OAuth
+      # callback and absolute links); it no longer bakes in a per-network default.
+      ADMIN_DASHBOARD_URL: "https://${NETWORK:-mainnet}-admin.decentralchain.io"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/healthz"]
       interval: 30s
