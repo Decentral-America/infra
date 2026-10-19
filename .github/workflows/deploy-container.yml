@@ -62,10 +62,18 @@ on:
       GHCR_TOKEN:
         required: false
         description: 'Unused (all GHCR packages are public); kept so existing callers that pass it do not break.'
-      # DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_HOST_FINGERPRINT are
-      # NOT declared here. The deploy job has environment: ${{ inputs.network }}
-      # which reads them directly from infra repo's environments (testnet/stagenet/mainnet).
-      # Callers only need to pass GHCR_TOKEN. No duplication across repos.
+      # Org-level deploy secrets, selected per network below. Every caller passes
+      # `secrets: inherit`; declaring them (optional) documents the contract and lets
+      # actionlint type-check the expressions that read them.
+      TESTNET_DEPLOY_HOST:     { required: false }
+      TESTNET_DEPLOY_USER:     { required: false }
+      TESTNET_DEPLOY_SSH_KEY:  { required: false }
+      STAGENET_DEPLOY_HOST:    { required: false }
+      STAGENET_DEPLOY_USER:    { required: false }
+      STAGENET_DEPLOY_SSH_KEY: { required: false }
+      MAINNET_DEPLOY_HOST:     { required: false }
+      MAINNET_DEPLOY_USER:     { required: false }
+      MAINNET_DEPLOY_SSH_KEY:  { required: false }
 
 permissions:
   contents: read
@@ -194,6 +202,7 @@ jobs:
           INPUT_WAIT_TIMEOUT: ${{ inputs.wait_timeout }}
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2087  # the heredoc is expanded locally on purpose (inputs -> remote vars)
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=10 \
