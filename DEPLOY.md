@@ -47,13 +47,8 @@ Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only
 | infra env infra-testnet-provision | `TF_VAR_DEPLOY_SSH_PUBLIC_KEY` | 2026-10-10 | **unreferenced** |
 | infra env infra-testnet-provision | `TF_VAR_ROOT_PASSWORD` | 2026-06-04 | **unreferenced** |
 | infra env testnet | `AGE_SECRET_KEY` | 2026-06-07 | infra:push-secrets.yml, infra:update-caddy.yml |
-| infra env testnet | `BACKUP_OBJ_ENDPOINT` | 2026-07-01 | **unreferenced** |
 | infra env testnet | `DCC_CANARY_SEED` | 2026-07-25 | infra:canary-transaction.yml, infra:matcher-canary.yml |
-| infra env testnet | `DEPLOY_HOST` | 2026-10-04 | **unreferenced** |
-| infra env testnet | `DEPLOY_HOST_FINGERPRINT` | 2026-06-08 | **unreferenced** |
 | infra env testnet | `DEPLOY_SSH_KEY` | 2026-10-10 | infra:push-secrets.yml |
-| infra env testnet | `DEPLOY_USER` | 2026-06-08 | **unreferenced** |
-| infra repo | `AGE_KEY_TESTNET` | 2026-06-10 | **unreferenced** |
 | infra repo | `E2E_RATE_LIMIT_BYPASS_KEY` | 2026-07-06 | infra:admin-e2e.yml, infra:update-caddy.yml |
 | infra repo | `FLUX_DEPLOY_KEY_TESTNET` | 2026-06-10 | **unreferenced** |
 | infra repo | `GEN_0_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
@@ -63,14 +58,13 @@ Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only
 | infra repo | `MAIN_NODE_REST_API_KEY` | 2026-10-10 | infra:verify-api-keys.yml |
 | infra repo | `R2_ACCESS_KEY_ID` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
 | infra repo | `R2_SECRET_ACCESS_KEY` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
-| infra repo | `TESTNET_REDIS_PASSWORD` | 2026-06-16 | **unreferenced** |
 | infra repo | `TOFU_STATE_PASSPHRASE` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
 | infra repo | `VAL_0_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
 | org | `CLOUDFLARE_ACCOUNT_ID` | 2026-06-07 | DecentralChain:deploy-exchange.yml, infra:drift-detect.yml, infra:provision.yml |
 | org | `CLOUDFLARE_API_TOKEN` | 2026-05-26 | DecentralChain:deploy-exchange.yml |
 | org | `CODECOV_TOKEN` | 2026-05-15 | DecentralChain:bps.yml, DecentralChain:ci.yml, DecentralChain:websocket-api.yml, matcher:ci.yml, node-scala:ci.yml |
 | org | `DOCKERHUB_TOKEN` | 2026-05-15 | DecentralChain:deploy-admin-dashboard.yml, DecentralChain:deploy-bps.yml, DecentralChain:deploy-data-service.yml, DecentralChain:deploy-scanner.yml, DecentralChain:deploy-websocket-api.yml, node-scala:on-release-published.yml, node-scala:publish-node-scala.yml |
-| org | `GHCR_TOKEN` | 2026-06-22 | infra:ghcr-cleanup.yml, infra:pin-node-image-digest.yml |
+| org | `GHCR_TOKEN` | 2026-06-22 | infra:ghcr-cleanup.yml |
 | org | `MAVEN_CENTRAL_PASSWORD` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:maven-central-deployment-status.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-release-published.yml |
 | org | `MAVEN_CENTRAL_USERNAME` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:maven-central-deployment-status.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-push-default-branch.yml, node-scala:on-release-published.yml |
 | org | `MAVEN_GPG_KEY_ID` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:publish-aptly-repo.yml |
@@ -82,7 +76,6 @@ Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only
 | org | `NX_CLOUD_ACCESS_TOKEN_READONLY` | 2026-07-04 | DecentralChain:ci.yml, DecentralChain:integration.yml |
 | org | `SENTRY_AUTH_TOKEN` | 2026-05-26 | DecentralChain:deploy-exchange.yml, DecentralChain:deploy-scanner.yml |
 | org | `TESTNET_DEPLOY_HOST` | 2026-10-04 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
-| org | `TESTNET_DEPLOY_HOST_FINGERPRINT` | 2026-06-08 | **unreferenced** |
 | org | `TESTNET_DEPLOY_SSH_KEY` | 2026-10-10 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
 | org | `TESTNET_DEPLOY_USER` | 2026-06-08 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
 
