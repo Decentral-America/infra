@@ -138,6 +138,7 @@ PG_PASS=$(        extract 'POSTGRES_PASSWORD')
 WALLET_SEED=$(    extract 'MAIN_NODE_WALLET_SEED')
 WALLET_PASS=$(    extract 'MAIN_NODE_WALLET_PASSWORD')
 MATCHER_HASH=$(   extract 'MATCHER_API_KEY_HASH')
+MATCHER_HASH_2=$( extract 'MATCHER_API_KEY_HASH_2')
 REDIS_PASS=$(     extract 'REDIS_PASSWORD')
 NODE_API_KEY=$(   extract 'MAIN_NODE_REST_API_KEY')
 DEFAULT_MATCHER=$(extract 'DEFAULT_MATCHER')
@@ -242,7 +243,7 @@ if [[ -z "${CHAIN_ID}" ]]; then
   esac
 fi
 MATCHER_CONF=$(NETWORK="${NETWORK}" CHAIN_ID="${CHAIN_ID}" MATCHER_SEED_B64="${MATCHER_SEED_B64}" \
-  MATCHER_HASH="${MATCHER_HASH}" bash "${REPO_ROOT}/scripts/render-matcher-local-conf.sh")
+  MATCHER_HASH="${MATCHER_HASH}" MATCHER_HASH_2="${MATCHER_HASH_2}" bash "${REPO_ROOT}/scripts/render-matcher-local-conf.sh")
 printf '%s\n' "${MATCHER_CONF}" | $SSH "sudo tee /opt/dcc/config/matcher-${NETWORK}/local.conf.new > /dev/null && \
   sudo chown root:113 /opt/dcc/config/matcher-${NETWORK}/local.conf.new && \
   sudo chmod 640 /opt/dcc/config/matcher-${NETWORK}/local.conf.new && \
