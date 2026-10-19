@@ -235,6 +235,16 @@ jobs:
           echo "Pulling \$IMAGE_TAG"
           docker pull "\$IMAGE_TAG"
 
+          # Run by immutable digest, not the mutable tag (2026-10-18 audit): resolve the tag
+          # just pulled to this repository's digest. Rollback then also targets a digest.
+          if [[ "\$IMAGE_TAG" != *@sha256:* ]]; then
+            REPO="\${IMAGE_TAG%:*}"
+            DIGEST_REF=\$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "\$IMAGE_TAG" | grep "^\${REPO}@sha256:" | head -1)
+            [[ -n "\$DIGEST_REF" ]] || { echo "::error::no \${REPO} repo digest for \$IMAGE_TAG"; exit 1; }
+            export IMAGE_TAG="\$DIGEST_REF"
+          fi
+          echo "Deploying by digest: \$IMAGE_TAG"
+
           echo "Deploying \$SERVICE on \$NETWORK..."
           cd "\$COMPOSE_DIR"
 

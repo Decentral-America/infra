@@ -41,7 +41,7 @@ jobs:
 
       - name: Render, validate and diff the Caddyfile
         env:
-          SOPS_AGE_KEY:   ${{ secrets.AGE_KEY_TESTNET }}
+          SOPS_AGE_KEY:   ${{ secrets.AGE_SECRET_KEY }}
           NETWORK:        ${{ inputs.network }}
           E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
           SELF_IP:        ${{ secrets.TESTNET_DEPLOY_HOST }}

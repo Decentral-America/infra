@@ -406,6 +406,8 @@ ${GRAFANA} {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
+        # Only the admin dashboard may frame Grafana (its Operations page embeds it).
+        Content-Security-Policy "frame-ancestors https://${ADMIN}"
         -Server
     }
     encode gzip zstd

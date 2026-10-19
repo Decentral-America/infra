@@ -38,4 +38,6 @@ for m in @admin_paths @admin_sign @admin_peers_write @wallet_write; do
 done
 # Fail closed without SELF_IP.
 if NODE_API_KEY=a E2E_BYPASS_KEY=b bash "${SUT}" "${TFVARS}" >/dev/null 2>&1; then fail "missing SELF_IP accepted"; fi
+# AUD-140: Grafana may be framed only by the admin dashboard.
+grep -q 'Content-Security-Policy "frame-ancestors https://testnet-admin.decentralchain.io"' <<<"${out}" || fail "grafana frame-ancestors"
 echo "PASS render-caddyfile"
