@@ -1,7 +1,8 @@
-name: Restart Main Node with Host Networking
-# Image digest is read from node-config/testnet/vps-image.env, the single
-# source of truth shared with deploy-node-config.yml and update-node-image.yml
-# (see that file's header for why: PR#88 "tag-drift bomb", recurred 2026-08-03).
+name: Restart Main Node With Chain Wipe
+# DESTRUCTIVE: removes the main node container, WIPES its chain data (data/ and peers.dat in the
+# node-state-testnet volume) and starts it again on the pinned image through scripts/node-up.sh.
+# Only for a deliberate re-genesis or an unrecoverable local state. For an image or config
+# change use update-node-image.yml / deploy-node-config.yml (no wipe).
 on:
   workflow_call:
   workflow_dispatch:
@@ -13,12 +14,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: restart-host-network
+  group: main-node-deploy
   cancel-in-progress: false
 jobs:
   restart:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: testnet
     steps:
       - name: Require explicit confirmation
@@ -28,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$CONFIRM" != "WIPE-CONFIRMED" ]; then
-            echo "::error::This restarts the node with --network host AND wipes chain data (rm -rf /data/data /data/peers.dat). Re-run with confirm set to exactly WIPE-CONFIRMED."
+            echo "::error::This wipes the main node's chain data. Re-run with confirm set to exactly WIPE-CONFIRMED."
             exit 1
           fi
 
@@ -42,60 +43,26 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC1091
           source node-config/testnet/vps-image.env
+          [[ "${NODE_SCALA_IMAGE}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "::error::vps-image.env must pin a digest"; exit 1; }
           echo "image=${NODE_SCALA_IMAGE}" >> "$GITHUB_OUTPUT"
 
-      - name: Stop bridge container, start with host networking + wipe chain
+      - name: Set up SSH (pinned host key)
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+        run: ./scripts/ssh-setup.sh "$SSH_HOST"
+
+      - name: Wipe chain data and start the node
+        env:
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:   ${{ secrets.TESTNET_DEPLOY_USER }}
           NODE_IMAGE: ${{ steps.image.outputs.image }}
         run: |
-          install -d -m 700 ~/.ssh
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          REMOTE_SCRIPT=$(cat <<REMOTE_EOF
-          set -e
-          IMG='${NODE_IMAGE}'
-          echo "=== Stop and remove bridge-mode container ==="
-          docker stop node-scala-testnet 2>/dev/null || true
-          docker rm node-scala-testnet 2>/dev/null || true
-          echo "=== Wipe chain data ==="
-          docker run --rm -v node-state-testnet:/data alpine \
-            sh -c "rm -rf /data/data /data/peers.dat && echo WIPED" 2>/dev/null || true
-          echo "=== Pull latest image ==="
-          docker pull "\$IMG"
-          echo "=== Start with host networking (no NAT, direct P2P) ==="
-          docker run -d \
-            --name node-scala-testnet \
-            --network host \
-            --restart unless-stopped \
-            --memory 4g \
-            --memory-reservation 1g \
-            --security-opt no-new-privileges:true \
-            --cap-drop ALL \
-            --read-only \
-            --tmpfs /tmp:size=256m,mode=1777,exec \
-            -v node-state-testnet:/var/lib/dcc \
-            -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
-            -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
-            --env-file /opt/dcc/secrets/testnet.env \
-            -e DCC_NETWORK=testnet \
-            -e DCC_HEAP_SIZE=2g \
-            -e DCC_REST_API_BIND=0.0.0.0 \
-            "\$IMG"
-          sleep 20
-          echo "=== Container state ==="
-          docker ps
-          echo "=== Network mode ==="
-          docker inspect node-scala-testnet --format "NetworkMode={{.HostConfig.NetworkMode}}" 2>/dev/null || true
-          echo "=== Port check ==="
-          ss -tlnp | grep 6868 || echo "(no 6868 listener yet)"
-          echo "=== Version ==="
-          curl -sf http://localhost:6869/node/version 2>/dev/null || echo "(starting up)"
-          echo OK
-          REMOTE_EOF
-          )
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" "$REMOTE_SCRIPT"
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          scp scripts/node-up.sh "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp compose/node-scala.yml "${SSH_USER}@${SSH_HOST}:/opt/dcc/compose/node-scala.yml"
+          # shellcheck disable=SC2029  # NODE_IMAGE is expanded locally on purpose
+          ssh "${SSH_USER}@${SSH_HOST}" "set -euo pipefail
+            docker rm -f node-scala-testnet || true
+            docker run --rm -v node-state-testnet:/data alpine:3.22 sh -c 'rm -rf /data/data /data/peers.dat && echo WIPED'
+            bash /tmp/node-up.sh '${NODE_IMAGE}' testnet; rc=\$?; rm -f /tmp/node-up.sh; exit \$rc"

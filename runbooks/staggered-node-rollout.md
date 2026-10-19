@@ -22,8 +22,8 @@ Roll every node from the PR branch first. Merge after that, so Flux's apply of t
    Do **both**, parent first. Suspending only `apps` does not hold; see below.
 
 2. **Main (VPS):**
-   - If `node-config/testnet/dcc.conf` changed, `scp` it to `/tmp/dcc.conf.new`, then `sudo cp` it over `/opt/dcc/config/node-testnet/dcc.conf` and `chown root:root`. Keep a backup and `diff` it; the diff must be exactly the intended lines. This does not restart anything.
-   - Run `gh workflow run update-node-image.yml --ref <pin-branch>`. The `testnet` environment has no branch policy, so a branch ref works. The workflow reads `vps-image.env` from that ref, runs the plugin-shadowing check, restarts the node, and fails on class-linkage errors.
+   - Run `gh workflow run update-node-image.yml --ref <pin-branch>`. If the PR also changes `node-config/testnet/dcc.conf`, run `deploy-node-config.yml --ref <pin-branch>` instead: it installs the config (backup in `dcc.conf.prev`, diff printed) and restarts. The `testnet` environment has no branch policy, so a branch ref works.
+   - Both call `scripts/node-up.sh`. The run is green only if the node is healthy on the pinned digest, logs no class-linkage error and its height advances. Otherwise it rolls back to the previous image and the run is red.
    - Wait until main is advancing with finality lag ≤ 5 and has peers.
 
 3. **LKE, one node at a time:** run `scripts/roll-testnet-node.sh dcc-gen-0`, then `dcc-gen-1`, then `dcc-val-0` (cwd = infra, on the PR branch). The script:

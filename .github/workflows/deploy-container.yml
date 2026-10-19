@@ -62,7 +62,7 @@ on:
     secrets:
       GHCR_TOKEN:
         required: false
-        description: 'PAT with read:packages for GHCR pull on server. Optional when the image is on a public GHCR package.'
+        description: 'Unused (all GHCR packages are public); kept so existing callers that pass it do not break.'
       # DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_HOST_FINGERPRINT are
       # NOT declared here. The deploy job has environment: ${{ inputs.network }}
       # which reads them directly from infra repo's environments (testnet/stagenet/mainnet).
@@ -93,6 +93,12 @@ jobs:
       security-events: write  # upload SARIF to GitHub Security tab
 
     steps:
+      - name: Refuse the main node (it has its own deploy path)
+        if: inputs.service == 'node-scala'
+        run: |
+          echo "::error::deploy-container refuses node-scala: the main node is deployed only by infra update-node-image.yml (digest from node-config/<network>/vps-image.env via scripts/node-up.sh)."
+          exit 1
+
       - name: Checkout infra repository
         # Required to make .trivyignore available in the working directory.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -191,36 +197,8 @@ jobs:
             "compose/${{ inputs.service }}.yml" \
             "$DEPLOY_USER@$DEPLOY_HOST:${{ inputs.compose_dir }}/"
 
-      - name: Upload node config to server
-        # Only runs for the node-scala service. Pushes the network-specific HOCON config
-        # to /opt/dcc/config/node-<network>/dcc.conf (the volume mount path).
-        if: inputs.service == 'node-scala'
-        env:
-          DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          # /opt/dcc/config/node-<network>/dcc.conf is root-owned on the server
-          # (deploy-node-config.yml sets chown root:root), so a direct scp to it
-          # fails with "Permission denied". Stage in /tmp and sudo cp instead,
-          # same as deploy-node-config.yml does.
-          scp -i ~/.ssh/deploy_key \
-            "node-config/${{ inputs.network }}/dcc.conf" \
-            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/dcc.conf.new"
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=10 \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "sudo cp /tmp/dcc.conf.new /opt/dcc/config/node-${{ inputs.network }}/dcc.conf \
-             && sudo chown root:root /opt/dcc/config/node-${{ inputs.network }}/dcc.conf \
-             && rm -f /tmp/dcc.conf.new"
-
       - name: Pull image, deploy, and auto-rollback on failure
         env:
-          # GHCR_TOKEN must be set as an org/repo secret with read:packages scope.
-          # Passed into the SSH heredoc so the server can authenticate to GHCR
-          # before pulling (packages are private by default on GHCR).
-          GHCR_TOKEN:        ${{ secrets.GHCR_TOKEN }}
           DEPLOY_HOST:       ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           DEPLOY_USER:       ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
           INPUT_IMAGE:       ${{ inputs.image }}
@@ -239,23 +217,7 @@ jobs:
           export NETWORK="${INPUT_NETWORK}"
           SERVICE="${INPUT_SERVICE}"
           COMPOSE_DIR="${INPUT_COMPOSE_DIR}"
-          GHCR_TOKEN="${GHCR_TOKEN}"
           INPUT_WAIT_TIMEOUT="${INPUT_WAIT_TIMEOUT}"
-
-          # ── Pre-flight: ensure writable config dir for node-scala ─────────
-          # bootstrap.sh creates /opt/dcc/config/node-<NETWORK>/ as deploy:deploy,
-          # but manual sudo operations can change ownership to root. Self-heal here
-          # so the node-config SCP step always has a writable target.
-          if [[ "\$SERVICE" == "node-scala" ]]; then
-            sudo install -d -m 755 -o deploy -g deploy "/opt/dcc/config/node-\${NETWORK}"
-          fi
-
-          if [ -n "\${GHCR_TOKEN:-}" ]; then
-            echo "Authenticating with GHCR..."
-            echo "\$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
-          else
-            echo "GHCR_TOKEN not set — skipping GHCR login (assuming public image)"
-          fi
 
           # ── Capture previous image for rollback ────────────────────────
           # docker inspect returns the image digest/tag currently running.

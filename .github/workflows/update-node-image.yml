@@ -1,20 +1,23 @@
 name: Update Main Node Image (NO DATA WIPE)
-# Updates the node-scala image without wiping chain data.
-# Deploys the plugin JARs committed in plugins/testnet/ (see the NOTE at the end of this file), after
-# checking that none of them shadows a class or resource of the pinned node image.
+# The deploy path for the VPS main node: plugin jars from plugins/testnet/ plus the image pinned in
+# node-config/testnet/vps-image.env (the single source of truth, rule D6), started by
+# scripts/node-up.sh through compose/node-scala.yml. node-up fails closed: the run is green only if
+# the node runs the pinned digest, is healthy, logs no class-linkage error and its height advances;
+# otherwise it restores the previous image and the run is red.
+# Staggered rollouts run this with --ref <pin-branch> (runbooks/staggered-node-rollout.md).
 # Use restart-host-network.yml ONLY when a clean chain reset is needed.
-# Image digest is read from node-config/testnet/vps-image.env, the single
-# source of truth shared with deploy-node-config.yml and restart-host-network.yml
-# (see that file's header for why: PR#88 "tag-drift bomb", recurred 2026-08-03).
 on:
   workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read
+concurrency:
+  group: main-node-deploy
+  cancel-in-progress: false
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: testnet
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -27,6 +30,7 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC1091
           source node-config/testnet/vps-image.env
+          [[ "${NODE_SCALA_IMAGE}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "::error::vps-image.env must pin a digest"; exit 1; }
           echo "image=${NODE_SCALA_IMAGE}" >> "$GITHUB_OUTPUT"
 
       # Fail closed before touching the server: the node loads plugins AHEAD of its own classes, so a
@@ -37,88 +41,36 @@ jobs:
           NODE_IMAGE: ${{ steps.image.outputs.image }}
         run: ./scripts/check-plugin-shadowing.sh "$NODE_IMAGE" plugins/testnet
 
-      - name: Deploy plugin JARs and update node image
+      - name: Set up SSH (pinned host key)
         env:
-          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          DEPLOY_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+        run: ./scripts/ssh-setup.sh "$SSH_HOST"
+
+      - name: Ship plugins, compose file and node-up.sh
+        env:
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          scp plugins/testnet/ext.jar plugins/testnet/grpc.jar scripts/node-up.sh "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp compose/node-scala.yml "${SSH_USER}@${SSH_HOST}:/opt/dcc/compose/node-scala.yml"
+          ssh "${SSH_USER}@${SSH_HOST}" 'set -euo pipefail
+            sudo install -m 0644 -o root -g root /tmp/ext.jar /tmp/grpc.jar /opt/dcc/plugins/testnet/
+            sudo rm -f /opt/dcc/plugins/testnet/ext.jar.disabled /opt/dcc/plugins/testnet/grpc.jar.disabled
+            rm -f /tmp/ext.jar /tmp/grpc.jar
+            sha256sum /opt/dcc/plugins/testnet/*.jar'
+          sha256sum plugins/testnet/ext.jar plugins/testnet/grpc.jar
+
+      - name: Deploy the pinned image (fails closed, rolls back on failure)
+        env:
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:   ${{ secrets.TESTNET_DEPLOY_USER }}
           NODE_IMAGE: ${{ steps.image.outputs.image }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          set -euo pipefail
+          # shellcheck disable=SC2029  # NODE_IMAGE is expanded locally on purpose
+          ssh "${SSH_USER}@${SSH_HOST}" "bash /tmp/node-up.sh '${NODE_IMAGE}' testnet; rc=\$?; rm -f /tmp/node-up.sh; exit \$rc"
 
-          echo "=== Deploy plugin JARs from repo (infra/plugins/testnet/) ==="
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
-            plugins/testnet/ext.jar plugins/testnet/grpc.jar \
-            "${SSH_USER}@${SSH_HOST}:/tmp/"
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            'sudo cp /tmp/ext.jar /tmp/grpc.jar /opt/dcc/plugins/testnet/
-             sudo rm -f /opt/dcc/plugins/testnet/ext.jar.disabled /opt/dcc/plugins/testnet/grpc.jar.disabled
-             ls -lh /opt/dcc/plugins/testnet/
-             rm -f /tmp/ext.jar /tmp/grpc.jar'
-
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" \
-            "set +e
-             IMG='${NODE_IMAGE}'
-
-             echo '=== Current node state ==='
-             docker ps | grep node-scala
-
-             echo '=== Pull new image ==='
-             if [ -n '${GHCR_TOKEN}' ]; then
-               echo '${GHCR_TOKEN}' | docker login ghcr.io -u github-actions --password-stdin 2>/dev/null || true
-             fi
-             docker pull \"\$IMG\" 2>&1 | tail -3
-
-             echo '=== Stop node ==='
-             docker stop node-scala-testnet
-
-             echo '=== Remove container (keep volume!) ==='
-             docker rm node-scala-testnet
-
-             echo '=== Start with new image (SAME VOLUME, no data wipe) ==='
-             docker run -d \
-               --name node-scala-testnet \
-               --network host \
-               --restart unless-stopped \
-               --memory 4g \
-               --memory-reservation 1g \
-               --security-opt no-new-privileges:true \
-               --cap-drop ALL \
-               --read-only \
-               --tmpfs /tmp:size=256m,mode=1777,exec \
-               -v node-state-testnet:/var/lib/dcc \
-               -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
-               -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
-               --env-file /opt/dcc/secrets/testnet.env \
-               -e DCC_NETWORK=testnet \
-               -e DCC_HEAP_SIZE=2g \
-               -e DCC_REST_API_BIND=0.0.0.0 \
-               \"\$IMG\"
-
-             sleep 15
-             echo '=== New node state ==='
-             docker ps | grep node-scala
-             echo '=== Height check ==='
-             curl -s http://localhost:6869/blocks/height 2>/dev/null || echo '(starting up)'
-             echo '=== Version ==='
-             curl -s http://localhost:6869/node/version 2>/dev/null || echo '(starting up)'"
-
-          # Post-start: a class-linkage error means a plugin and the image disagree; fail loudly instead of
-          # leaving a node that cannot forge (or that dies on the first peer microblock) looking healthy.
-          sleep 45
-          LINKAGE=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${SSH_HOST}" \
-            "docker logs --since 2m node-scala-testnet 2>&1 | grep -cE 'NoSuchMethodError|NoClassDefFoundError|LinkageError|IncompatibleClassChangeError' || true")
-          rm -f /tmp/id_rsa
-          echo "class-linkage errors in the first minute: ${LINKAGE}"
-          if [ "${LINKAGE:-0}" != "0" ]; then
-            echo "::error::node logged ${LINKAGE} class-linkage error(s) after the image update -- plugin/image mismatch"
-            exit 1
-          fi
-
-# NOTE: Plugin JARs (plugins/testnet/ext.jar, grpc.jar) are committed to this repo.
-# They are built from Ecosystem/matcher @ main and should be updated when matcher changes.
-# Future improvement: add MATCHER_PAT secret with actions:read to auto-download
-# from the latest matcher CI artifact (dawidd6/action-download-artifact).
+# NOTE: Plugin JARs (plugins/testnet/ext.jar, grpc.jar) are committed to this repo, built from
+# Ecosystem/matcher. AUD-009 (matcher plan) moves them to CI-built artifacts with provenance.
