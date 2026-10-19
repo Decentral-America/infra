@@ -120,6 +120,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Trivy SARIF report (informational)
+        # Same image and ignore list as the gate below, written as SARIF for the Security tab.
+        # exit-code 0: the table scan that follows is the gate.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref:      '${{ inputs.image }}'
+          format:         'sarif'
+          output:         'trivy-results.sarif'
+          severity:       'HIGH,CRITICAL'
+          exit-code:      '0'
+          ignore-unfixed: true
+          scanners:       'vuln'
+          version:        'v0.74.0'
+          trivyignores:   '.trivyignore'
+
       - name: Run Trivy vulnerability scan
         # Hard gate — exits 1 on any unfixed HIGH/CRITICAL CVE not in .trivyignore.
         # Known accepted CVEs (with documented justification) are in infra/.trivyignore.
@@ -146,6 +161,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           sarif_file: trivy-results.sarif
+          category: trivy-${{ inputs.service }}
 
   deploy:
     name: Deploy ${{ inputs.service }} → ${{ inputs.network }}
@@ -270,6 +286,20 @@ jobs:
             --wait-timeout "\$INPUT_WAIT_TIMEOUT"; then
 
             echo "::error::Health check failed for \$SERVICE on \$NETWORK."
+
+            # ── Diagnostics before any rollback replaces the failing container ──
+            # State and the log tail of every container in this compose project (companions such
+            # as the pairs daemon included). Workflow logs of this public repo are world-readable,
+            # so secret-looking key=value pairs are masked before printing.
+            echo "::group::Diagnostics for \${SERVICE}-\${NETWORK}"
+            docker compose --project-name "\${SERVICE}-\${NETWORK}" --file "\${SERVICE}.yml" ps --all || true
+            for c in \$(docker compose --project-name "\${SERVICE}-\${NETWORK}" --file "\${SERVICE}.yml" ps --all --format '{{.Name}}' 2>/dev/null || true); do
+              echo "--- \$c"
+              docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}} started={{.State.StartedAt}}' "\$c" || true
+              docker logs --tail 80 "\$c" 2>&1 \
+                | sed -E 's/((pass(word)?|secret|token|api[_-]?key|seed|authorization)[A-Za-z0-9_]*[=:" ]+)[^ ",}]+/\1***/Ig' || true
+            done
+            echo "::endgroup::"
 
             # ── Auto-rollback to the previous image ───────────────────────
             if [[ -n "\$PREV_IMAGE" ]]; then
