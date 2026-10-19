@@ -1,0 +1,15 @@
+# 72h soak started 2026-10-12T04:15:35Z. Restored from the session transcript after scratchpad wipes; samples below are verbatim.
+2026-10-12T04:15:35Z h=54954 fin=54951 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-12T15:11:44Z h=56240 fin=56237 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+gap-check since 04:15Z: ISH main=0 lke=0 mainContainer='0 2026-10-11T15:10:32.760831729Z' maxBlockGap(first100)=129.119s
+2026-10-12T16:47:18Z h=56418 fin=56415 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-12T23:19:52Z h=57204 fin=57201 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-13T04:47:47Z h=57846 fin=57844 lag=2 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-13T10:48:30Z h=58557 fin=58554 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-13T16:47:25Z h=59269 fin=59266 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+# note: 2026-10-12 16:14Z equivocation drill (Task 6.5) inside the window; gen-0 rolled twice deliberately (slashing on/off)
+2026-10-13T22:47:51Z h=59964 fin=59961 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-14T04:47:26Z h=60675 fin=60672 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-14T12:39:17Z h=61586 fin=61582 lag=4 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-14T23:10:45Z h=62829 fin=62826 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
+2026-10-15T04:19:29Z h=63440 fin=63437 lag=3 committee=4 ISH(main6h)=0 ISH(lke6h)=0 podRestarts=0,0,0 canary24=24/24
