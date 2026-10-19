@@ -96,7 +96,7 @@ jobs:
           NX_NO_CLOUD: 'true'
           NX_SKIP_NX_CACHE: 'true'
         run: |
-          pnpm --filter-prod "@decentralchain/transactions..." build
+          pnpm --filter-prod "@decentralchain/transactions..." --filter-prod "@decentralchain/node-api-grpc..." build
 
       - name: Resolve spec set
         id: specs
@@ -123,6 +123,10 @@ jobs:
           DCC_TEST_DS_URL: https://testnet-data-service.decentralchain.io
           DCC_TEST_MATCHER_URL: https://testnet-matcher.decentralchain.io
           DCC_TEST_E2E_BYPASS_KEY: ${{ secrets.E2E_RATE_LIMIT_BYPASS_KEY }}
+          # The public node's edge adds the key for GET /peers/*; passing it here keeps the
+          # peer tests meaningful if that edge rule ever changes (AUD-082).
+          DCC_TEST_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
+          DCC_TEST_WS_URL: wss://testnet-ws.decentralchain.io/ws
         working-directory: packages/e2e-blockchain
         # Two reporters: `verbose` for a human-readable step summary, `json`
         # (to an absolute path) for the admin dashboard to parse structurally
