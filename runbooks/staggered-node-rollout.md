@@ -36,7 +36,14 @@ Roll every node from the PR branch first. Merge after that, so Flux's apply of t
 
 4. **Merge the PR** while Flux is still suspended.
 
-5. **Resume:** first `apps`, then `flux-system` (`"suspend":false`). Confirm `lastAppliedRevision` equals the merge commit and **no pod `startTime` changed**.
+5. **Fetch the merge, then resume.** First make the GitRepository fetch the merge commit, while both Kustomizations are still suspended:
+   ```
+   flux reconcile source git flux-system -n flux-system
+   kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}'
+   ```
+   The revision must equal the merge commit. Then resume `apps`, then `flux-system` (`"suspend":false`). Confirm `lastAppliedRevision` equals the merge commit and **no pod `startTime` changed**.
+
+   Resuming before the source has fetched the merge makes `apps` re-apply the pre-merge revision. That reverts every StatefulSet to the old digest at once, and the next fetch rolls them all again. On 2026-10-19 (v1.8.0) this restarted all three LKE nodes together, twice; main stayed up.
 
 6. **Verify:**
    - all 4 nodes on the digest (`docker inspect` on the VPS; `imageID` for the pods);
