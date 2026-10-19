@@ -147,7 +147,7 @@ jobs:
           # Create dummy env/config files so compose config can parse references
           sudo mkdir -p /opt/dcc/secrets /opt/dcc/caddy
           sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/secrets/testnet.env /opt/dcc/secrets/stagenet.env /opt/dcc/secrets/grafana-testnet.env /opt/dcc/caddy/Caddyfile
-          for svc in node-scala scanner data-service blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
+          for svc in node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
             for net in mainnet testnet stagenet; do sudo touch "/opt/dcc/secrets/${svc}-${net}.env"; done
           done
           for f in compose/*.yml; do

@@ -15,8 +15,8 @@ services:
     # Caddy (also host-network) still reaches data-service on localhost:8080.
     # The ports: section is removed — incompatible with host networking.
     network_mode: host
-    # PG*, DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD, RATE_THRESHOLD_ASSET_ID
-    # (scripts/render-service-env.sh). Do NOT add them under environment: — it overrides
+    # PG* (connects as the read-only role dcc_ro), DEFAULT_MATCHER, RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD,
+    # RATE_THRESHOLD_ASSET_ID (scripts/render-service-env.sh). Do NOT add them under environment: — it overrides
     # env_file, so an unset shell var would silently clear the value.
     env_file:
       - /opt/dcc/secrets/data-service-${NETWORK:-mainnet}.env
@@ -60,8 +60,9 @@ services:
         max-file: "3"
 
   # Fills the `pairs` table that /v0/pairs and /v0/matchers/{address}/pairs read. Without it the
-  # table stayed empty and /v0/pairs returned [] (2026-10-18 audit). Same image and env file as
-  # data-service (it needs only PG*). deploy-container.yml brings up every service in this file,
+  # table stayed empty and /v0/pairs returned [] (2026-10-18 audit). Same image as data-service, its
+  # own env file: PG* as the role dcc_pairs, the only role that may write the pairs table
+  # (scripts/render-service-env.sh). deploy-container.yml brings up every service in this file,
   # so a data-service deploy moves both to the same image.
   pairs-daemon:
     image: "${IMAGE_TAG:?IMAGE_TAG must be set — deploy via CI or set IMAGE_TAG=<image>:<sha> explicitly}"
@@ -70,7 +71,7 @@ services:
     network_mode: host
     command: ["node", "dist/daemons/pairs/index.mjs"]
     env_file:
-      - /opt/dcc/secrets/data-service-${NETWORK:-mainnet}.env
+      - /opt/dcc/secrets/data-service-pairs-${NETWORK:-mainnet}.env
     environment:
       NODE_ENV: production
       PGSSLMODE: "disable"

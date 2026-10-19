@@ -4,7 +4,10 @@
 # received the whole <network>.env, including org credentials).
 #
 # Values are copied byte-for-byte from the master file; nothing is generated
-# or rotated here. A service whose required keys are missing from the master
+# or rotated here. The one mapping is database least privilege: data-service connects as the
+# read-only role dcc_ro and its pairs daemon as dcc_pairs (the only writer, of the pairs table),
+# each with its own password (master DCC_RO_PASSWORD / DCC_PAIRS_PASSWORD, written to PGPASSWORD).
+# BPS keeps the owner role; no container but BPS can write the chain tables. A service whose required keys are missing from the master
 # file is not written, and the script exits 1 (fail closed: compose then
 # refuses to start that service instead of starting it without its config).
 #
@@ -23,7 +26,8 @@ required_keys() {
   case "$1" in
     node-scala)               echo "DCC_WALLET_SEED DCC_WALLET_PASSWORD" ;;
     scanner)                  echo "DCC_NODE_URL DCC_MATCHER_URL DCC_DATA_SERVICE_URL DCC_CHAIN_ID DCC_FAUCET_SEED REDIS_URL" ;;
-    data-service)             echo "PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE DEFAULT_MATCHER RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD RATE_THRESHOLD_ASSET_ID" ;;
+    data-service)             echo "PGHOST PGPORT PGDATABASE DEFAULT_MATCHER RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD RATE_THRESHOLD_ASSET_ID" ;;
+    data-service-pairs)       echo "PGHOST PGPORT PGDATABASE" ;;
     blockchain-postgres-sync) echo "BPS_BLOCKCHAIN_UPDATES_URL BPS_CHAIN_ID BPS_REDIS_URL POSTGRES__HOST POSTGRES__PORT POSTGRES__USER POSTGRES__PASSWORD POSTGRES__DATABASE" ;;
     websocket-api)            echo "REPO__PASSWORD" ;;
     admin-dashboard)          echo "ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_ID ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_SECRET ADMIN_DASHBOARD_JWT_SECRET ADMIN_DASHBOARD_GITHUB_PAT ADMIN_DASHBOARD_PG_DATABASE PGHOST PGPORT PGUSER PGPASSWORD DCC_NODE_URL GRAFANA_URL SENTRY_AUTH_TOKEN" ;;
@@ -38,10 +42,19 @@ optional_keys() {
     admin-dashboard) echo "TREASURY_SEED" ;;
     scanner)         echo "DCC_FAUCET_AMOUNT DCC_FAUCET_RATE_HOURS DCC_RECAPTCHA_SECRET IPINFO_TOKEN" ;;  # faucet defaults: 10 and 24
     data-service)    echo "MATCHER_SETTINGS_URL RATE_BASE_ASSET_ID LOG_LEVEL" ;;
+    data-service-pairs) echo "LOG_LEVEL" ;;
     *) echo "" ;;
   esac
 }
-SERVICES="node-scala scanner data-service blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook"
+# Role-mapped database identity: "<PGUSER> <master key holding that role's password>".
+db_role() {
+  case "$1" in
+    data-service)       echo "dcc_ro DCC_RO_PASSWORD" ;;
+    data-service-pairs) echo "dcc_pairs DCC_PAIRS_PASSWORD" ;;
+    *) echo "" ;;
+  esac
+}
+SERVICES="node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook"
 
 # First KEY=VALUE line for a key, verbatim (push-secrets dedupes the master file).
 line_for() { grep -m1 -E "^$1=" "${MASTER}" || true; }
@@ -59,6 +72,17 @@ for svc in ${SERVICES}; do
       if [[ -z "${l}" ]]; then missing="${missing} ${k}"; continue; fi
       printf '%s\n' "${l}"
     done
+    role="$(db_role "${svc}")"
+    if [[ -n "${role}" ]]; then
+      pwkey="${role#* }"
+      l="$(line_for "${pwkey}")"
+      if [[ -z "${l}" ]]; then
+        missing="${missing} ${pwkey}"
+      else
+        printf 'PGUSER=%s\n' "${role%% *}"
+        printf 'PGPASSWORD=%s\n' "${l#"${pwkey}="}"
+      fi
+    fi
     for k in $(optional_keys "${svc}"); do
       l="$(line_for "${k}")"
       [[ -n "${l}" ]] && printf '%s\n' "${l}"
