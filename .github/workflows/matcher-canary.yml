@@ -1,0 +1,99 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Matcher settlement canary (AUD-043)
+#
+# Every hour: two canary accounts place a crossing sell and buy (1 CANARY @ 0.01 DCC), the run waits
+# until the matcher reports both orders Filled and the ExchangeTransaction carrying both orders is on
+# the main node. That exercises order intake, matching, the matcher's signing key, the node broadcast
+# and settlement end to end; the matcher's own healthcheck only proves port 6886 is open.
+#
+# Accounts: A = DCC_CANARY_SEED (environment secret, same as canary-transaction.yml), B = a sibling
+# seed derived from it. The CANARY asset and B's funding come from monitoring/canary/matcher-canary-setup.mjs
+# (one-time); the asset id is the repository variable MATCHER_CANARY_ASSET_ID.
+#
+# Scheduling: the LKE liveness-trigger CronJob dispatches this on the :00 tick (GitHub cron runs
+# hours late); the schedule below is a backup. Failure opens an alert issue in the same format as
+# alert-webhook.py / canary-transaction.yml.
+# ──────────────────────────────────────────────────────────────────────────────
+name: Matcher Settlement Canary
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: matcher-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testnet
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '24'
+
+      # Installed next to the scripts: Node's ESM resolver looks for node_modules from the importing
+      # file's directory. transactions@5.0.1 imports cleanly on Node 24 (5.0.0 needed a sed patch).
+      - name: Install signing dependencies (exact versions)
+        if: vars.MATCHER_CANARY_ASSET_ID != ''
+        run: npm install --no-save --prefix monitoring/canary @decentralchain/transactions@5.0.1 @decentralchain/ts-lib-crypto@2.0.0
+
+      - name: Place, match and settle a canary trade
+        id: canary
+        env:
+          DCC_CANARY_SEED: ${{ secrets.DCC_CANARY_SEED }}
+          MATCHER_CANARY_ASSET_ID: ${{ vars.MATCHER_CANARY_ASSET_ID }}
+        run: |
+          # The hourly dispatch starts on merge; until the one-time setup has issued the CANARY asset
+          # and set the repository variable there is nothing to trade, so skip instead of alerting.
+          if [ -z "${MATCHER_CANARY_ASSET_ID:-}" ]; then
+            echo "::notice::MATCHER_CANARY_ASSET_ID is not set; run monitoring/canary/matcher-canary-setup.mjs once. Skipping."
+            exit 0
+          fi
+          rc=0
+          node monitoring/canary/matcher-canary.mjs || rc=$?
+          if [ "$rc" -eq 3 ]; then echo "reason=unfunded" >> "$GITHUB_OUTPUT"; elif [ "$rc" -ne 0 ]; then echo "reason=failed" >> "$GITHUB_OUTPUT"; fi
+          exit "$rc"
+
+      - name: Open a GitHub issue on failure (alert-webhook.py format)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ steps.canary.outputs.reason }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$REASON" = "unfunded" ]; then
+            NAME="MatcherCanaryUnfunded"; SUMMARY="matcher canary accounts lack DCC or CANARY (re-run matcher-canary-setup.mjs funding)"
+          else
+            NAME="MatcherSettlementCanaryFailed"; SUMMARY="a crossing order pair did not match and settle on testnet"
+          fi
+          PREFIX="[ALERT] $NAME"
+          EXISTING=$(gh issue list --repo "$REPO" --label alert --state open --json title,number \
+            --jq ".[] | select(.title | startswith(\"$PREFIX\")) | .number" | head -1)
+          if [ -z "$EXISTING" ]; then
+            gh issue create --repo "$REPO" --title "$PREFIX: $SUMMARY" --label alert --label severity:high \
+              --body "## HIGH — $SUMMARY
+
+          **Network:** testnet
+          **Alert:** \`$NAME\`
+          **Severity:** high
+          **Run:** $RUN_URL
+
+          > Auto-opened by matcher-canary.yml. Close when resolved."
+          else
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing: $RUN_URL"
+          fi

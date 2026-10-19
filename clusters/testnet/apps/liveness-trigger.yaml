@@ -2,7 +2,7 @@
 # since 2026-08-27, so outages went unnoticed for hours. This CronJob dispatches the workflows on
 # time; their GitHub schedules stay as a backup. It replaces the Cloudflare Worker in
 # workers/liveness-trigger (never deployable: the org Cloudflare token lacks Workers Scripts:Edit)
-# with the same schedule: canary-transaction.yml every 15 min, infra-liveness.yml every 30 min.
+# with the same schedule: canary-transaction.yml every 15 min, infra-liveness.yml every 30 min, matcher-canary.yml hourly.
 # Running on LKE keeps it independent of the VPS main node it is meant to watch.
 apiVersion: batch/v1
 kind: CronJob
@@ -61,6 +61,8 @@ spec:
                   dispatch canary-transaction.yml || rc=1
                   # infra-liveness every 30 min: on the :00 and :30 ticks.
                   if [ $(( $(date -u +%M) % 30 )) -lt 15 ]; then dispatch infra-liveness.yml || rc=1; fi
+                  # matcher-canary hourly: on the :00 tick (minutes 00-09 even if the job started late).
+                  case "$(date -u +%M)" in 0*) dispatch matcher-canary.yml || rc=1 ;; esac
                   exit $rc
               resources:
                 requests:
