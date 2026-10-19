@@ -247,7 +247,7 @@ groups:
           network: testnet
         annotations:
           summary: "VPS filesystem {{ $labels.mountpoint }} below 20% free"
-          description: "{{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free. Largest consumers: Postgres (bps_testnet), node-state-testnet volume, docker logs/images. restart-services.yml already truncates >50MB container logs."
+          description: "{{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free. Largest consumers: Postgres (bps_testnet), node-state-testnet volume, docker logs/images. Container logs already rotate (json-file max-size/max-file in compose/*.yml)."
 
       # Without this, a dead exporter makes the two rules above evaluate to "no data", not an alert.
       - alert: CapacityExporterDown

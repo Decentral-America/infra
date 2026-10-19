@@ -124,6 +124,12 @@ ${DATA_SVC} {
     # (header_up below); a client-supplied value is overwritten. The edge limit
     # is per TCP peer. The VPS's own hairpin calls (scanner SSR, exporter
     # probes) and admin-e2e traffic are exempt.
+    # NOTE: this zone passes 300 req/min per peer (verified with the pinned
+    # caddy-ratelimit image: 300 x 200, then 429). The observed ~120/min comes
+    # from data-service's own in-process limiter (createRateLimiter max 120 per
+    # 60 s, keyed by X-Real-IP; DecentralChain apps/data-service/src/index.ts),
+    # which is tighter. The effective limit is therefore 120/min; this edge
+    # zone is the backstop. Raising it is a data-service change, not a Caddy one.
     @ds_limited {
         not remote_ip ${SELF_IP} 127.0.0.1 ::1
         not header X-E2E-Bypass ${E2E_BYPASS_KEY}
@@ -406,6 +412,8 @@ ${GRAFANA} {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
+        # Only the admin dashboard may frame Grafana (its Operations page embeds it).
+        Content-Security-Policy "frame-ancestors https://${ADMIN}"
         -Server
     }
     encode gzip zstd

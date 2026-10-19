@@ -25,7 +25,6 @@
 #   <PREFIX>_DEPLOY_HOST             — Linode server IP
 #   <PREFIX>_DEPLOY_USER             — SSH user
 #   <PREFIX>_DEPLOY_SSH_KEY          — Ed25519 private key (base64)
-#   <PREFIX>_DEPLOY_HOST_FINGERPRINT — Ed25519 host fingerprint
 #
 # Note: infra repo must be PUBLIC for cross-org reusable workflows to work
 # on GitHub Free plan. No secrets are in the code — all sensitive values are
@@ -62,11 +61,19 @@ on:
     secrets:
       GHCR_TOKEN:
         required: false
-        description: 'PAT with read:packages for GHCR pull on server. Optional when the image is on a public GHCR package.'
-      # DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_HOST_FINGERPRINT are
-      # NOT declared here. The deploy job has environment: ${{ inputs.network }}
-      # which reads them directly from infra repo's environments (testnet/stagenet/mainnet).
-      # Callers only need to pass GHCR_TOKEN. No duplication across repos.
+        description: 'Unused (all GHCR packages are public); kept so existing callers that pass it do not break.'
+      # Org-level deploy secrets, selected per network below. Every caller passes
+      # `secrets: inherit`; declaring them (optional) documents the contract and lets
+      # actionlint type-check the expressions that read them.
+      TESTNET_DEPLOY_HOST:     { required: false }
+      TESTNET_DEPLOY_USER:     { required: false }
+      TESTNET_DEPLOY_SSH_KEY:  { required: false }
+      STAGENET_DEPLOY_HOST:    { required: false }
+      STAGENET_DEPLOY_USER:    { required: false }
+      STAGENET_DEPLOY_SSH_KEY: { required: false }
+      MAINNET_DEPLOY_HOST:     { required: false }
+      MAINNET_DEPLOY_USER:     { required: false }
+      MAINNET_DEPLOY_SSH_KEY:  { required: false }
 
 permissions:
   contents: read
@@ -93,6 +100,12 @@ jobs:
       security-events: write  # upload SARIF to GitHub Security tab
 
     steps:
+      - name: Refuse the main node (it has its own deploy path)
+        if: inputs.service == 'node-scala'
+        run: |
+          echo "::error::deploy-container refuses node-scala: the main node is deployed only by infra update-node-image.yml (digest from node-config/<network>/vps-image.env via scripts/node-up.sh)."
+          exit 1
+
       - name: Checkout infra repository
         # Required to make .trivyignore available in the working directory.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -106,6 +119,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy SARIF report (informational)
+        # Same image and ignore list as the gate below, written as SARIF for the Security tab.
+        # exit-code 0: the table scan that follows is the gate.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref:      '${{ inputs.image }}'
+          format:         'sarif'
+          output:         'trivy-results.sarif'
+          severity:       'HIGH,CRITICAL'
+          exit-code:      '0'
+          ignore-unfixed: true
+          scanners:       'vuln'
+          version:        'v0.74.0'
+          trivyignores:   '.trivyignore'
 
       - name: Run Trivy vulnerability scan
         # Hard gate — exits 1 on any unfixed HIGH/CRITICAL CVE not in .trivyignore.
@@ -133,6 +161,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           sarif_file: trivy-results.sarif
+          category: trivy-${{ inputs.service }}
 
   deploy:
     name: Deploy ${{ inputs.service }} → ${{ inputs.network }}
@@ -158,27 +187,14 @@ jobs:
           repository: Decentral-America/infra
           persist-credentials: false
 
-      - name: Set up SSH credentials
-        # Writes the deploy key to a mode-600 file and pre-populates known_hosts
-        # so subsequent scp/ssh steps do not need StrictHostKeyChecking=no.
-        # All remote operations use native scp/ssh — no third-party actions.
-        #
-        # KNOWN GAP: DEPLOY_HOST_FINGERPRINT is documented above as a required
-        # secret but is never actually compared against ssh-keyscan's result —
-        # this trusts whatever key the host presents at connect time (TOFU on
-        # every ephemeral runner, not just the first-ever connection). Closing
-        # this needs someone who knows the exact stored format (ssh-keygen -lf
-        # SHA256 fingerprint vs raw known_hosts line) to wire up the compare
-        # without risking a false-mismatch that blocks every deploy.
+      - name: Set up SSH credentials (pinned host key)
+        # scripts/ssh-setup.sh writes the deploy key, the PINNED host key from infra's
+        # ssh/known_hosts and an ssh config with StrictHostKeyChecking yes. The old trust-on-first-use scan
+        # trusted whatever key the host presented on every run; a host with no pin is refused.
         env:
           DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           DEPLOY_KEY:  ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+        run: ./scripts/ssh-setup.sh "$DEPLOY_HOST"
 
       - name: Upload compose file to server
         # Uploads compose/<service>.yml to $compose_dir/ (filename only, no subdirectory prefix).
@@ -191,36 +207,8 @@ jobs:
             "compose/${{ inputs.service }}.yml" \
             "$DEPLOY_USER@$DEPLOY_HOST:${{ inputs.compose_dir }}/"
 
-      - name: Upload node config to server
-        # Only runs for the node-scala service. Pushes the network-specific HOCON config
-        # to /opt/dcc/config/node-<network>/dcc.conf (the volume mount path).
-        if: inputs.service == 'node-scala'
-        env:
-          DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          # /opt/dcc/config/node-<network>/dcc.conf is root-owned on the server
-          # (deploy-node-config.yml sets chown root:root), so a direct scp to it
-          # fails with "Permission denied". Stage in /tmp and sudo cp instead,
-          # same as deploy-node-config.yml does.
-          scp -i ~/.ssh/deploy_key \
-            "node-config/${{ inputs.network }}/dcc.conf" \
-            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/dcc.conf.new"
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=10 \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "sudo cp /tmp/dcc.conf.new /opt/dcc/config/node-${{ inputs.network }}/dcc.conf \
-             && sudo chown root:root /opt/dcc/config/node-${{ inputs.network }}/dcc.conf \
-             && rm -f /tmp/dcc.conf.new"
-
       - name: Pull image, deploy, and auto-rollback on failure
         env:
-          # GHCR_TOKEN must be set as an org/repo secret with read:packages scope.
-          # Passed into the SSH heredoc so the server can authenticate to GHCR
-          # before pulling (packages are private by default on GHCR).
-          GHCR_TOKEN:        ${{ secrets.GHCR_TOKEN }}
           DEPLOY_HOST:       ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           DEPLOY_USER:       ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_USER || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_USER || secrets.MAINNET_DEPLOY_USER }}
           INPUT_IMAGE:       ${{ inputs.image }}
@@ -230,6 +218,7 @@ jobs:
           INPUT_WAIT_TIMEOUT: ${{ inputs.wait_timeout }}
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2087  # the heredoc is expanded locally on purpose (inputs -> remote vars)
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=10 \
@@ -239,23 +228,7 @@ jobs:
           export NETWORK="${INPUT_NETWORK}"
           SERVICE="${INPUT_SERVICE}"
           COMPOSE_DIR="${INPUT_COMPOSE_DIR}"
-          GHCR_TOKEN="${GHCR_TOKEN}"
           INPUT_WAIT_TIMEOUT="${INPUT_WAIT_TIMEOUT}"
-
-          # ── Pre-flight: ensure writable config dir for node-scala ─────────
-          # bootstrap.sh creates /opt/dcc/config/node-<NETWORK>/ as deploy:deploy,
-          # but manual sudo operations can change ownership to root. Self-heal here
-          # so the node-config SCP step always has a writable target.
-          if [[ "\$SERVICE" == "node-scala" ]]; then
-            sudo install -d -m 755 -o deploy -g deploy "/opt/dcc/config/node-\${NETWORK}"
-          fi
-
-          if [ -n "\${GHCR_TOKEN:-}" ]; then
-            echo "Authenticating with GHCR..."
-            echo "\$GHCR_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin
-          else
-            echo "GHCR_TOKEN not set — skipping GHCR login (assuming public image)"
-          fi
 
           # ── Capture previous image for rollback ────────────────────────
           # docker inspect returns the image digest/tag currently running.
@@ -287,6 +260,16 @@ jobs:
           echo "Pulling \$IMAGE_TAG"
           docker pull "\$IMAGE_TAG"
 
+          # Run by immutable digest, not the mutable tag (2026-10-18 audit): resolve the tag
+          # just pulled to this repository's digest. Rollback then also targets a digest.
+          if [[ "\$IMAGE_TAG" != *@sha256:* ]]; then
+            REPO="\${IMAGE_TAG%:*}"
+            DIGEST_REF=\$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "\$IMAGE_TAG" | grep "^\${REPO}@sha256:" | head -1)
+            [[ -n "\$DIGEST_REF" ]] || { echo "::error::no \${REPO} repo digest for \$IMAGE_TAG"; exit 1; }
+            export IMAGE_TAG="\$DIGEST_REF"
+          fi
+          echo "Deploying by digest: \$IMAGE_TAG"
+
           echo "Deploying \$SERVICE on \$NETWORK..."
           cd "\$COMPOSE_DIR"
 
@@ -303,6 +286,20 @@ jobs:
             --wait-timeout "\$INPUT_WAIT_TIMEOUT"; then
 
             echo "::error::Health check failed for \$SERVICE on \$NETWORK."
+
+            # ── Diagnostics before any rollback replaces the failing container ──
+            # State and the log tail of every container in this compose project (companions such
+            # as the pairs daemon included). Workflow logs of this public repo are world-readable,
+            # so secret-looking key=value pairs are masked before printing.
+            echo "::group::Diagnostics for \${SERVICE}-\${NETWORK}"
+            docker compose --project-name "\${SERVICE}-\${NETWORK}" --file "\${SERVICE}.yml" ps --all || true
+            for c in \$(docker compose --project-name "\${SERVICE}-\${NETWORK}" --file "\${SERVICE}.yml" ps --all --format '{{.Name}}' 2>/dev/null || true); do
+              echo "--- \$c"
+              docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}} started={{.State.StartedAt}}' "\$c" || true
+              docker logs --tail 80 "\$c" 2>&1 \
+                | sed -E 's/((pass(word)?|secret|token|api[_-]?key|seed|authorization)[A-Za-z0-9_]*[=:" ]+)[^ ",}]+/\1***/Ig' || true
+            done
+            echo "::endgroup::"
 
             # ── Auto-rollback to the previous image ───────────────────────
             if [[ -n "\$PREV_IMAGE" ]]; then

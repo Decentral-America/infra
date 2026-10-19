@@ -1,84 +1,55 @@
 name: Deploy Node Config to VPS
-# Copies dcc.conf from this repo to the VPS and restarts the node (no data wipe)
-# Image digest is read from node-config/testnet/vps-image.env, the single
-# source of truth shared with update-node-image.yml and restart-host-network.yml
-# (see that file's header for why: PR#88 "tag-drift bomb", recurred 2026-08-03).
+# Installs node-config/testnet/dcc.conf on the VPS (backup + diff printed) and restarts the main
+# node on the image pinned in node-config/testnet/vps-image.env, through scripts/node-up.sh
+# (fails closed: green only if healthy on the pinned digest with an advancing height).
 on:
   workflow_call:
   workflow_dispatch: {}
 permissions:
   contents: read
+concurrency:
+  group: main-node-deploy
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     environment: testnet
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+
       - name: Read pinned VPS image digest
         id: image
         run: |
           set -euo pipefail
           # shellcheck disable=SC1091
           source node-config/testnet/vps-image.env
+          [[ "${NODE_SCALA_IMAGE}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "::error::vps-image.env must pin a digest"; exit 1; }
           echo "image=${NODE_SCALA_IMAGE}" >> "$GITHUB_OUTPUT"
 
-      - name: Copy dcc.conf to VPS and restart node
+      - name: Set up SSH (pinned host key)
         env:
-          SSH_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
-          SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+        run: ./scripts/ssh-setup.sh "$SSH_HOST"
+
+      - name: Install dcc.conf and restart the node
+        env:
+          SSH_HOST:   ${{ secrets.TESTNET_DEPLOY_HOST }}
+          SSH_USER:   ${{ secrets.TESTNET_DEPLOY_USER }}
           NODE_IMAGE: ${{ steps.image.outputs.image }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          # Copy updated dcc.conf to VPS
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no \
-            node-config/testnet/dcc.conf \
-            "${SSH_USER}@${SSH_HOST}:/tmp/dcc.conf.new"
-          # Apply and restart without data wipe. IMG is substituted locally
-          # (single source of truth: node-config/testnet/vps-image.env) before
-          # the script is sent over SSH -- everything else stays single-quoted
-          # remote shell as before.
-          REMOTE_SCRIPT=$(cat <<REMOTE_EOF
-          set +e
-          IMG='${NODE_IMAGE}'
-          echo "=== Update dcc.conf ==="
-          sudo cp /tmp/dcc.conf.new /opt/dcc/config/node-testnet/dcc.conf
-          sudo chown root:root /opt/dcc/config/node-testnet/dcc.conf
-          echo "=== Current height ==="
-          curl -s http://localhost:6869/blocks/height 2>/dev/null
-          echo "=== Restart node (no data wipe) ==="
-          docker stop node-scala-testnet
-          docker rm node-scala-testnet
-          docker run -d \
-            --name node-scala-testnet \
-            --network host \
-            --restart unless-stopped \
-            --memory 4g \
-            --memory-reservation 1g \
-            --security-opt no-new-privileges:true \
-            --cap-drop ALL \
-            --read-only \
-            --tmpfs /tmp:size=256m,mode=1777,exec \
-            -v node-state-testnet:/var/lib/dcc \
-            -v /opt/dcc/config/node-testnet/dcc.conf:/etc/dcc/dcc.conf:ro \
-            -v /opt/dcc/plugins/testnet:/usr/share/dcc/lib/plugins:ro \
-            --env-file /opt/dcc/secrets/testnet.env \
-            -e DCC_NETWORK=testnet \
-            -e DCC_HEAP_SIZE=2g \
-            -e DCC_REST_API_BIND=0.0.0.0 \
-            "\$IMG"
-          sleep 20
-          echo "=== Node status ==="
-          docker ps | grep node-scala
-          echo "=== HotStuff in config ==="
-          grep -A3 hotstuff /opt/dcc/config/node-testnet/dcc.conf
-          echo "=== Node version ==="
-          curl -s http://localhost:6869/node/version 2>/dev/null || echo "(starting)"
-          REMOTE_EOF
-          )
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-            "${SSH_USER}@${SSH_HOST}" "$REMOTE_SCRIPT"
-          rm -f /tmp/id_rsa
+          set -euo pipefail
+          scp node-config/testnet/dcc.conf scripts/node-up.sh "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp compose/node-scala.yml "${SSH_USER}@${SSH_HOST}:/opt/dcc/compose/node-scala.yml"
+          # shellcheck disable=SC2029  # NODE_IMAGE is expanded locally on purpose
+          ssh "${SSH_USER}@${SSH_HOST}" "set -euo pipefail
+            CONF=/opt/dcc/config/node-testnet/dcc.conf
+            sudo cp \"\$CONF\" \"\$CONF.prev\"
+            sudo install -m 0644 -o root -g root /tmp/dcc.conf \"\$CONF\"
+            rm -f /tmp/dcc.conf
+            echo '=== dcc.conf diff (previous -> new) ==='
+            sudo diff -u \"\$CONF.prev\" \"\$CONF\" || true
+            bash /tmp/node-up.sh '${NODE_IMAGE}' testnet; rc=\$?; rm -f /tmp/node-up.sh; exit \$rc"

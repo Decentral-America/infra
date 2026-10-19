@@ -40,7 +40,7 @@ downtime and keep going":
 - A network partition lasting long enough that T0 finality visibly stalled (`finalizedHeight` stopped
   advancing) rather than just individual peers reconnecting.
 - Any manual chain-state intervention (genesis reset, state transplant, rollback) on the soaking chain —
-  this includes the `migrate-state-snapshot.yml` (IR-5) recovery mechanism already used on testnet; if
+  this includes the IR-5 state transplant (archived `migrate-state-snapshot.yml`) used on testnet; if
   that's ever invoked on the soaking chain, the soak restarts.
 - Any code change to T0's finality logic itself (`feature 25` / `DeterministicFinality` implementation)
   deployed to the soaking chain — a fix elsewhere (e.g. the height-3325 StateHash fix) does NOT reset the

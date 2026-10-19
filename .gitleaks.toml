@@ -1,0 +1,13 @@
+title = "infra gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Node REST api-key-hash values are public hashes of the API key, committed by design (dcc.conf, nodes.yaml)"
+regexTarget = "line"
+regexes = ['''api-key-hash\s*=\s*"[1-9A-HJ-NP-Za-km-z]{32,64}"''']
+
+[[allowlists]]
+description = "Unit-test fixtures use obviously fake credentials"
+paths = ['''scripts/tests/''']

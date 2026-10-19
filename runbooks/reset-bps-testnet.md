@@ -16,7 +16,7 @@ have failed or done the wrong thing:
 
 | Plan draft said | Actual | Source |
 |---|---|---|
-| `docker exec -i postgres-testnet psql ...` | No Postgres container exists. Postgres 18 is a **system** package on the VPS. Use `sudo -u postgres psql`. | `terraform/scripts/bootstrap.sh:63-81`, `restart-services.yml:76`, `vps-node-status.yml:35` |
+| `docker exec -i postgres-testnet psql ...` | No Postgres container exists. Postgres 18 is a **system** package on the VPS. Use `sudo -u postgres psql`. | `terraform/scripts/bootstrap.sh:63-81`, `vps-node-status.yml:35` |
 | `CREATE DATABASE bps_testnet OWNER bps` | There is no `bps` role. The application role is **`dcc`** (`POSTGRES__USER`). | `bootstrap.sh:376`, `bootstrap.sh:305` |
 | `BPS_STARTING_HEIGHT=0` in the env file | The compose file pins **`BPS_STARTING_HEIGHT: "1"`** under `environment:`, which overrides `env_file`. The BlockchainUpdates gRPC server **rejects 0** ("must be > 0"). Leave it at 1. | `compose/blockchain-postgres-sync.yml:20-24` |
 | `select max(height) from blocks_raw` | No `blocks_raw` table. Blocks live in **`blocks_microblocks`**. | BPS migration `2022-04-27-111623_initial/up.sql:12` |
@@ -25,7 +25,7 @@ Also verified:
 
 - **Container:** `blockchain-postgres-sync-testnet`, compose project
   `blockchain-postgres-sync-testnet`, file `/opt/dcc/compose/blockchain-postgres-sync.yml`
-  (`compose/blockchain-postgres-sync.yml:13`, `restart-services.yml:94-96`).
+  (`compose/blockchain-postgres-sync.yml:13`).
 - **Database name:** the BPS container reads it from `POSTGRES__DATABASE` in
   `/opt/dcc/secrets/testnet.env`. Terraform defaults it to **`bps_testnet`**
   (`terraform/main.tf:141`), and every workflow that queries it uses `bps_testnet`.
@@ -84,9 +84,7 @@ docker logs blockchain-postgres-sync-testnet 2>&1 | grep -m1 "Start fetching upd
 # expect: "Start fetching updates from height 1"
 ```
 
-The fresh migration already creates `txs_19.block_uid` with `ON DELETE CASCADE`, so the
-`txs_19_block_uid_fkey` fix in `restart-services.yml:75-76` reports
-"already CASCADE" and does nothing. Running it is harmless.
+The fresh migration already creates `txs_19.block_uid` with `ON DELETE CASCADE`; no extra fix is needed.
 
 ### Verify caught up
 
@@ -104,7 +102,7 @@ rising between two samples taken a minute apart.
 
 ```bash
 docker start data-service-testnet
-# or, so data-service re-reads its env_file: gh workflow run restart-services.yml (⛔ operator)
+# or, to re-read its env file: cd /opt/dcc/compose && IMAGE_TAG=$(docker inspect -f '{{.Config.Image}}' data-service-testnet) NETWORK=testnet docker compose -p data-service-testnet -f data-service.yml up -d --force-recreate
 curl -s -o /dev/null -w '%{http_code}\n' https://testnet-data-service.decentralchain.io/transactions/exchange?limit=1
 # expect: 200
 ```

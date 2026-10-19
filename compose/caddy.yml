@@ -5,9 +5,9 @@
 #   - Scanner/block-explorer  (127.0.0.1:3000 → HTTPS)
 #   - Data-service REST API   (127.0.0.1:8080 → HTTPS)
 #
-# The Caddyfile is written by bootstrap.sh using the SCANNER_DOMAIN and
-# DATA_SERVICE_DOMAIN UDF variables. If neither is set, this service is
-# a no-op (empty Caddyfile).
+# The Caddyfile is rendered by scripts/render-caddyfile.sh and installed
+# (root-only, 0600) by update-caddy.yml; bootstrap.sh writes only a first
+# boot placeholder.
 #
 # Caddy is infrastructure, not an application — it is started once by
 # bootstrap.sh and auto-restarts on reboot. It is NOT deployed via the

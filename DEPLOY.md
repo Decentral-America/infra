@@ -8,41 +8,10 @@
 > `infra/DEPLOY.md` (a different, now-gone file this replaced — not to be confused with this file's
 > own current path) and `DecentralChain/apps/exchange/DEPLOYMENT.md`.
 
-> **Absorbed into git 2026-08-13.** This file was untracked at the shared `Ecosystem/` root — despite
-> `infra/README.md` calling it the "canonical ecosystem deploy runbook" — and therefore at the same
-> risk of loss as `HANDOFF.md`/`INCIDENT-GEN0-PEERS.md`. `HANDOFF.md` itself was absorbed then fully
-> redistributed the same day into `TOPOLOGY.md`, `RUNBOOK.md`, `MAINNET-LAUNCH.md`, and `SECURITY.md`
-> (each piece merged into its actual topical home rather than kept as a separate handoff dump) — it no
-> longer exists as its own file.
-> Moved here as-is; **not** yet reconciled line-by-line against this repo's own README.md secrets
-> tables, which cover overlapping ground — see the note in `README.md`'s intro banner.
-
-> **Reconciled 2026-08-04.** This file was untracked in git (drifting since its 2026-06-30 addendum)
-> despite being cited by name from 7 tracked docs across the ecosystem; it has now been force-tracked.
-> Verified against `HANDOFF.md` (freshest reconciled doc, 2026-08-04), `infra/clusters/testnet/TOPOLOGY.md`,
-> `infra/clusters/testnet/apps/nodes.yaml`, and a live `GET /node/status` / `/node/version` check:
-> - **Infra topology is already current** — this file's "Current Truth" table (Main VPS + LKE Frankfurt)
->   was written post-migration and matches `infra/clusters/testnet/TOPOLOGY.md` in shape; left as-is.
-> - **HotStuff status was stale, now corrected in place below** — "T2 HotStuff soak PASSED" (2026-06-30)
->   described the pre-rework, observational-only engine. T2 HotStuff is now **authoritative** on testnet
->   (live since 2026-08-03, `dcc.hotstuff.authoritative = true`, confirmed genuinely raising
->   `finalizedHeight` — 2026-08-04 live check: `blockchainHeight` 108,096, `hotStuffFinalizedHeight`
->   107,697). See `HANDOFF.md` §"T2 HotStuff Summary" and `node-scala/docs/hotstuff-audit-readiness.md`.
-> - **Version/image references were stale, now corrected (as of 2026-08-04)** — `v1.6.3-be2dcfc0` was
->   the 2026-06-30 image; live node version was then **`DecentralChain v1.7.0`**, image `sha-9c49632`
->   (`ghcr.io/decentral-america/node-scala@sha256:8a1c9d17e03a305ca763b0c53c1e2c080e891c64d8cd6946abd75507c8c1f69d`,
->   includes the T10 cross-committee-epoch-fork fix).
-> - **Corrected again, 2026-08-13** — the digest above drifted stale again after PR #143
->   ("graceful-close suspend fix") bumped the deployed image without this note being updated in the
->   same pass — exactly the doc-drift failure mode this file warns about elsewhere. Confirmed via
->   `clusters/testnet/apps/nodes.yaml` (the actual source of truth) the currently deployed digest is
->   `ghcr.io/decentral-america/node-scala@sha256:1df608376ad7759b874028977d38c961c4a3ec5106d09db45fe649d17abef28a`.
->   Rather than hand-maintain this value a third time, treat `nodes.yaml` as authoritative going
->   forward and don't trust a copy-pasted digest in prose without cross-checking it there first.
-> - **Left intentionally unchanged:** the base-image digest pins in "Artifact Checksums"
->   (`node:24-alpine`, `rust:1.96`, `debian:12-slim`, `nginx:stable-alpine`) — those are Dockerfile
->   `FROM` pins unrelated to node-scala/HotStuff and weren't in scope for this pass; the org-secret and
->   scoreboard tables were spot-checked and not found to be actively misleading.
+> **Current state lives elsewhere.** Topology, node roles, stake and deploy paths:
+> `clusters/testnet/TOPOLOGY.md`. The deployed node digest: `node-config/testnet/vps-image.env`
+> (= `clusters/testnet/apps/nodes.yaml`). Sign-off and digests of every service: the latest
+> `testnet-final-*` GitHub Release. This file keeps the procedures and the configuration inventory.
 
 ---
 
@@ -68,65 +37,56 @@
 
 > **What does dormant mean?** The code exists and compiles, but the feature is OFF because no config value is set. Do NOT delete dormant items — they are live wiring with the light switch off. The moment you paste a real value, the feature activates. Deleting = rebuilding the module later.
 
-### A. GitHub Org Secrets (Layer 0) — 24 items
+### A–D. GitHub secrets (org, infra repo, infra environments)
 
-| # | Item | Status | Purpose |
+Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only, never values), with the workflow files that reference each name across infra, node-scala, matcher, DecentralChain and docs (archived workflows excluded). `**unreferenced**` rows are cleanup candidates (Task 26 of the 2026-10-18 audit plan). Regenerate: `scripts/secrets-inventory.py --eco <dir with each repo's .github>`.
+
+| Scope | Secret | Updated | Referenced by (workflow files; archived excluded) |
 |---|---|---|---|
-| 1 | `NX_CLOUD_ACCESS_TOKEN` | SET | Nx Cloud cache + DTE |
-| 2 | `NPM_TOKEN` | SET | npm publish for `@decentralchain/*` |
-| 3 | `MAVEN_GPG_PRIVATE_KEY` | SET | Maven artifact signing |
-| 4 | `MAVEN_GPG_PASSPHRASE` | SET | GPG passphrase |
-| 5 | `MAVEN_CENTRAL_USERNAME` | SET | Sonatype Central Portal auth |
-| 6 | `MAVEN_CENTRAL_PASSWORD` | SET | Sonatype Central Portal auth |
-| 7 | `CODECOV_TOKEN` | SET | Coverage upload |
-| 8 | `DOCKERHUB_TOKEN` | SET | Docker Hub image pulls during builds |
-| 9 | `GHCR_TOKEN` | SET | Server-side `docker login ghcr.io` |
-| 10 | `CLOUDFLARE_API_TOKEN` | SET | Cloudflare Pages deploy |
-| 11 | `CLOUDFLARE_ACCOUNT_ID` | SET | CF account scope |
-| 12 | `SENTRY_AUTH_TOKEN` | SET | Source-map upload (exchange + scanner) |
-| 13 | `MAVEN_GPG_KEY_ID` | SET | GPG key selection in JVM publish |
-| 14 | `NVD_API_KEY` | SET | NVD vuln DB rate limit bypass |
-| 15 | `CHROME_EXTENSION_ID` | MISSING | Chrome Web Store extension ID |
-| 16 | `CHROME_CLIENT_ID` | MISSING | Chrome Web Store OAuth |
-| 17 | `CHROME_CLIENT_SECRET` | MISSING | Chrome Web Store OAuth |
-| 18 | `CHROME_REFRESH_TOKEN` | MISSING | Chrome Web Store OAuth |
-| 19 | `FIREFOX_ADDON_GUID` | MISSING | Firefox AMO addon GUID |
-| 20 | `FIREFOX_JWT_ISSUER` | MISSING | Firefox AMO JWT issuer |
-| 21 | `FIREFOX_JWT_SECRET` | MISSING | Firefox AMO JWT secret |
-| 22 | `EDGE_PRODUCT_ID` | MISSING | Microsoft Edge Add-ons product ID |
-| 23 | `EDGE_CLIENT_ID` | MISSING | Microsoft Edge Add-ons client ID |
-| 24 | `EDGE_API_KEY` | MISSING | Microsoft Edge Add-ons API key |
+| infra env infra-testnet-provision | `TF_VAR_DEFAULT_MATCHER` | 2026-06-12 | infra:drift-detect.yml, infra:provision.yml |
+| infra env infra-testnet-provision | `TF_VAR_DEPLOY_SSH_PUBLIC_KEY` | 2026-10-10 | **unreferenced** |
+| infra env infra-testnet-provision | `TF_VAR_ROOT_PASSWORD` | 2026-06-04 | **unreferenced** |
+| infra env testnet | `AGE_SECRET_KEY` | 2026-06-07 | infra:push-secrets.yml, infra:update-caddy.yml |
+| infra env testnet | `BACKUP_OBJ_ENDPOINT` | 2026-07-01 | **unreferenced** |
+| infra env testnet | `DCC_CANARY_SEED` | 2026-07-25 | infra:canary-transaction.yml, infra:matcher-canary.yml |
+| infra env testnet | `DEPLOY_HOST` | 2026-10-04 | **unreferenced** |
+| infra env testnet | `DEPLOY_HOST_FINGERPRINT` | 2026-06-08 | **unreferenced** |
+| infra env testnet | `DEPLOY_SSH_KEY` | 2026-10-10 | infra:push-secrets.yml |
+| infra env testnet | `DEPLOY_USER` | 2026-06-08 | **unreferenced** |
+| infra repo | `AGE_KEY_TESTNET` | 2026-06-10 | **unreferenced** |
+| infra repo | `E2E_RATE_LIMIT_BYPASS_KEY` | 2026-07-06 | infra:admin-e2e.yml, infra:update-caddy.yml |
+| infra repo | `FLUX_DEPLOY_KEY_TESTNET` | 2026-06-10 | **unreferenced** |
+| infra repo | `GEN_0_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
+| infra repo | `GEN_0_SEED_PHRASE` | 2026-06-30 | infra:admin-e2e.yml, infra:stress-test.yml |
+| infra repo | `GEN_1_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
+| infra repo | `LINODE_TOKEN` | 2026-06-04 | infra:bootstrap-flux.yml, infra:cluster-diagnostics.yml, infra:deploy-monitoring-stack.yml, infra:drift-detect.yml, infra:export-kubeconfig.yml, infra:infra-liveness.yml, infra:provision.yml, infra:prune-released-chain-volumes.yml, infra:verify-api-keys.yml |
+| infra repo | `MAIN_NODE_REST_API_KEY` | 2026-10-10 | infra:verify-api-keys.yml |
+| infra repo | `R2_ACCESS_KEY_ID` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
+| infra repo | `R2_SECRET_ACCESS_KEY` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
+| infra repo | `TESTNET_REDIS_PASSWORD` | 2026-06-16 | **unreferenced** |
+| infra repo | `TOFU_STATE_PASSPHRASE` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
+| infra repo | `VAL_0_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
+| org | `CLOUDFLARE_ACCOUNT_ID` | 2026-06-07 | DecentralChain:deploy-exchange.yml, infra:drift-detect.yml, infra:provision.yml |
+| org | `CLOUDFLARE_API_TOKEN` | 2026-05-26 | DecentralChain:deploy-exchange.yml |
+| org | `CODECOV_TOKEN` | 2026-05-15 | DecentralChain:bps.yml, DecentralChain:ci.yml, DecentralChain:websocket-api.yml, matcher:ci.yml, node-scala:ci.yml |
+| org | `DOCKERHUB_TOKEN` | 2026-05-15 | DecentralChain:deploy-admin-dashboard.yml, DecentralChain:deploy-bps.yml, DecentralChain:deploy-data-service.yml, DecentralChain:deploy-scanner.yml, DecentralChain:deploy-websocket-api.yml, node-scala:on-release-published.yml, node-scala:publish-node-scala.yml |
+| org | `GHCR_TOKEN` | 2026-06-22 | infra:ghcr-cleanup.yml, infra:pin-node-image-digest.yml |
+| org | `MAVEN_CENTRAL_PASSWORD` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:maven-central-deployment-status.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-release-published.yml |
+| org | `MAVEN_CENTRAL_USERNAME` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:maven-central-deployment-status.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-push-default-branch.yml, node-scala:on-release-published.yml |
+| org | `MAVEN_GPG_KEY_ID` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:publish-aptly-repo.yml |
+| org | `MAVEN_GPG_PASSPHRASE` | 2026-05-15 | DecentralChain:_publish-maven.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-push-default-branch.yml, node-scala:on-release-published.yml, node-scala:publish-aptly-repo.yml |
+| org | `MAVEN_GPG_PRIVATE_KEY` | 2026-05-15 | DecentralChain:_publish-maven.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-push-default-branch.yml, node-scala:on-release-published.yml, node-scala:publish-aptly-repo.yml |
+| org | `NPM_TOKEN` | 2026-06-06 | DecentralChain:publish-ride.yml, DecentralChain:release.yml |
+| org | `NVD_API_KEY` | 2026-06-05 | DecentralChain:_publish-maven.yml, DecentralChain:java-sdk.yml, DecentralChain:publish-groth16.yml, matcher:owasp-audit.yml |
+| org | `NX_CLOUD_ACCESS_TOKEN` | 2026-06-22 | DecentralChain:ci.yml, DecentralChain:integration.yml |
+| org | `NX_CLOUD_ACCESS_TOKEN_READONLY` | 2026-07-04 | DecentralChain:ci.yml, DecentralChain:integration.yml |
+| org | `SENTRY_AUTH_TOKEN` | 2026-05-26 | DecentralChain:deploy-exchange.yml, DecentralChain:deploy-scanner.yml |
+| org | `TESTNET_DEPLOY_HOST` | 2026-10-04 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
+| org | `TESTNET_DEPLOY_HOST_FINGERPRINT` | 2026-06-08 | **unreferenced** |
+| org | `TESTNET_DEPLOY_SSH_KEY` | 2026-10-10 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
+| org | `TESTNET_DEPLOY_USER` | 2026-06-08 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
 
-### B. GitHub Org / Repo Variables (Layer 0) — 3 items
-
-| # | Item | Status | Value |
-|---|---|---|---|
-| 25 | `DOCKERHUB_USERNAME` | SET | `decentralchain` |
-| 26 | `INFRA_DEPLOY_ENABLED` | SET | `false` (enable after provisioning) |
-| 27 | `NX_NO_CLOUD` | SET | `true` — disables Nx Cloud in CI (`ci.yml`, `integration.yml`, `cubensis-e2e.yml`) |
-
-### C. Infra Repo Secrets (Layer 1) — 3 items
-
-| # | Item | Status | Purpose |
-|---|---|---|---|
-| 28 | `LINODE_TOKEN` | SET | Linode API for OpenTofu |
-| 29 | `R2_ACCESS_KEY_ID` | SET | Cloudflare R2 TF state backend |
-| 30 | `R2_SECRET_ACCESS_KEY` | SET | Cloudflare R2 TF state backend |
-
-### D. Org-Level Deploy Secrets — 4 items × 3 networks
-
-These are **org-level secrets** with a network prefix (`TESTNET_`, `STAGENET_`, `MAINNET_`).
-`deploy-container.yml` selects the correct secret using a ternary expression on `inputs.network`.
-They are NOT infra environment secrets.
-
-| # | Item | Status | Purpose |
-|---|---|---|---|
-| 31 | `TESTNET_DEPLOY_HOST` | SET | Testnet server IP (50.116.30.244, restored 2026-10-04; was 66.228.55.154) |
-| — | `STAGENET_DEPLOY_HOST` | MISSING | Stagenet server IP |
-| — | `MAINNET_DEPLOY_HOST` | MISSING | Mainnet server IP |
-| 32 | `TESTNET_DEPLOY_USER` | SET | SSH username (`deploy`) |
-| 33 | `TESTNET_DEPLOY_SSH_KEY` | SET | Base64 Ed25519 private key |
-| 34 | `TESTNET_DEPLOY_HOST_FINGERPRINT` | SET | SSH host fingerprint (MITM protection) |
+42 secrets, 10 unreferenced.
 
 ### E. On-Server Env Vars (Layer 2) — 16 items
 
@@ -162,7 +122,7 @@ All compose services inherit Layer 2 vars (NETWORK, PG*, DCC_*_URL, CHAIN_ID, et
 | 53 | `PORT` | DEFAULT | data-service | `8080` |
 | 54 | `LOG_LEVEL` | DEFAULT | data-service | image default `info` |
 | 55 | `PGPOOLSIZE` | DEFAULT | data-service | image default `20` — budget: 3 services × 20 = 60 of PG `max_connections=100` |
-| 56 | `PGSTATEMENTTIMEOUT` | DEFAULT | data-service | image default `30000` (30 s) — set `0` to disable |
+| 56 | `PGSTATEMENTTIMEOUT` | DEFAULT | data-service | image default `25000` (25 s) — set `0` to disable |
 | 57 | `PGSSLMODE` | DEFAULT | data-service | image default `require` — set `disable` for local dev |
 | 58 | `RATE_BASE_ASSET_ID` | DEFAULT | data-service | image default `DCC` |
 | 59 | `MATCHER_SETTINGS_URL` | DEFAULT | data-service | unset — optional matcher URL |
@@ -343,25 +303,16 @@ This file covers all three launch networks:
 
 ## Current Truth
 
-> **Updated 2026-06-30:** Testnet is LIVE at `testnet-node.decentralchain.io`. All services deployed. T2 HotStuff soak PASSED. BPS type-19 deployed.
->
-> **[Reconciled 2026-08-04]** Superseded on HotStuff/version: T2 HotStuff is now **authoritative**
-> (`dcc.hotstuff.authoritative = true`, live since 2026-08-03; the "soak PASSED" note above refers to
-> the earlier observational-only engine). Live node version is now `DecentralChain v1.7.0` (image
-> `sha-9c49632`), height 108,096, `hotStuffFinalizedHeight` 107,697 as of 2026-08-04 — see `HANDOFF.md`.
+> Do not keep a status table here: it drifted three times (IP, LKE cluster, node version, heights).
+> Read the live sources instead.
 
-| Surface | Repo | Testnet state | Mainnet / Stagenet state |
-|---|---|---|---|
-| Infrastructure provisioning | `infra` | ✅ **Done** — Newark 66.228.55.154 + LKE Frankfurt 615553 | ❌ Not provisioned |
-| Reusable container deploy | `infra` | ✅ **Done** — SSH + GHCR pull + `docker compose up --wait` | Needs `MAINNET_DEPLOY_*` + provisioned host |
-| node-scala | `node-scala` | ✅ **Live** — height 108,096+, chain ID `!`, `DecentralChain v1.7.0` (`sha-9c49632`), T2 HotStuff **authoritative** (was v1.6.3-be2dcfc0 / observational-only T2 as of 2026-06-30) | ❌ Not provisioned |
-| BPS (blockchain-postgres-sync) | `DecentralChain` | ✅ **Live** — syncing, type-19 enabled (fbece975a) | ❌ Not provisioned |
-| Data-service | `DecentralChain` | ✅ **Live** — `testnet-data-service.decentralchain.io` | ❌ Not provisioned |
-| Matcher | `matcher` | ✅ **Live** — `testnet-matcher.decentralchain.io` | ❌ Not provisioned |
-| Scanner | `DecentralChain` | ✅ **Live** — `testnet.decentralscan.com` | ❌ Not provisioned |
-| Exchange | `DecentralChain` | ✅ **Live** — via Caddy on Newark | ❌ Pages projects not created |
-| Cubensis publish | `DecentralChain` | ❌ Blocked | Browser-store secrets (10 missing) |
-| DCC docs site | `docs` | ✅ Live — `docs.decentralchain.io` | Same (no network split needed) |
+| Question | Source of truth |
+|---|---|
+| Hosts, node roles, stake, ports, deploy paths | `clusters/testnet/TOPOLOGY.md` |
+| Which node-scala build runs | `node-config/testnet/vps-image.env` (CI-checked equal to `clusters/testnet/apps/nodes.yaml`) |
+| Which app images run, and the sign-off | the latest `testnet-final-*` GitHub Release of this repo |
+| Is it healthy now | `infra-liveness.yml`, `canary-transaction.yml`, `matcher-canary.yml` run history; Grafana `https://grafana.testnet.decentralchain.io` |
+| Mainnet / stagenet | not provisioned by this IaC (`terraform/mainnet.tfvars` is unapplied) |
 
 ---
 
@@ -644,7 +595,7 @@ Application-level tuning knobs with safe defaults (not set in compose or bootstr
 |---|---|---|
 | `LOG_LEVEL` | `info` | Application log verbosity |
 | `PGPOOLSIZE` | `20` | PostgreSQL connection pool size |
-| `PGSTATEMENTTIMEOUT` | `30000` | Statement timeout in ms (30 s); set `0` to disable |
+| `PGSTATEMENTTIMEOUT` | `25000` | Statement timeout in ms (25 s); set `0` to disable |
 | `RATE_BASE_ASSET_ID` | `DCC` | Base asset for rate calculations |
 | `MATCHER_SETTINGS_URL` | unset | Optional matcher settings URL |
 | `PAIRS_UPDATE_INTERVAL` | `2500` | Pairs daemon polling interval (ms) |
@@ -1039,7 +990,7 @@ Store:
 Run `infra/.github/workflows/provision.yml` in this order:
 
 1. `stagenet` plan → apply
-2. `testnet` plan → apply  ← **done** (server: 66.228.55.154)
+2. `testnet` plan → apply  ← **done** (server: 50.116.30.244 since the 2026-10-04 restore)
 3. `mainnet` plan → apply
 
 After each apply, set org-level secrets (NOT infra environment secrets):
@@ -1225,7 +1176,7 @@ Conclusion: docs site publishing exists, but it is separate from the blockchain 
 
 ### Execution notes
 
-- All deployment automation is wired. Testnet is LIVE (2026-06-30), T2 soak PASSED [reconciled 2026-08-04: T2 HotStuff is now authoritative, not just soak-tested — see `HANDOFF.md`], BPS type-19 deployed. Mainnet/stagenet pending provisioning + `MAINNET_DEPLOY_*`/`STAGENET_DEPLOY_*` org secrets.
+- All deployment automation is wired; testnet state and sign-off: see Current Truth. Mainnet/stagenet are pending provisioning + `MAINNET_DEPLOY_*`/`STAGENET_DEPLOY_*` org secrets.
 - node-scala is the production node. node-go is archived.
 - A deploy is not complete when the image is published. It is complete when the service is running in the target environment, passes health checks, and has a known rollback reference.
 - Gate 5 cleared for testnet. `@latest` npm promotion (DCC-202) pending mainnet Gate 3 completion.
@@ -1617,7 +1568,7 @@ Confirm both workflow runs succeed before continuing.
 
 ### PHASE 4 — Provision the testnet server (after Phase 0 complete)
 
-> **✅ Done** — Provision applied. Server: 66.228.55.154 (Linode g6-standard-4). chain_id=33, network=testnet. DEPLOY_* secrets set at org level. All services deployed and healthy as of 2026-06-30.
+> **✅ Done** — Provision applied. Server: 50.116.30.244 since the 2026-10-04 restore (Linode g6-standard-4, Dallas). chain_id=33, network=testnet. DEPLOY_* secrets set at org level. All services deployed and healthy as of 2026-06-30.
 
 ```bash
 # Plan first — review output before applying

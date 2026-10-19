@@ -14,7 +14,9 @@ assert set(ds) == {"data-service", "pairs-daemon"}, f"data-service.yml services:
 p, d = ds["pairs-daemon"], ds["data-service"]
 assert p["command"] == ["node", "dist/daemons/pairs/index.mjs"], p["command"]
 assert p["image"] == d["image"], "pairs-daemon must run the data-service image"
-assert p["env_file"] == d["env_file"], "pairs-daemon must use the data-service env file"
+assert p["env_file"] == ["/opt/dcc/secrets/data-service-pairs-${NETWORK:-mainnet}.env"], "pairs-daemon must use its own env file (role dcc_pairs)"
+assert d["env_file"] == ["/opt/dcc/secrets/data-service-${NETWORK:-mainnet}.env"], "data-service must use its own env file (role dcc_ro)"
+assert p["env_file"] != d["env_file"]
 assert p["network_mode"] == "host"
 assert p["environment"]["PGSTATEMENTTIMEOUT"] == d["environment"]["PGSTATEMENTTIMEOUT"] == "25000"
 print("PASS compose-services")

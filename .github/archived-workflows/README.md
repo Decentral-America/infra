@@ -82,8 +82,7 @@ safety net. Main node coverage closed by TESTNET-FINAL-PLAN Task 2.2
 (`node-config/testnet/dcc.conf`, branch `feat/testnet-final-offline-prep`; live once
 `deploy-node-config.yml` is run).
 
-`RELAUNCH-20260904.md` §9/§11 and the `CommitteeGapUpcoming` alert text in
-`monitoring/alerts.yml` still name `auto-commit-generators.yml` /
-`commit-generators-hotstuff.yml` as the manual remedy. Those files are gone. Recover one
+`RELAUNCH-20260904.md` §9/§11 still names `auto-commit-generators.yml` /
+`commit-generators-hotstuff.yml` as the manual remedy (the alert text no longer does). Those files are gone. Recover one
 with the `git show` above for a one-off manual commit, or check why the in-process
 self-commit did not fire.

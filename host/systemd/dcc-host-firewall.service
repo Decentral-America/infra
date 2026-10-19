@@ -1,0 +1,14 @@
+[Unit]
+Description=DCC host firewall (nft table inet dcc_host, infra host/nftables/dcc-host.nft)
+Wants=network-pre.target
+After=network-pre.target
+Before=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/dcc/dcc-host.nft
+ExecStop=/usr/sbin/nft delete table inet dcc_host
+
+[Install]
+WantedBy=multi-user.target

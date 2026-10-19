@@ -4,7 +4,7 @@
 
 **Goal:** Take the 2026-09-04 relaunch chain from "offline since 2026-09-17, half-verified" to a signed-off "final testnet": every node on one binary, every self-heal in-process, every downstream service reset-procedure written and executed, alerts armed and test-fired, 72h soak recorded, and every stale doc corrected.
 
-**Architecture:** Four nodes: main (Linode VPS `66.228.55.154`, docker-compose, public REST `https://testnet-node.decentralchain.io`, bootstrap seed `quorum=0`) plus gen-0 / gen-1 / val-0 on Linode LKE cluster `dcc-peer-testnet` (namespace `dcc`, StatefulSets, Flux-managed from `Ecosystem/infra/clusters/testnet/apps/nodes.yaml`). Downstream on the VPS: matcher, blockchain-postgres-sync (BPS), data-service, scanner (hosts the faucet), exchange, admin-dashboard, Caddy edge, Prometheus/Alertmanager/Grafana/Loki. Consensus: Waves-NG PoS + DCC HotStuff finality (T0 authoritative endorsements, T2 committee), BLS endorsements.
+**Architecture:** Four nodes: main (Linode VPS `50.116.30.244`, Dallas, docker compose via `scripts/node-up.sh`, public REST `https://testnet-node.decentralchain.io`, bootstrap seed `quorum=0`) plus gen-0 / gen-1 / val-0 on Linode LKE cluster `dcc-peer-testnet` (namespace `dcc`, StatefulSets, Flux-managed from `Ecosystem/infra/clusters/testnet/apps/nodes.yaml`). Downstream on the VPS: matcher, blockchain-postgres-sync (BPS), data-service, scanner (hosts the faucet), exchange, admin-dashboard, Caddy edge, Prometheus/Alertmanager/Grafana/Loki. Consensus: Waves-NG PoS + DCC HotStuff finality (T0 authoritative endorsements, T2 committee), BLS endorsements.
 
 **Tech Stack:** Scala 3 / sbt 1.12 (node-scala, matcher), TypeScript pnpm monorepo (DecentralChain), OpenTofu + Flux + kubectl (infra), GitHub Actions, SOPS/age secrets, Linode API.
 
@@ -24,6 +24,716 @@
 | Feature 26 vote config present on all 4 nodes | `features.supported = [26]` at `dcc.conf:71`, `nodes.yaml:194,335,465` |
 | node-scala `dev` is 14 commits BEHIND `main` | `git rev-list --count origin/dev..origin/main` = 14 |
 | `Ecosystem/AUDIT-T2-FINALITY.md` does not exist at HEAD or in history | referenced by memory as the §6 hardening ledger — lost artifact |
+
+## Global Constraints
+
+- **Every node on a chain runs the same binary.** Four digests (VPS pulled imageID + 3 pod imageIDs) must be byte-identical before any chain step is called verified (`RELAUNCH-20260904.md` §5.3, decision D6).
+- **Never auto-clear blacklist; suspension only.** `peer-stall-threshold` heals suspensions only (`PeerDatabaseImpl.scala:66-74` rationale).
+- **`slashing-enabled` stays `no` fleet-wide** until one node has exercised a live equivocation drill (audit F-1, D4).
+- **No re-genesis unless Phase 3 proves the current chain unrecoverable.** PVCs are `Bound` and `linode-block-storage-retain`; the chain is expected to resume.
+- **Evidence before assertions.** Every "verified" checkbox names the command and pastes the decisive output line into the Soak Log (§ at end of this file).
+- **No `gh run watch`.** Poll with `gh run view <id> --json status,conclusion` at ≥45s intervals (memory: GitHub REST budget).
+- **Never touch** the standalone `exchange` repo, `dcc-report`, or (since 2026-09-30) node-scala (memory: never-touch repos).
+- **Commit authorship:** sole author jourlez, no AI trailers.
+- **Secrets never in chat or plan.** Reference KeeWeb entry names only.
+
+Repo roots used below:
+`BC=/Users/jourlez/Documents/Code/Blockchain`, `INFRA=$BC/Ecosystem/infra`, `NODE=$BC/Ecosystem/node-scala`, `MATCHER=$BC/Ecosystem/matcher`, `DCC=$BC/Ecosystem/DecentralChain`, `DOCS=$BC/Ecosystem/docs`.
+Main node REST: `MAIN=https://testnet-node.decentralchain.io`. API keys: KeeWeb `MAIN_NODE_REST_API_KEY`, `GEN_0_NODE_REST_API_KEY`, `GEN_1_NODE_REST_API_KEY`, `VAL_0_NODE_REST_API_KEY`.
+
+---
+
+## Phase 0 — Bring the infrastructure back (operator, today)
+
+### Task 0.1: Linode account and power state ⛔
+
+> **Closure (2026-10-18):** DONE: account restored 2026-10-04 (Soak Log 2026-10-04 Recovery)
+
+**Files:** none (Linode console). Record results in the Soak Log.
+
+- [ ] **Step 1 ⛔:** Log in to Linode console. Check Billing → any unpaid invoice / suspended state. Pay or escalate. Record the invoice date + amount in the Soak Log (this is the second occurrence; the first was 2026-07-20).
+- [ ] **Step 2:** Linodes → instance behind `linode_instance.backend` (`INFRA/terraform/main.tf:107`). Note power state. If `Offline`, Power On. Expected: status `Running` within ~2 min.
+- [ ] **Step 3:** Kubernetes → cluster `dcc-peer-testnet`. Node pool: 3 nodes. If nodes show offline, use "Recycle" only if they do not come back within 10 min of the account being unblocked (recycling re-images; PVCs survive because they are block-storage with `retain`).
+- [ ] **Step 4:** From workstation:
+```bash
+ping -c 3 66.228.55.154
+curl -s -m 10 $MAIN/node/version
+curl -s -m 10 $MAIN/blocks/height
+```
+Expected: ping replies; version JSON; height ≥ the last height before 2026-09-17 (unknown; must be > 2640 since the chain ran 13 days at ~1 block/min — if it is ≤ 2640 stop and go to Task 3.1 immediately).
+- [ ] **Step 5:** Dispatch read-only diagnostics and wait for completion:
+```bash
+cd $INFRA && gh workflow run cluster-diagnostics.yml -f network=testnet -f roll=false
+# then, ≥45s later, repeat until completed:
+gh run list -R Decentral-America/infra --workflow cluster-diagnostics.yml --limit 1 --json databaseId,status,conclusion
+gh run view <id> -R Decentral-America/infra --log | grep -E "=== (NODES|PODS)|height:|version:" -A0
+```
+Expected: 3 nodes `Ready`; `dcc-gen-0-0`, `dcc-gen-1-0`, `dcc-val-0-0` `1/1 Running`; three `height:` lines non-empty and within 2 blocks of each other and of `$MAIN/blocks/height`.
+- [ ] **Step 6:** Paste the decisive lines into the Soak Log under "Phase 0".
+
+### Task 0.2: Prevent the silent-outage class
+
+> **Closure (2026-10-18):** DONE: infra-liveness + canary dispatched by the LKE liveness-trigger CronJob; off-box deadman added 2026-10-18 (AUD-049)
+
+**Files:**
+- Modify: `INFRA/terraform/main.tf:107-160` (`linode_instance.backend`)
+- Create: `INFRA/.github/workflows/infra-liveness.yml`
+- Modify: `INFRA/.github/workflows/canary-transaction.yml:5-17` (doc comment) — no logic change
+
+Why: nothing paged anyone for 6 days. The canary was already red for an unrelated reason (0 balance), so its red→red transition on 2026-09-17 carried no signal. Drift-detect ignores power state. Healthchecks only test REST liveness.
+
+- [ ] **Step 1:** Add power-state assertion to tofu so drift-detect flags an Offline instance:
+```hcl
+# INFRA/terraform/main.tf inside resource "linode_instance" "backend"
+  booted = true
+```
+Run `cd $INFRA/terraform && tofu validate`. Expected: `Success! The configuration is valid.`
+- [ ] **Step 2:** Create a scheduled liveness workflow that is independent of wallet balance:
+```yaml
+# INFRA/.github/workflows/infra-liveness.yml
+name: Infra Liveness (Tier 0)
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Main node height advances
+        id: main
+        run: |
+          set -euo pipefail
+          H1=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
+          sleep 150
+          H2=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
+          echo "h1=$H1 h2=$H2"
+          test "$H2" -gt "$H1" || { echo "::error::height did not advance ($H1 -> $H2)"; exit 1; }
+      - name: LKE nodes Ready
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          CID=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/lke/clusters | jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
+          NOTREADY=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/$CID/pools" | jq '[.data[].nodes[] | select(.status!="ready")] | length')
+          echo "not-ready pool nodes: $NOTREADY"
+          test "$NOTREADY" -eq 0
+      - name: Open or update alert issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TITLE="[ALERT] InfraLiveness: testnet unreachable or not advancing"
+          N=$(gh issue list --search "$TITLE in:title" --state open --json number -q '.[0].number')
+          BODY="Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -z "$N" ]; then gh issue create --title "$TITLE" --body "$BODY"; else gh issue comment "$N" --body "$BODY"; fi
+```
+Note the `LINODE_TOKEN` secret already exists (used by `cluster-diagnostics.yml:36`). The `issues: write` permission is required for the alert step.
+- [ ] **Step 3:** Validate YAML locally: `cd $INFRA && python3 -c 'import yaml,sys; yaml.safe_load(open(".github/workflows/infra-liveness.yml"))' && echo OK`. Expected: `OK`.
+- [ ] **Step 4:** Commit on a branch, open PR, merge after CI green:
+```bash
+cd $INFRA && git checkout -b feat/infra-liveness-tier0
+git add terraform/main.tf .github/workflows/infra-liveness.yml
+git commit -m "feat(monitoring): Tier-0 infra liveness probe independent of wallet balance; assert VPS booted in tofu"
+git push -u origin feat/infra-liveness-tier0 && gh pr create --fill
+```
+- [ ] **Step 5:** After merge, dispatch once and confirm green: `gh workflow run infra-liveness.yml` then poll `gh run view`. Expected: `completed success`.
+- [ ] **Step 6:** Apply tofu (⛔ operator, because `provision.yml` is a live apply): `gh workflow run provision.yml -f action=apply -f network=testnet` (check the exact input names at `INFRA/.github/workflows/provision.yml` first). Expected plan: the 3 in-place changes already reported by drift-detect (firewall x2, LKE version) plus `booted`. Nothing destroyed. If the plan shows anything `to destroy`, abort.
+
+---
+
+## Phase 1 — Repository hygiene and stale-doc reconciliation (no chain impact)
+
+### Task 1.1: Resolve uncommitted working trees
+
+> **Closure (2026-10-18):** SUPERSEDED: root-repo working tree → register AUD-093 (docs plan)
+
+**Files:** four repos, all currently dirty.
+
+- [ ] **Step 1 ⛔ operator (2026-09-30: the auto-mode classifier blocks the restore/mv/rm for Claude; still uncommitted, `git status` shows the 4 `D` entries):** `$BC` root — four Ecosystem docs deleted uncommitted: `Ecosystem/STATUS.md` (2022 lines, canonical dashboard), `HANDOFF.md`, `INCIDENT-GEN0-PEERS.md`, `DEPLOY.md` (moved to `infra/DEPLOY.md`). Decide: restore `STATUS.md`/`HANDOFF.md`/`INCIDENT-GEN0-PEERS.md` and mark them ARCHIVED (their still-open rows are enumerated in Phase 7/8 of this plan, so nothing is lost), or commit the deletion with a message that names this plan as the successor. Recommended: archive.
+```bash
+cd $BC && git checkout -- Ecosystem/STATUS.md Ecosystem/HANDOFF.md Ecosystem/INCIDENT-GEN0-PEERS.md
+mkdir -p Ecosystem/archive && git mv Ecosystem/STATUS.md Ecosystem/archive/STATUS-2026-08-04.md && git mv Ecosystem/HANDOFF.md Ecosystem/archive/HANDOFF-2026-08-04.md && git mv Ecosystem/INCIDENT-GEN0-PEERS.md Ecosystem/archive/INCIDENT-GEN0-PEERS-2026-08-12.md
+git rm -q Ecosystem/DEPLOY.md   # lives at Ecosystem/infra/DEPLOY.md
+git add TESTNET-FINAL-PLAN-2026-09-23.md
+git commit -m "docs: archive STATUS/HANDOFF/INCIDENT dashboards, drop duplicate DEPLOY.md, add testnet final launch plan"
+```
+- [ ] **Step 2 — OUT OF SCOPE (node-scala, operator 2026-09-30):** `$NODE` (branch `fix/netty-cve-2026-75595`, already merged as PR #62): commit the staged workflow archive + the two untracked plan docs, then delete the local branch.
+```bash
+cd $NODE && git checkout main && git pull -q && git checkout -b chore/archive-promote-vps-and-plans
+git add .github/archived-workflows/README.md .github/workflows/promote-vps-image.yml .github/archived-workflows/promote-vps-image.yml docs/superpowers/plans/2026-09-12-inprocess-peer-stall-detection.md docs/superpowers/plans/2026-09-12-inprocess-self-commit-generation.md
+git commit -m "chore: archive promote-vps-image workflow; commit plans for merged PRs #60/#61"
+git push -u origin HEAD && gh pr create --fill
+```
+- [ ] **Step 3 — OUT OF SCOPE (node-scala, operator 2026-09-30):** `$NODE`: bring `dev` up to `main` (14 commits behind): `git checkout dev && git merge --ff-only origin/main && git push`. Expected: `Fast-forward`.
+- [x] **Step 4 (done 2026-09-30 via infra PR #169, merged):** `$INFRA` (branch `chore/archive-oneoff-diagnostics`): commit `RUNBOOK-t0-soak-and-t2-audit.md`, gitignore `monitoring/__pycache__/`. **2026-09-30:** that branch's only commit (`2df0331`) is already on main. Runbook + gitignore are in **infra PR #169**; tick this box once it merges.
+```bash
+cd $INFRA && echo "monitoring/__pycache__/" >> .gitignore
+git add .gitignore RUNBOOK-t0-soak-and-t2-audit.md && git commit -m "docs: commit T0-soak/T2-audit runbook; ignore pycache" && git push -u origin HEAD && gh pr create --fill
+```
+- [x] **Step 5 (verified 2026-09-30: `publish-maven-package.yml` on DecentralChain main, `publish-protobuf-schemas.yml` gone; local checkout on main, clean):** `$DCC` (branch `chore/archive-unused-workflows`): the staged deletion of `publish-protobuf-schemas.yml` plus untracked `publish-maven-package.yml` is a half-done refactor. Finish or revert; do not leave it. Run `pnpm -w lint` (or the repo's CI command per `README`) and open a PR. Expected: CI green.
+- [x] **Step 6 (verified 2026-09-30: matcher and docs on main, 0 dirty, 0 ahead):** `$MATCHER`, `$DOCS`: clean; nothing to do.
+
+### Task 1.2: Correct stale statements (one commit per repo)
+
+> **Closure (2026-10-18):** DONE: stale statements reconciled in the 2026-10-18 wave-4 PR (AUD-030/084/089/091)
+
+**Files:**
+- Modify: `$BC/CONSENSUS-BUG-INVESTIGATION-REFERENCE.md:109`, `:390-393`
+- Modify: `$INFRA/RELAUNCH-20260904.md:3`, `:321-323`, `:344-346`, `:541-551`, `:642`, `:663`, `:797`
+- Modify: `$NODE/docs/hotstuff-audit-readiness.md:9`, `:319`
+- Modify: `$INFRA/.github/archived-workflows/README.md` (add the three crons retired in `849148d`)
+- Modify: `$NODE/docs/upstream-reports/waves-committee-statehash-timing-bug.md:126-127`
+
+- [ ] **Step 1:** Reference doc: append to §13 "Not yet done" paragraph: `UPDATE 2026-09-23: deployed. Both live images (tag testnet-relaunch-20260904 = sha256:b0d559cf…, and main@2cfdafe860 = sha256:0346f624…) contain 31d4410ba3 (verified with git merge-base --is-ancestor). What is NOT yet done is live observation past height 2640/3325 with zero InvalidStateHash — tracked in TESTNET-FINAL-PLAN-2026-09-23.md Phase 3.` Same one-liner at §8 line 109.
+- [ ] **Step 2:** Runbook header line 3: replace `DRAFT / NOT EXECUTED` with `EXECUTED 2026-09-04 through §7 (genesis, config, image, wipe, restart). §8–§14 NOT executed; superseded by ../../TESTNET-FINAL-PLAN-2026-09-23.md Phases 2–6.` Fix §5.1/§5.2 to state the actual two digests and that unification is Task 2.1. Replace every "PR #152 open" with "PR #152 merged 2026-09-04 (c3c44b9)". Replace line 642's "does not exist on main today" with "exists at monitoring/alerts.yml:59".
+- [ ] **Step 3 — OUT OF SCOPE (file lives in node-scala, operator 2026-09-30):** Audit-readiness: line 319 → "published 2026-09 (HTTP 200 on Central for 1.6.6 protobuf-src); node-scala resolves it since 17b87fb047". Line 9: bump the baseline SHA to `2cfdafe860` and list the HotStuff-touching commits since `9c49632398` (`git log --oneline 9c49632398..2cfdafe860 -- node/src/main/scala/com/decentralchain/consensus node/src/main/scala/com/decentralchain/state/FinalizationState.scala`).
+- [ ] **Step 4:** Archived-workflows README: add a "2026-09-21 round" section listing `auto-commit-generators.yml`, `commit-generators-hotstuff.yml`, `peer-watchdog.yml`, replacement = node-scala PR #60/#61 flags, and the explicit sentence "main node coverage closed by TESTNET-FINAL-PLAN Task 2.2".
+- [ ] **Step 5 — OUT OF SCOPE (file lives in node-scala, operator 2026-09-30):** Waves report doc lines 126-127: "Decision 2026-08-30: permanently internal-only (operator declined external reporting)."
+- [ ] **Step 6:** Commit each repo: `docs: reconcile stale status claims against 2026-09-23 verified state`.
+
+---
+
+## Phase 2 — Make the four nodes identical and self-healing (config, then rollout)
+
+### Task 2.1: One digest for all four nodes
+
+> **Closure (2026-10-18):** DONE: one digest on all four nodes, CI-enforced (check-digest-parity.sh)
+
+**Files:**
+- Modify: `$INFRA/.github/workflows/update-node-image.yml:43`, `deploy-node-config.yml:61`, `restart-host-network.yml:48` (VPS refs, currently `b0d559cf…`)
+- Read: `$INFRA/clusters/testnet/apps/nodes.yaml:526,654,771` (LKE refs, `0346f624…`)
+
+Decision: converge on `sha256:0346f62406518a4e9ecc8414250a03e1cf770bb8f9aeefff294c302274a9a61a` (main@`2cfdafe860`, includes self-commit + peer-stall + netty fix). Nothing newer is on `main`.
+
+- [ ] **Step 1:** Replace the three VPS references:
+```bash
+cd $INFRA && git checkout -b fix/unify-node-digest-0346f624
+sed -i '' 's/b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098/0346f62406518a4e9ecc8414250a03e1cf770bb8f9aeefff294c302274a9a61a/g' .github/workflows/update-node-image.yml .github/workflows/deploy-node-config.yml .github/workflows/restart-host-network.yml
+grep -c 0346f624 .github/workflows/update-node-image.yml .github/workflows/deploy-node-config.yml .github/workflows/restart-host-network.yml clusters/testnet/apps/nodes.yaml
+```
+Expected: `1 1 1 3` (one per workflow, three in nodes.yaml).
+- [ ] **Step 2:** Add a CI guard so the four refs can never diverge again. Create `$INFRA/scripts/check-digest-parity.sh`:
+```bash
+#!/usr/bin/env bash
+# Fails if the node-scala testnet image digest differs between the LKE manifest and the VPS workflows.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+LKE=$(grep -oE 'node-scala@sha256:[0-9a-f]{64}' clusters/testnet/apps/nodes.yaml | sort -u)
+VPS=$(grep -ohE 'node-scala@sha256:[0-9a-f]{64}' .github/workflows/update-node-image.yml .github/workflows/deploy-node-config.yml .github/workflows/restart-host-network.yml | sort -u)
+echo "LKE: $LKE"; echo "VPS: $VPS"
+[ "$(printf '%s\n%s\n' "$LKE" "$VPS" | sort -u | wc -l | tr -d ' ')" = "1" ] || { echo "::error::node-scala digest differs between LKE and VPS"; exit 1; }
+```
+`chmod +x scripts/check-digest-parity.sh && ./scripts/check-digest-parity.sh`. Expected: two identical lines, exit 0. Add a step invoking it to `.github/workflows/ci.yml`.
+- [ ] **Step 3:** Commit + PR: `fix(testnet): unify node-scala digest across VPS workflows and LKE manifest; add parity check`.
+- [ ] **Step 4 ⛔ (rollout, main node):** after Task 2.2's config lands, run `gh workflow run update-node-image.yml -f network=testnet` (verify input names in the file). Then:
+```bash
+ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker inspect node-scala-testnet --format "{{.Image}} {{index .RepoDigests 0}}"'
+```
+Expected: contains `0346f624…`.
+
+### Task 2.2: Main node gets the in-process self-heal flags
+
+> **Closure (2026-10-18):** DONE: Soak Log 2026-10-04 (self-commit-to-generation, peer-stall-threshold on main)
+
+**Files:**
+- Modify: `$INFRA/node-config/testnet/dcc.conf` (`miner {}` block near line 146 where `quorum = 0` lives; `network {}` block near line 115-119 where `enable-blacklisting = no` lives)
+- Reference: `$NODE/node/src/main/resources/application.conf:167` (`peer-stall-threshold = 900` default semantics), `:253` (`self-commit-to-generation = no`)
+
+Design note (from `2026-09-12-inprocess-peer-stall-detection.md:16`): main has `known-peers = []` and `peers-exchange = no`, so the detector must not log an alarm when there are no candidates; the code gates the log on "something was actually cleared" (`894f99cc5d`). Safe to enable.
+
+- [ ] **Step 1:** Edit `dcc.conf`:
+```hocon
+  miner {
+    # ...existing keys (quorum = 0 etc.)...
+    self-commit-to-generation = yes
+  }
+  network {
+    # ...existing keys (enable-blacklisting = no, known-peers = [])...
+    peer-stall-threshold = 900
+  }
+```
+- [ ] **Step 2:** Validate HOCON parses and the keys land in the right blocks:
+```bash
+pip3 install -q pyhocon
+python3 - <<'EOF'
+from pyhocon import ConfigFactory
+c = ConfigFactory.parse_file("node-config/testnet/dcc.conf")
+print("self-commit:", c.get("dcc.miner.self-commit-to-generation"))
+print("peer-stall :", c.get("dcc.network.peer-stall-threshold"))
+EOF
+```
+Expected: `self-commit: True` and `peer-stall : 900`. (`dcc.` prefix per `application.conf` root key; if the file uses a different root, `pyhocon` raises and the path must be corrected.)
+- [ ] **Step 3:** Commit + PR: `config(testnet): enable in-process self-commit and peer-stall self-heal on main node (closes the gap left by retiring the external crons)`.
+- [ ] **Step 4 ⛔:** Deploy: `gh workflow run deploy-node-config.yml -f network=testnet`. Then confirm on the VPS:
+```bash
+ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker logs node-scala-testnet --since 10m 2>&1 | grep -iE "self-commit|peer-stall|stall detector" | head'
+```
+Expected: at least one startup log line naming the settings (exact text per `MinerImpl`/`NetworkServer` logs added in PR #60/#61).
+
+### Task 2.3: val-0 `quorum` contradicts its own rationale
+
+> **Closure (2026-10-18):** DONE: val-0 quorum = 1 (nodes.yaml)
+
+**Files:** `$INFRA/clusters/testnet/apps/nodes.yaml:426` (`quorum = 0`), rationale at `:139`/`:287` ("Only the bootstrap seed (main VPS) keeps quorum=0").
+
+- [ ] **Step 1:** `git log -S"quorum = 0" --format='%h %cs %s' -- clusters/testnet/apps/nodes.yaml | head` to learn why val-0 got 0. If no deliberate reason, set `quorum = 1` at line 426 to match gen-0/gen-1.
+- [ ] **Step 2:** Commit + PR: `config(testnet): val-0 quorum=1, consistent with documented policy (only main keeps 0)`. Flux rolls it; confirm with `kubectl -n dcc rollout status statefulset/dcc-val-0` via cluster-diagnostics or a kubeconfig from `export-kubeconfig.yml`.
+
+### Task 2.4: val-0 wallet lacks its generator key (infra issue #153) ⛔
+
+> **Closure (2026-10-18):** DONE: #153 closed (Soak Log 2026-10-10)
+
+**Files:** `$INFRA/clusters/testnet/apps/nodes.yaml` val-0 block (wallet seed Secret reference), KeeWeb `VAL_0_NODE_WALLET_SEED`, SOPS secret for val-0.
+
+- [ ] **Step 1:** Derive the address from KeeWeb `VAL_0_NODE_WALLET_SEED` locally (never print the seed): use `dcc-dex-cli`/node's `GenesisBlockGenerator.toFullAddressInfo` per `RELAUNCH-20260904.md` §2.2. Compare with the val-0 generator address in `node/genesis-dcc-testnet-relaunch.conf` and with what the node reports: `curl -s -H "X-API-Key: $VAL0_KEY" http://127.0.0.1:16871/addresses` through the diagnostics port-forward.
+- [ ] **Step 2:** If they differ, the Secret mounted into `dcc-val-0-0` holds a different seed than genesis expects. Fix the SOPS value to the genesis seed (⛔ push-secrets.yml), roll the pod, re-run Step 1. Expected: addresses equal.
+- [ ] **Step 3:** Confirm self-commit now works: after one generation period, `curl -s $MAIN/generators/at/<nextPeriodStart>` includes val-0's address (period arithmetic in `RELAUNCH-20260904.md` §4.3). Close #153 with the evidence.
+
+### Task 2.5: Add the `slashing-enabled` key explicitly (off) to every config
+
+> **Closure (2026-10-18):** DONE: explicit slashing-enabled on all four (Soak Log 2026-10-04)
+
+**Files:** `dcc.conf` hotstuff block (near `authoritative = true` at `:161`), `nodes.yaml:170,315,452`.
+
+Why: `RELAUNCH-20260904.md` §12.4 says "set on exactly one node" but the key appears nowhere, so the drill has no switch. Making the default explicit also documents intent.
+
+- [ ] **Step 1:** Add `slashing-enabled = no` next to `authoritative = true` in all four blocks. `grep -c "slashing-enabled = no" node-config/testnet/dcc.conf clusters/testnet/apps/nodes.yaml` → `1 3`.
+- [ ] **Step 2:** Commit + PR: `config(testnet): make slashing-enabled=no explicit on all four nodes ahead of the staged drill`.
+
+### Task 2.6: Healthchecks must detect a stalled chain, not just a live REST
+
+> **Closure (2026-10-18):** DONE in code (infra wave-4 PR, AUD-045): compose/node-scala.yml carries the height-stall healthcheck; live on main from the wave-4 rollout
+
+**Files:**
+- Modify: `$INFRA/compose/node-scala.yml:81` (main; currently `/node/version`)
+- Modify: `$INFRA/clusters/testnet/apps/nodes.yaml:574-588, 700-714, 817+` (readiness/liveness `/node/status`)
+- Modify: `$INFRA/compose/prometheus.yml:150` (alert-webhook check ends `|| exit 0`)
+- Modify: `$INFRA/compose/blockchain-postgres-sync.yml:36`, `compose/scanner.yml:25`
+
+Design: keep k8s readiness as `/node/status` (readiness must not flap on a temporarily slow chain), but add a **liveness** script that fails if `/blocks/height` has not changed for 15 minutes. For docker-compose, same idea with a state file.
+
+- [ ] **Step 1:** Main node compose healthcheck:
+```yaml
+    healthcheck:
+      test: ["CMD-SHELL", "H=$(curl -sf http://127.0.0.1:6869/blocks/height | sed 's/[^0-9]//g'); P=$(cat /tmp/last_h 2>/dev/null || echo 0); T=$(cat /tmp/last_t 2>/dev/null || echo 0); N=$(date +%s); if [ \"$H\" != \"$P\" ]; then echo $H >/tmp/last_h; echo $N >/tmp/last_t; exit 0; fi; [ $((N-T)) -lt 900 ]"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+```
+- [ ] **Step 2:** LKE liveness probe (each of the 3 StatefulSets), leaving readiness as-is:
+```yaml
+          livenessProbe:
+            exec:
+              command: ["sh","-c","H=$(wget -qO- http://127.0.0.1:6869/blocks/height | sed 's/[^0-9]//g'); P=$(cat /tmp/last_h 2>/dev/null || echo 0); T=$(cat /tmp/last_t 2>/dev/null || echo 0); N=$(date +%s); if [ \"$H\" != \"$P\" ]; then echo $H >/tmp/last_h; echo $N >/tmp/last_t; exit 0; fi; [ $((N-T)) -lt 900 ]"]
+            initialDelaySeconds: 180
+            periodSeconds: 60
+            failureThreshold: 3
+```
+(Port differs per node: gen-1 `6870`, val-0 `6871` — check the existing `containerPort` in each block.)
+- [ ] **Step 3:** `prometheus.yml:150`: remove `|| exit 0` so the webhook receiver check can fail. `bps.yml:36`: keep `/readiness` but add `&& curl -sf http://127.0.0.1:<bps-port>/metrics | grep -q 'bps_last_indexed_height'` only if that metric exists (check `apps/blockchain-postgres-sync` for exported metric names; otherwise leave and rely on the Prometheus rule in Task 5.1). `scanner.yml:25`: probe `GET /api/faucet` expecting non-503 is wrong when `DCC_FAUCET_SEED` unset by design; leave scanner as-is and alert via Prometheus blackbox in Task 5.1 instead.
+- [ ] **Step 4:** Validate: `docker compose -f compose/node-scala.yml config >/dev/null && echo OK`; `kubectl --dry-run=client -f clusters/testnet/apps/nodes.yaml apply >/dev/null 2>&1 || kubeconform clusters/testnet/apps/nodes.yaml`. Expected: no errors.
+- [ ] **Step 5:** Commit + PR: `fix(health): liveness fails when block height stalls 15 min; unmask alert-webhook healthcheck`. Roll out via existing deploy workflows (⛔ for the VPS restart).
+
+---
+
+## Phase 3 — Verify the live chain (runbook §8–§9, never executed)
+
+Precondition: Phase 0 green, Tasks 2.1–2.2 rolled out. All commands from the workstation unless noted; LKE via `kubectl port-forward` after `gh workflow run export-kubeconfig.yml` (or the cluster-diagnostics output).
+
+### Task 3.1: Same binary, same chain, advancing
+
+> **Closure (2026-10-18):** DONE: Soak Log 2026-10-04 + Phase 9 closure below
+
+- [ ] **Step 1:** Four `/node/version` strings:
+```bash
+curl -s $MAIN/node/version
+for p in 16869:dcc-gen-0-0:6869 16870:dcc-gen-1-0:6870 16871:dcc-val-0-0:6871; do L=${p%%:*}; R=${p#*:}; POD=${R%%:*}; PORT=${R##*:}; kubectl -n dcc port-forward $POD $L:$PORT >/dev/null 2>&1 & sleep 2; curl -s http://127.0.0.1:$L/node/version; echo; kill %% ; done
+```
+Expected: 4 identical JSON bodies.
+- [ ] **Step 2:** Four image digests byte-identical:
+```bash
+ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker inspect node-scala-testnet --format "{{index .RepoDigests 0}}"'
+kubectl -n dcc get pods -l app=dcc-node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].imageID}{"\n"}{end}'
+```
+Expected: all four end in `0346f62406518a4e9ecc8414250a03e1cf770bb8f9aeefff294c302274a9a61a`.
+- [ ] **Step 3:** Heights within 2 of each other, and advancing over 30 min:
+```bash
+for i in 1 2 3; do date -u +%T; curl -s $MAIN/blocks/height; curl -s $MAIN/blocks/height/finalized 2>/dev/null; echo; sleep 600; done
+```
+Expected: both numbers strictly increase each sample. If `finalized` is pinned while `height` climbs → T0 stall class (memory `t0-stall-20260730`), go to Task 6.3 before anything else.
+- [ ] **Step 4:** Zero state-hash rejections on all four since power-on:
+```bash
+ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker logs node-scala-testnet --since 24h 2>&1 | grep -c InvalidStateHash'
+for p in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do echo -n "$p "; kubectl -n dcc logs $p --since=24h | grep -c InvalidStateHash; done
+```
+Expected: `0` x4. Any non-zero → stop, capture `docker logs ... | grep -B5 -A5 InvalidStateHash` into `$NODE/.superpowers/sdd/stall-$(date +%F).log`, and open a Task 6.x investigation before continuing.
+- [ ] **Step 5:** Confirm the chain is past both historical failure heights and that the 2600–3100 window (where 2640 died: `sponsorshipHeight = 3000` gating) was crossed cleanly:
+```bash
+H=$(curl -s $MAIN/blocks/height | jq .height); echo $H
+curl -s "$MAIN/blocks/headers/seq/2600/2700" | jq -r '.[] | "\(.height) \(.generator) \(.transactionCount)"' | head -5
+curl -s "$MAIN/blocks/headers/at/3325" | jq '{height, generator, stateHash}'
+```
+Expected: `H` well above 3325; headers exist and are non-empty for 2600–2700 and 3325.
+
+### Task 3.2: Activation status exactly as intended (runbook §8.2)
+
+> **Closure (2026-10-18):** DONE: features 1-26 ACTIVATED, none ≥ 27 (Phase 9 closure below)
+
+- [ ] **Step 1:**
+```bash
+curl -s $MAIN/activation/status | jq '{height, features: [.features[] | {id, blockchainStatus, nodeStatus, activationHeight, supportingBlocks}]}'
+```
+Expected: ids 1–25 `ACTIVATED` at height 0/1; id 26 present with `nodeStatus: IMPLEMENTED`, `blockchainStatus` in `{VOTING, APPROVED, ACTIVATED}` with `supportingBlocks > 0`; no id ≥ 27 activated or approved.
+- [ ] **Step 2:** Repeat against gen-0/gen-1/val-0 via port-forward. Expected: identical `features` arrays.
+- [ ] **Step 3:** Feature-26 economics check once `ACTIVATED`: `curl -s $MAIN/blockchain/rewards | jq` → `currentReward` equals the AdjustedFullReward (20 DCC-equivalent, per plan Task 2 hunk (c)); before activation it is 6-equivalent. Record both observations with heights in the Soak Log. If 26 stays `VOTING` after ~50h of all-generators-healthy (`RELAUNCH-20260904.md` §12.5), investigate which generator is not voting (`supportingBlocks` vs blocks by generator).
+
+### Task 3.3: Committee for the next period is non-empty (runbook §9)
+
+> **Closure (2026-10-18):** DONE: committee of 4 (Phase 9 closure below)
+
+- [ ] **Step 1:** Compute the next period start (period length from `dcc.conf` hotstuff settings; arithmetic at `RELAUNCH-20260904.md` §4.3) and query:
+```bash
+curl -s -o /tmp/gen.json -w '%{http_code}\n' "$MAIN/generators/at/<nextPeriodStart>"; jq length /tmp/gen.json; jq -r '.[]' /tmp/gen.json
+```
+Expected: `200`, length `3`, the three generator addresses (gen-0, gen-1, val-0). If val-0 missing → Task 2.4 not done. If main missing that is expected (main is bootstrap seed, not a committee generator — confirm against `nodes.yaml` rationale at `:139`).
+- [ ] **Step 2:** Confirm `dcc_next_period_committee_size` metric > 0 in Prometheus: `curl -s 'http://127.0.0.1:9090/api/v1/query?query=dcc_next_period_committee_size'` over an SSH tunnel to the VPS. Expected: value ≥ 3.
+
+### Task 3.4: Fund the canary wallet and make the canary meaningful (issue #148)
+
+> **Closure (2026-10-18):** DONE: canary funded; ≥ 95% green (Phase 9 closure below)
+
+**Files:** `$INFRA/.github/workflows/canary-transaction.yml`; KeeWeb `TREASURY_SEED`; canary address `31LAqgqVTLySNCPuYqgLAYhcgS76wvBaLr9` (per `infra/docs/superpowers/plans/2026-07-24-tier6-canary-monitoring.md:26-36`, re-derive from the seed to be sure).
+
+- [ ] **Step 1:** Balance now: `curl -s $MAIN/addresses/balance/31LAqgqVTLySNCPuYqgLAYhcgS76wvBaLr9 | jq .balance`. Expected today: `0`.
+- [ ] **Step 2 ⛔:** Transfer 100 DCC from treasury to the canary address (canary spends 0.002 DCC per run → ~1000 days). Use the admin-dashboard treasury route (`api.treasury.fund.ts`, idempotent) or `dcc-dex-cli`. Re-check balance ≥ `10000000000`.
+- [ ] **Step 3:** Dispatch canary: `gh workflow run canary-transaction.yml`; poll; Expected: `success`, log line `Canary tx <id> confirmed at height <h> in <ms>ms`.
+- [ ] **Step 4:** Add a canary-balance guard so a future 0-balance is a distinct alert, not a generic failure: in the canary script before broadcast, fetch balance and `console.error('Canary tx failed: CANARY_UNFUNDED balance=' + bal)` if `< 10 * fee`. Commit: `fix(canary): distinguish unfunded wallet from network failure`.
+- [ ] **Step 5:** Close #148 with the run URL. Add "re-fund canary" to `RELAUNCH-20260904.md` §10.1 for any future re-genesis.
+
+---
+
+## Phase 4 — Downstream services: write the missing reset procedures, then run them
+
+Runbook §10 is literally `TBD` for three services and silent for four more. These are needed both now (services have been down 6 days and may have stale state vs. the chain) and for any future re-genesis.
+
+### Task 4.1: blockchain-postgres-sync (BPS) reset procedure
+
+> **Closure (2026-10-18):** SUPERSEDED: BPS reset executed under register AUD-002 (wave 1c)
+
+**Files:**
+- Create: `$INFRA/runbooks/reset-bps-testnet.md`
+- Read: `$DCC/apps/blockchain-postgres-sync/README.md:84` (`BPS_STARTING_HEIGHT`), `$INFRA/compose/blockchain-postgres-sync.yml`
+
+- [ ] **Step 1:** Write the procedure (verify container/db names against the compose file first):
+```bash
+# on the VPS
+docker stop blockchain-postgres-sync-testnet
+docker exec -i postgres-testnet psql -U postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='bps_testnet';"
+docker exec -i postgres-testnet psql -U postgres -c "DROP DATABASE bps_testnet;" -c "CREATE DATABASE bps_testnet OWNER bps;"
+# BPS_STARTING_HEIGHT=0 in the env file, then:
+docker start blockchain-postgres-sync-testnet
+docker logs -f blockchain-postgres-sync-testnet 2>&1 | grep -m1 -E "height [0-9]+ .*(indexed|synced)"
+```
+- [ ] **Step 2:** For TODAY (no re-genesis): only restart and confirm no "Requested start height exceeds current blockchain height" (memory: BPS stores height; after a node restart it can race). If it appears, `docker restart blockchain-postgres-sync-testnet` once the node height exceeds the stored height.
+- [ ] **Step 3:** Verify BPS caught up: `docker exec -i postgres-testnet psql -U postgres -d bps_testnet -tAc "select max(height) from blocks_raw"` ≈ `$MAIN/blocks/height`.
+- [ ] **Step 4:** Link the runbook from `RELAUNCH-20260904.md` §10 (replace the TBD). Commit.
+
+### Task 4.2: Matcher state reset procedure (preserve `account.dat`)
+
+> **Closure (2026-10-18):** SUPERSEDED: empty-key state removed 2026-10-10; runbook refreshed (AUD-123)
+
+**Files:**
+- Create: `$INFRA/runbooks/reset-matcher-testnet.md`
+- Read: `$MATCHER/dex/src/main/resources/application.conf:6,78,442-452,520` (data-directory, order-db, snapshots, LevelDB event store), `$INFRA/compose/matcher.yml`, `RELAUNCH-20260904.md:609-615`
+
+- [ ] **Step 1:** Write the procedure:
+```bash
+# on the VPS
+docker stop matcher-testnet
+ls -la /opt/dcc/data/matcher-testnet          # expect: account.dat, data/ (LevelDB), order-db/, snapshots/, journal/
+cp -a /opt/dcc/data/matcher-testnet/account.dat /opt/dcc/backup/matcher-account.dat.$(date +%F)
+find /opt/dcc/data/matcher-testnet -mindepth 1 -maxdepth 1 ! -name account.dat -exec rm -rf {} +
+docker start matcher-testnet
+curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must equal the pre-reset key
+```
+- [ ] **Step 2:** Verify the matcher account still holds funds on the chain: `curl -s $MAIN/addresses/balance/31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq | jq .balance` (genesis matcher address per runbook §2.2). Expected: ~1B units minus fees.
+- [ ] **Step 3:** For TODAY: restart only, then place-and-cancel one order through the exchange UI or `dcc-dex-cli` and confirm `GET /matcher/orderbook/<pair>` responds 200.
+- [ ] **Step 4:** Add to `RELAUNCH-20260904.md` §10. Commit.
+
+### Task 4.3: data-service, scanner, exchange, admin-dashboard: verify statelessness and URLs
+
+> **Closure (2026-10-18):** SUPERSEDED: register AUD-019/024/069 (DecentralChain plan)
+
+- [ ] **Step 1:** data-service: restart after BPS (`restart-services.yml`); confirm `DEFAULT_MATCHER` set (`RELAUNCH-20260904.md:596`); `curl -s https://testnet-data-service.decentralchain.io/transactions/exchange?limit=1` → 200.
+- [ ] **Step 2:** scanner: `grep -rn "createClient\|pg\.\|Pool(" $DCC/apps/scanner/src | head` → confirm it reads only via data-service/BPS and Redis (rate-limit). Record "stateless over BPS + Redis" as verified, or list the tables it owns.
+- [ ] **Step 3:** Faucet: `curl -s -o /dev/null -w '%{http_code}\n' https://<scanner>/api/faucet` → not 503. Faucet balance: derive address from KeeWeb `FAUCET_SEED`, `curl -s $MAIN/addresses/balance/<addr>`; if < 100k DCC, ⛔ transfer from treasury (prior relaunches used 1M). Treasury balance = `1000000000000000` minus known outflows.
+- [ ] **Step 4:** exchange + admin-dashboard: `grep -n "decentralchain.io" $DCC/apps/exchange/.env.* $DCC/apps/admin-dashboard/.env.* 2>/dev/null` → every URL must be `testnet-node`, `testnet-matcher`, `testnet-data-service`. Fix any `matcher.decentralchain.io` (docs CSV mismatch, Task 8.3).
+- [ ] **Step 5:** Admin E2E once, on demand (nightly cron removed deliberately): `gh workflow run admin-e2e.yml -R Decentral-America/infra`. Expected: success; if it fails, triage issue #142 rather than re-enabling the cron.
+
+### Task 4.4: Secrets gaps that will bite on the next `push-secrets`
+
+> **Closure (2026-10-18):** DONE: REDIS_PASSWORD and the canary secret in SOPS / GitHub env
+
+**Files:** SOPS `secrets/testnet.env` (never print), KeeWeb.
+
+- [ ] **Step 1:** `REDIS_PASSWORD` absent from SOPS while `push-secrets.yml` expects it (memory `testnet-complete-chain:64`). Add the current value (from the running container env or the one-shot `inject-redis-secret.yml`) to SOPS so the next push does not break the faucet rate-limiter.
+- [ ] **Step 2:** `DCC_CANARY_SEED` requires two provisioning steps (`canary-transaction.yml:5-17`): SOPS push AND `gh secret set DCC_CANARY_SEED --env testnet`. Confirm the env secret exists: `gh secret list -e testnet -R Decentral-America/infra | grep CANARY`.
+- [ ] **Step 3:** Grafana admin password: wire `GF_SECURITY_ADMIN_PASSWORD` from KeeWeb `GRAFANA_ADMIN_PASSWORD` in `compose/grafana.yml` (currently default admin/admin per memory). Alertmanager SMTP: confirm `smtp_auth_password` in the LKE `alertmanager-config` Secret equals KeeWeb `SMTP_PASSWORD`.
+- [ ] **Step 4:** KeeWeb backup hygiene (`Ecosystem/KEEWEB_BACKUP.md`): remove the inline OpenSSH private key block (lines 119-130) — reference the KeeWeb entry instead; fix the duplicate entry number 27; execute the 4 pending deletions at lines 254-259; add the four undocumented names (`ADMIN_DASHBOARD_GITHUB_PAT`, `SENTRY_AUTH_TOKEN`, `GRAFANA_URL`, `REDIS_PASSWORD`). Commit: `docs(secrets): remove inline key material, fix numbering, add missing entry names`.
+
+---
+
+## Phase 5 — Alerts armed and proven to page
+
+### Task 5.1: Arm and test-fire (runbook §11)
+
+> **Closure (2026-10-18):** DONE: B7 (#185-#188), alerts delivered; platform alerts + deadman added 2026-10-18 (AUD-049)
+
+**Files:** `$INFRA/monitoring/alerts.yml`, `monitoring/alertmanager.yml:20-26`, `clusters/testnet/monitoring/kube-prometheus-stack.yaml:160-199`, `compose/prometheus.yml`.
+
+- [ ] **Step 1:** Deploy monitoring: `gh workflow run deploy-monitoring-stack.yml -f network=testnet`. Expected: success.
+- [ ] **Step 2:** Rules loaded: over SSH tunnel `curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[].rules[].name'` → includes `BlockProductionStalled`, `FinalizationStalled`, `FinalizationNotAdvancing`, `HotStuffCommitNotAdvancing`, `HotStuffEquivocationDetected`, `CommitteeGapUpcoming`, `ExporterDown`, `ServiceDown`.
+- [ ] **Step 3:** Add two rules that today's outage proves missing (append to `alerts.yml`):
+```yaml
+  - alert: MainNodeUnreachable
+    expr: up{job="node-scala"} == 0
+    for: 5m
+    labels: {severity: critical}
+    annotations: {summary: "main node exporter target down 5m"}
+  - alert: LkeGeneratorsDown
+    expr: count(up{job=~"dcc-gen.*|dcc-val.*"} == 1) < 3
+    for: 10m
+    labels: {severity: critical}
+    annotations: {summary: "fewer than 3 LKE generators scraped for 10m"}
+```
+(Adjust `job` labels to the actual scrape config names in `compose/prometheus.yml` and `clusters/testnet/monitoring/`.) `docker run --rm -v $INFRA/monitoring:/m prom/prometheus promtool check rules /m/alerts.yml` → `SUCCESS`.
+- [ ] **Step 4:** Test-fire: `curl -XPOST http://127.0.0.1:9093/api/v2/alerts -d '[{"labels":{"alertname":"TestFire","severity":"critical"}}]'` on the VPS tunnel → a GitHub issue appears from the webhook bot within 2 min. Same on the LKE Alertmanager → email arrives at `info@decentralchain.io`. Record both timestamps. Resolve the test issue.
+- [ ] **Step 5:** Note in `RUNBOOK-t0-soak-and-t2-audit.md:47,50`: `FinalizationStalled`/`FinalizationNotAdvancing` cover the finalized-height stall requirement; add a Grafana panel for `finalizedHeight` vs `height` (dashboard JSON under `monitoring/grafana/`; confirm panel exists with `jq '.panels[].title' <dashboard>.json`).
+- [ ] **Step 6:** Commit: `feat(alerts): infra-down rules; record test-fire evidence`.
+
+---
+
+## Phase 6 — Consensus evidence still owed (testnet-gating subset)
+
+### Task 6.1: Bug 2 ("how far is the chain locked in") — determine whether Task D already closed it
+
+> **Closure (2026-10-18):** WAIVED: Bug 2 has no closing evidence; accepted as known (register AUD-188) under the 2026-10-18 waiver
+
+**Files:** `$BC/CONSENSUS-BUG-INVESTIGATION-REFERENCE.md:147-157`; `$NODE/node/src/main/scala/com/decentralchain/state/FinalizationState.scala`; node-scala commits from the 2026-08-30 relaunch (memory `testnet-final-relaunch-20260830:21` — "Task D finalization-rollback bug was real", DeterministicFinality cluster).
+
+- [ ] **Step 1:** `cd $NODE && git log --oneline --since=2026-08-25 -- node/src/main/scala/com/decentralchain/state/FinalizationState.scala node/src/main/scala/com/decentralchain/state/BlockchainUpdaterImpl.scala | head -20`. Read each for "rollback", "microblock discard", "finalized height".
+- [ ] **Step 2:** Write a failing test if no rollback coverage exists: in `node/tests/.../FinalizationRollbackSpec.scala`, append a microblock that advances the finalized-height value, discard it (`removeAfter`), assert the finalized height returns to its pre-microblock value and the next key block's state hash equals the appender's recompute. Run `sbt "node-tests/testOnly *FinalizationRollbackSpec"`.
+- [ ] **Step 3:** If it fails: implement both halves together per §9 (per-liquid-point finalized tracking with correct rollback; block-builder must not mix discarded-piece data), following TDD; full `sbt "node-tests/test"` zero regressions; PR to main. If it passes: update §9 Bug 2 to "CLOSED by <commit>, covered by FinalizationRollbackSpec" with the commit hash.
+- [ ] **Step 4:** Same pass for §8 line 110 (committee-*eligibility* logic vs. stale rollback): `grep -rn "committedGenerators\|nextCommittedGenerators" node/src/main/scala | grep -v Hash` — list every non-hash consumer; for each, state in the doc whether it reads the rolled-back or live list. Close or open accordingly.
+
+### Task 6.2: Live epoch transition + committee rotation evidence (T10)
+
+> **Closure (2026-10-18):** DONE: epoch transitions inside the 72h soak window (SOAK-2026-10-12.md)
+
+- [ ] **Step 1:** Identify the next committee-period boundary height. Capture 10 min before and after: `/generators/at/<h>`, `/blocks/height/finalized`, `/debug/hotstuff` (or the actual HotStuff status route in `FinalityApiRoute`), and Kamon counters `hotstuff.stale-target-*` from Prometheus.
+- [x] **Step 2:** Expected: committee set changes or is re-confirmed at the boundary; finalized height continues without a >2-period gap; `stale-target` counters do not grow unboundedly. Paste into the Soak Log and into `hotstuff-audit-readiness.md:108,333` as the T10 live evidence.
+
+**Result (soak window):** about 85 boundaries with no finality gap (max lag 4). The committee went from 4 to 5 members at 56301 (drill offender), excluded the offender at 56355, and was back to 4 at 56401. Recorded in [SOAK-2026-10-12.md](SOAK-2026-10-12.md). The `stale-target` Kamon counters are not exported to Prometheus, so continuous finality stands in for that check.
+
+### Task 6.3: T0 finality watch (the 2026-07-30 pin was never diagnosed)
+
+> **Closure (2026-10-18):** DONE: T0 finality continuous through the soak (max lag 4)
+
+- [ ] **Step 1:** Every 6h for 72h: `curl -s $MAIN/blocks/height; curl -s $MAIN/blocks/height/finalized`. Lag must stay bounded (record the max). If lag grows monotonically for >30 min: pull gen-0/gen-1 logs for `endorse|Endorsement|quorum` in that window before any restart, save to `$NODE/.superpowers/sdd/t0-<date>.log`, then diagnose (memory `t0-stall-20260730` deferral reasons no longer apply — kubectl access exists via `export-kubeconfig.yml`).
+
+### Task 6.4: Crash and partition drills (runbook §12.1)
+
+> **Closure (2026-10-18):** DONE: crash 2026-10-10, partition 2026-10-15 (Soak Log)
+
+- [ ] **Step 1 (crash):** `kubectl -n dcc delete pod dcc-gen-1-0` during a period in which gen-1 is in the committee. Expected: pod back `Running` < 3 min, height and finalized height keep advancing on main, no `InvalidStateHash`, gen-1 rejoins (`/peers/connected` on main includes gen-1 within 5 min — proves the in-process peer-stall path is not needed for the ordinary case).
+- [ ] **Step 2 (partition):** Temporarily add a Calico NetworkPolicy denying egress from `dcc-gen-0-0` to the VPS IP for 20 min, then remove. Expected: main continues with the remaining quorum; after removal, gen-0 reconnects without manual `peers/connect`. Confirm the stall detector log line ("cleared N suspensions") appears at most once and only if suspensions actually existed.
+- [x] **Step 3:** Record both in the Soak Log; mark `hotstuff-audit-readiness.md:97,324`.
+
+**Result:** the crash drill passed 2026-10-10; inside the soak window, gen-0 was deliberately recreated twice and rejoined cleanly. The partition drill was re-run **inside** the soak window on 2026-10-15 04:22–04:32Z: finality froze at 63442 while partitioned, all 4 nodes converged within 30s of the heal, 0 InvalidStateHash, 0 restarts. Details in [SOAK-2026-10-12.md](SOAK-2026-10-12.md).
+
+### Task 6.5: Equivocation drill with slashing on exactly ONE node ⛔ (runbook §12.4)
+
+> **Closure (2026-10-18):** DONE: equivocation drill 2026-10-12 (Soak Log); forfeiture fix live from height 60000 (#213)
+
+- [ ] **Step 1:** Wait until Tasks 6.2–6.4 are recorded and the chain is ≥ 24h past power-on (first-boot lockedQC window, `hotstuff-audit-readiness.md:124-134`).
+- [ ] **Step 2 ⛔:** Set `slashing-enabled = yes` on gen-0 only (`nodes.yaml:170` block). Flux rolls it.
+- [ ] **Step 3:** Produce an equivocation from a throwaway generator using the node-it harness technique (`FourNodeHotStuffTestSuite` equivocation scenario) against testnet, or by running a second gen-1 instance with the same key for one block (⛔, destructive to gen-1's reputation on the chain; use a funded throwaway generator instead if possible).
+- [ ] **Step 4:** Expected: `HotStuffEquivocationDetected` fires; gen-0 emits the evidence tx; `/transactions/info/<id>` shows the `HotStuffEquivocationProof` applied; the offender's generating balance is penalised per the T5 rules. Other three nodes (slashing off) accept the block containing the evidence.
+- [ ] **Step 5:** Decide fleet-wide `slashing-enabled` and record the decision in `hotstuff-audit-readiness.md:326` and D4 of the source plan.
+
+**Result 2026-10-12 (Claude):** drill run with a throwaway committee member instead of a real node.
+- Offender `31Q7J8cVtBcGDkuUfuppqvm7Cq7BDgDAuVP` was funded at h54946 and committed at h56240 (tx `5p4r2mgS…`) for period 56301, as committee index #4.
+- Tool: node-scala `EquivocationDrill` (#76, test scope). It signed two PREPARE votes for view 56350, epoch 563, blocks `3E8NPnL…` and `CZ1gr7p…`, and sent them to main over P2P at 16:14:24Z.
+- `slashing-enabled = yes` was set on gen-0 only (infra #207) and reverted after the drill (#209).
+- **Detection:** all four nodes logged `EQUIVOCATION DETECTED: voter #4` and report `hotStuffEquivocationsTotal = 1`. The `HotStuffEquivocationDetected` alert fired at 16:15:41Z.
+- **Proof in a block:** gen-0 folded the proof into block **56354** (`7zjDVaTX…`). Every node accepted that block: same id, no fork, finality lag stayed at 3.
+- **Exclusion:** `/generators/at` shows the offender with `conflictHeight = 56355` and committee balance 0.
+- **GAP FOUND, deposit not forfeited:** the offender's balance stayed 1999.9 DCC, and its deposit lock was released at the punishment height. `BlockDiffer.calculatePenalties` charges the 100 DCC only for T0 `voting.conflict` endorsements, never for `voting.hotstuffConflicts`. `RocksDBWriter.collectGenerationDepositChanges` then releases the lock at `punishmentHeight`. So a HotStuff equivocator is excluded but keeps its deposit, which contradicts the T5 design spec. The fix needs a height-gated consensus change; block 56354 is already in the chain unpenalised.
+- **Fleet decision:** `slashing-enabled` stays **off** everywhere until that fix ships and the external audit is done.
+- **Fix (2026-10-14):** node-scala `fix/hotstuff-equivocation-penalty`. `calculatePenalties` now also debits `hotstuffConflicts` voters, for proofs at or above `functionality.hot-stuff-equivocation-penalty-height`. Testnet sets that to 60000 (this branch), above block 56354, so the drill block replays unchanged. Three new unit tests cover it: forfeit at the gate, no forfeit below it, and the block JSON now shows `hotstuffConflicts`. Rollout comes after the 72h soak, with the config and the image in the same Flux-suspended window.
+
+### Task 6.6: 72h soak record (closes runbook §12.1, audit-readiness §8 first box)
+
+> **Closure (2026-10-18):** DONE for image 9283525c (SOAK-2026-10-12.md); the later images run under the 2026-10-18 waiver (Phase 9)
+
+- [x] **Step 1:** Start the clock after Task 3.1 passes with all four on `0346f624`. Log every 6h: height, finalized height, `InvalidStateHash` count (all four), committee size, canary success rate (`gh run list --workflow canary-transaction.yml --limit 24`), any alert fired.
+- [x] **Step 2:** Pass criteria: zero `InvalidStateHash`; finalized-height lag max recorded and < 2 periods; canary ≥ 95% success; all drills (6.2, 6.4) inside the window; no pod restarts other than deliberate.
+- [x] **Step 3:** Write `$INFRA/SOAK-2026-XX-XX.md` from the Soak Log; link from `RUNBOOK-t0-soak-and-t2-audit.md`. (Correction: this does **not** start the 60-day mainnet T0 clock. The runbook's Step 1 says testnet soaks don't count.)
+
+**Result: PASS**, see [SOAK-2026-10-12.md](SOAK-2026-10-12.md). 72h, 2026-10-12T04:15:35Z → 2026-10-15T04:15:35Z, on node-scala `sha256:9283525c…` throughout. Results: 0 InvalidStateHash; max finality lag 4 (Prometheus, full window); canary 301/301; drills 6.2, 6.4 and 6.5 inside the window; no unplanned restarts. Sign-off tag `testnet-final-2026-10-14`.
+
+---
+
+## Phase 7 — Security hygiene
+
+### Task 7.1: Rotate the REST API keys (staged since June, never rolled out)
+
+> **Closure (2026-10-18):** DONE: #193 (all four keys rotated 2026-10-10)
+
+**Files:** infra branch `security/rotate-api-keys` (commit `1141c3a`, unpushed per `HANDOFF.md:281/342`); KeeWeb entries `*_NODE_REST_API_KEY`; `verify-api-keys.yml`.
+
+- [ ] **Step 1:** `cd $INFRA && git branch -a | grep rotate` — if the branch exists locally, rebase onto main; else regenerate 4 keys + hashes (`node/src/main/scala/.../ApiKeyHash` procedure documented in `RUNBOOK-mainnet-edge-and-key-rotation.md`).
+- [ ] **Step 2 ⛔:** Push new hashes via `push-secrets.yml`, roll all four nodes (Flux + `deploy-node-config.yml`), update KeeWeb, then `gh workflow run verify-api-keys.yml`. Expected: 4x `200` with new keys, 4x `403` with old keys.
+- [ ] **Step 3:** Update GitHub env secrets that hold the keys (`GEN0_KEY`, `GEN1_KEY`, `VAL0_KEY` used by `cluster-diagnostics.yml`).
+
+### Task 7.2: Rotate the deploy SSH key (pasted into a chat session 2026-09-02)
+
+> **Closure (2026-10-18):** DONE: deploy SSH key rotated 2026-10-10
+
+- [ ] **Step 1:** `ssh-keygen -t ed25519 -f $BC/deploy_key_testnet.new -C deploy@testnet`; add pubkey to VPS `deploy` user via existing session; `TF_VAR_DEPLOY_SSH_PUBLIC_KEY` in KeeWeb and GitHub; `DEPLOY_SSH_KEY` secret; remove old pubkey from `~/.ssh/authorized_keys`; test `ssh -i deploy_key_testnet.new deploy@66.228.55.154 uptime`.
+- [ ] **Step 2:** `git rm --cached` nothing (keys are untracked at `$BC/deploy_key_testnet*`; confirm with `git ls-files | grep deploy_key` → empty). Delete the old private key file.
+
+### Task 7.3: Remaining audit-report items with no status tag
+
+> **Closure (2026-10-18):** SUPERSEDED: the 2026-10-18 audit register
+
+- [ ] 01 pruning (mainnet 60-node scale) — the node-scala tracking issue is OUT OF SCOPE (operator 2026-09-30): defer; open a tracking issue in node-scala with the report text; not testnet-gating.
+- [ ] 02 exchange-indexer Postgres growth: add a Prometheus rule on `pg_database_size_bytes{datname="bps_testnet"}` growth > X/day and disk-free < 20%; commit with Task 5.1.
+- [ ] 04 over-provisioned compute: revisit after the soak; cost only.
+- [ ] 0c exchange WCAG (2 axe-core checks): DecentralChain issue; not testnet-gating.
+- [ ] 5a faucet rate-limit Redis wiring: covered by Task 4.4 Step 1 (`REDIS_PASSWORD`) — verify `REDIS_URL` set in scanner env, then mark FIXED.
+
+---
+
+## Phase 8 — Ecosystem debt that shows up as red on dashboards
+
+### Task 8.1: matcher nightly Network/Chaos tests (matcher #26, failing since 2026-09-10)
+
+> **Closure (2026-10-18):** SUPERSEDED: register AUD-010 (matcher plan)
+
+- [ ] **Step 1:** `gh run view 34455102525 -R Decentral-America/matcher --log-failed | grep -E "FAILED|\*\*\* |All attempts" | head` → identify the suite. If "All attempts are out"/GC-bound → runner starvation (memory `matcher-dexit-flakiness`): move `@NetworkTests` to a larger runner (`runs-on: ubuntu-latest-8-cores` or self-hosted) in `nightly-network-tests.yml`; do not loosen timeouts. Otherwise treat as a real bug and open a systematic-debugging task.
+- [ ] **Step 2:** One green nightly, then close #26. **2026-09-30:** `nightly-network-tests.yml` now triggers on `v*` tags + `workflow_dispatch` only (no cron), so there is no nightly to go green. #26 is still OPEN and the failing suite was never diagnosed. Do Step 1 on a manual dispatch, then close #26 with that run.
+
+### Task 8.2: Test-debt branches never merged (`docs/test-debt-inventory.md`)
+
+> **Closure (2026-10-18):** SUPERSEDED: register AUD-113 and the per-repo plans
+
+- [ ] **node-scala part OUT OF SCOPE (operator 2026-09-30). matcher part resolved (verified 2026-09-30): no `ignore-triage` branch exists locally or on the remote, `d91766a5f` is not in matcher history, and the `ignore{}` triage landed via matcher PR #21 (`587820f28`, 2026-08-03). The inventory never referenced that branch.** Original: node-scala `test/fix-class-a-ignores` (`d963e5f22d`) and matcher `test/matcher-ignore-triage` (`d91766a5f`): `git branch -a | grep -E "fix-class-a|ignore-triage"`; if present, rebase and PR; if gone, update the inventory to say so.
+- [ ] DEX-982 deprecation window and DEX-1402 WS test: leave as documented; not testnet-gating.
+
+### Task 8.3: Public docs point at the right testnet
+
+> **Closure (2026-10-18):** SUPERSEDED: register AUD-027/029/085-088 (docs plan)
+
+**Files:** `$DOCS/docs/_static/02_decentralchain/tables/025_*.csv`, `026_*.csv`, `028_*.csv` (`matcher.decentralchain.io` → `testnet-matcher.decentralchain.io`), `029_*.csv`, `030_Faucet-Obtaining-Tokens.csv` (TBA → scanner faucet URL), `docs/04_building-apps/03_how-to-guides.md:35,63,79`, `04_wallet-integration.md:17` (`nodes.decentralchain.io` does not resolve → `testnet-node.decentralchain.io`).
+
+- [ ] **Step 1 (2026-10-01: edits DONE in docs PR #19, merged, docs main = dev = `491a264`. data-service, exchange (`testnet.decentral.exchange`, returns 200), matcher, explorer, faucet and the dead `nodes.*` samples are fixed. REMAINING: the 200-check for the data-service, matcher, explorer and faucet hosts, which resolve to the offline Linode VPS. Tick after Phase 0):** Edit; `curl -s -o /dev/null -w '%{http_code}\n' <each URL>` → 200 for every URL in those tables. Commit: `docs: publish live testnet endpoints; fix matcher host and dead nodes.* host`.
+
+---
+
+## Phase 9 — Sign-off under the operator's waiver (evidence recorded 2026-10-18; closes with the `testnet-final-*` tag)
+
+**Decision (operator, 2026-10-18):** sign-off by WAIVER, no re-soak. The 72h soak (SOAK-2026-10-12.md, PASS)
+ran image `9283525c`. The images rolled out after it (node-scala fb4e980 #77 and the 2026-10-18 audit fixes)
+were not re-soaked; the evidence below plus a multi-node node-it run per rollout (register AUD-036) stand in
+for it. The sign-off is the `testnet-final-*` tag on the commit that contains this section, with a GitHub
+Release listing every digest. `testnet-final-2026-10-14` is superseded once the new tag is cut. Evidence below was collected BEFORE the wave-2 (node-scala) and wave-4 rollouts; re-collect it with `phase9_evidence.sh` against the final digests when cutting the tag, and flip the PENDING rows.
+
+Evidence collected 2026-10-18 at height 74871:
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | One digest on all four nodes, identical `/node/version` | DONE | main `ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73`; pods dcc-gen-0-0 ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73 2026-10-15T15:52:57Z; dcc-gen-1-0 ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73 2026-10-15T15:52:58Z; dcc-val-0-0 ghcr.io/decentral-america/node-scala@sha256:8fccecebb65aca05dfc9080bee8e47ca8ccea1eb03e54002ca54624d467ecc73 2026-10-15T15:53:00Z; versions: 4 {"version":"DecentralChain v1.8.0"} |
+| 2 | Main self-heal flags; explicit `slashing-enabled` everywhere | DONE | grep counts dcc.conf / nodes.yaml: 3 / 3 |
+| 3 | `InvalidStateHash` = 0 | DONE since the last rollout; 72h window WAIVED for the post-soak images | main since 2026-10-15T15:53:21.183030181Z: 0; dcc-gen-0-0=0 dcc-gen-1-0=0 dcc-val-0-0=0 |
+| 4 | Features 1-25 + 26 ACTIVATED, none ≥ 27 | DONE | ACTIVATED: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26] max id: 26 |
+| 5 | Committee every period, val-0 present | DONE (criterion updated: the committee is 4, not 3) | `/generators/at/74801`: 4 ['31PmKN', '31RPEK', '31XTtK', '31dLhq'] |
+| 6 | Canary ≥ 95% over 72h; Tier-0 liveness green | DONE | canary 310/310 green in 72h; infra-liveness last 10: success=10 |
+| 7 | Alerts loaded, delivery proven, MainNodeUnreachable/LkeGeneratorsDown present | DONE | 26 rules; True True True (count, MainNodeUnreachable, LkeGeneratorsDown, Watchdog); delivery #186/#189/#208/#211 |
+| 8 | Downstream: BPS ≈ chain, matcher round-trip, DS 200, faucet, balances, URLs, admin-e2e green | DONE except the matcher canary: PENDING (`matcher-canary.yml` ships in the wave-4 PR; needs its one-time asset setup) | BPS lag 0; matcher-canary last 24: matcher-canary.yml not on main yet; DS 200; faucet claim PASS (2026-10-18 live E2E row 1); balances in TOPOLOGY.md; admin-e2e green run 38152087859 2026-10-11T15:38:01Z |
+| 9 | Drills: crash, partition, epoch transition, equivocation + fleet decision | DONE | Soak Log 2026-10-10 / 2026-10-12 / 2026-10-15; fleet decision: slashing stays off (SOAK-2026-10-12.md) |
+| 10 | Bug 2 resolved (Task 6.1) | WAIVED | register AUD-188 |
+| 11 | Security: API keys + SSH key rotated, KeeWeb cleaned, REDIS_PASSWORD in SOPS, canary env secret | DONE except KeeWeb (WAIVED: operator keeps KEEWEB_BACKUP.md as is, AUD-094) | #193; SSH 2026-10-10; REDIS_PASSWORD in SOPS: 1; canary env secret present: true |
+| 12 | Docs reconciled; public docs 200 | DONE | wave-4 PR (AUD-030/084/089/090/091); docs.decentralchain.io 200 |
+| 13 | Working trees clean (DecentralChain, matcher, infra, docs) | PENDING while any count below is non-zero (matcher has local uncommitted changes) | porcelain line counts: DecentralChain=0 matcher=6 infra=0 docs=0 |
+
+---
+
+## Explicitly deferred to stagenet/mainnet (not testnet-gating; listed so nobody re-derives them)
+
+- Reference §7 Phase 2/3: legacy node build (untouched since 2024), stagenet legacy→modern handoff at 10k blocks, storage compatibility, Phase 3 mainnet migration.
+- `hotstuff.authoritative` advisory vs enforcing decision (F-1); external consensus audit; 60-day T0 soak (not started: needs a mainnet-candidate or stagenet chain, per the runbook); mainnet LKE HA (`lke_ha=true`, dedicated CPU, ≥2 pool); gen nodes on separate LKE nodes.
+- HotStuff design item "view = height under Waves-NG" (memory `hotstuff-t2-step5:129`), C1 single-active-view pacemaker, P3 100MB frame cap, E1/P5 defaults.
+- Consensus rule changes SC-575 / SC-580 / SC-695 (network governance via a new feature id).
+- Audit item 01 (pruning), `committedGeneratorsHash` None-acceptance hardening, `maxCommittedGenerators` cap.
+- Waves upstream reporting: permanently internal-only (operator decision).
+- Prometheus federation Newark→LKE; matcher first versioned release; `AGE_SECRET_KEY` for stagenet/mainnet envs; `SENTRY_AUTH_TOKEN` mainnet.
+- `Ecosystem/AUDIT-T2-FINALITY.md` is lost; its ledger is partially reconstructed in memory `hotstuff-t2-step5:276`. Re-create only if the external audit needs it.
+
+---
+
+## Soak Log (append-only; one line per verified checkbox)
+
+| Date (UTC) | Task | Command | Decisive output | Who |
+|---|---|---|---|---|
+| 2026-09-23 | 0 (pre) | `gh run view 35867921158` | 3 LKE workers NotReady; dcc-gen-0/gen-1/val-0 Pending 6d1h | Claude (read-only) |
+| 2026-09-23 | 0 (pre) | `curl $MAIN/blocks/height` | timeout; VPS no ping | Claude |
+| 2026-09-23 | Ground truth | `git merge-base --is-ancestor 31d4410ba3 testnet-relaunch-20260904` | true (carry-fee fix in both live images) | Claude |
+| 2026-09-30 | Status | `curl` testnet-node / mainnet-node / grafana.testnet | no connection (Linode still offline) | Claude |
+| 2026-09-30 | Status (new) | `dig +short A decentralchain.io decentralscan.com @1.1.1.1` | empty for both (apex DNS missing); whois: registered to 2027 | Claude |
+| 2026-09-30 | Status | `gh run list -R Decentral-America/DecentralChain -b main` @ `b940c744a` | CI, CodeQL, RIDE CI, Trivy: success | Claude |
+| 2026-09-30 | Status | `pnpm audit --audit-level=moderate --prod` on DecentralChain main | No known vulnerabilities found | Claude |
+| 2026-09-30 | Status | `gh api repos/Decentral-America/docs/pages` + `curl -sI docs.decentralchain.io/en/main/` | build_type=workflow, https_enforced=true; 200, last-modified 2026-09-30 | Claude |
+| 2026-09-30 | 1.1 Step 5 | `git ls-tree origin/main .github/workflows/` (DecentralChain) | publish-maven-package.yml present; publish-protobuf-schemas.yml absent | Claude |
+| 2026-09-30 | 1.1 Step 6 | `git status` / `rev-list origin/main..HEAD` (matcher, docs) | 0 dirty, 0 ahead | Claude |
+| 2026-09-30 | 8.2 (matcher) | `git branch -a \| grep ignore-triage` (matcher) | no branch; triage in PR #21 `587820f28` | Claude |
+| 2026-09-30 | 1.1 Step 4 + merges | `gh pr view 117/169`; `git rev-parse origin/main origin/dev` | both MERGED; DecentralChain dev=main `38e405f5f`, infra dev=main `62cbd74` | operator + Claude |
+| 2026-10-01 | 8.3 (edits) | `gh pr view 19 -R Decentral-America/docs`; `curl -o /dev/null -w %{http_code} https://testnet.decentral.exchange/` | MERGED; exchange 200; other testnet hosts resolve to 66.228.55.154 (offline) | Claude |
+| 2026-10-01 | Offline prep | `gh pr view 171 -R Decentral-America/infra` | 13 commits; digest-parity OK; tofu validate OK; LKE liveness kept REST (restart-storm risk) | Claude |
+| 2026-10-01 | Security | `git show origin/main:.github/workflows/push-secrets.yml` + matcher `AccountStorage.load` | MATCHER_SEED never written; in-mem seed "" → KeyPair(empty) | Claude |
+| 2026-10-04 | Recovery | heights via REST / kubectl exec | main 33482 (fin 33382), gen-0 22894, gen-1 9927, val-0 8958, all syncing; liveness green | Claude |
+| 2026-10-04 | 3.1 Step 4 | `grep -c InvalidStateHash` (main docker logs 12h; gen-0/gen-1/val-0 kubectl logs 12h) | 0 / 0 / 0 / 0 | Claude |
+| 2026-10-04 | 3.1 Steps 1-2 | `/node/version` x4; main image `0346f6240651`, LKE pods `sha256:0346f624…` | all `DecentralChain v1.8.0`, one digest | Claude |
+| 2026-10-04 | 3.2 | `curl $MAIN/activation/status` | 26 features ACTIVATED (1–26), none ≥ 27, height 34239 | Claude |
+| 2026-10-04 | 2.2 / 2.5 | `grep` on the live `/opt/dcc/config/node-testnet/dcc.conf` | `self-commit-to-generation = yes`, `peer-stall-threshold = 900`, `slashing-enabled = no` | Claude |
+| 2026-10-04 | 4.1 Step 3 | `select max(height) from blocks_microblocks` (bps_testnet) vs `$MAIN/blocks/height` | 34239 = 34239 (BPS caught up) | Claude |
+| 2026-10-04 | 6.x observation | main `docker logs` HotStuff | T2 stalled 15:12→15:42 UTC at 33997; WATCHDOG reset, then committed 34102 and stayed steady (111 commits / 2 resets in 90 min). Follows today's restarts; watch during the soak | Claude |
+| 2026-10-10 | 9 (E2E) | `gh run view 38020563749` (admin-e2e full) | 213/217: chained txs (transfer from just-funded account, invoke/SetScript after setup) accepted with 200 and then lost | Claude |
+| 2026-10-10 | 9 (E2E) | compare `MicroBlock(X -> Y) appended` log order vs `/blocks/headers/at/H` `.reference` | 4/18 key blocks orphaned the last microblock; UTX cleanup evicted dependents of the re-queued priority txs | Claude |
+| 2026-10-10 | 9 (E2E) | node-scala #68/#70/#71/#72/#73 merged, staggered rollout (infra #199-#203) | all 4 nodes `node-scala@sha256:e2806d3c…` (b07339c), finality lag 3 after each step, Flux no re-roll | Claude |
+| 2026-10-11 | 9 (E2E) | `gh run view 38097076161 / 38097329352 / 38097581676` | 217/217 three consecutive full runs; UTX watcher max wait 17s (was 356s); infra #142 closed | Claude |
+| 2026-10-10 | 2 (val-0) | `curl $MAIN/generators/at/50214` | 4 committee members incl. val-0 31XTtK5S… (self-commit 2PnG1nPg…); infra #153 closed | Claude |
+| 2026-10-10 | 8 (BPS) | DecentralChain #119/#120 deployed; main node restarted | BPS restarts=0 across node restart, synced to tip; logs at info | Claude |
+| 2026-10-10 | 8 (CI) | node-scala #69 genesis-replay dispatch `38048452814` | peer resolved via DNS (50.116.30.244); reached height 3734 (≥2500) | Claude |
+| 2026-10-10 | Open | node-it run history (`gh run list --workflow node-it.yml`) | OneNodeFinalization "finalization activated and works" / FourNodeHotStuff "finalizes on every node" intermittent on main since 2026-07-30; separate investigation | Claude |
+| 2026-10-12 | 6.5 drill | `EquivocationDrill equivocate` + node logs + `/generators/at` | detected on 4/4 nodes, proof in block 56354 accepted by all, offender excluded from h56355; deposit NOT forfeited (gap) | Claude |
+| 2026-10-15 | 6.4 partition (in window) | iptables on main vs LKE node IP, 04:22–04:32Z, systemd-run auto-heal | fin frozen 63442 during; all 4 at 63454 within 30s of heal, same id at 63458, lag 3; 0 ISH, 0 restarts | Claude |
+| 2026-10-15 | 6.6 soak | full-window `grep InvalidStateHash`; Prometheus `max_over_time(dcc_finality_lag[72h])`; canary runs in window | 0 / max 4 (avg 3.01) / 301/301: PASS, SOAK-2026-10-12.md | Claude |
+| 2026-10-15 | 6.5 fix rollout | node-scala #77 (fb4e980) + infra #213 (penalty height 60000), image `sha256:8fccecebb65a…` | all 4 nodes on the digest with `hot-stuff-equivocation-penalty-height = 60000` loaded; 0 ISH; same block id at 64801; committee 4; finality lag max 4. NOT staggered: the `apps` suspend was stripped by the `flux-system` reconcile, so the 3 LKE pods rolled at once at 15:52:56Z; chain unaffected. Procedure fixed in runbooks/staggered-node-rollout.md | Claude |
+| 2026-10-18 | 9 (closure) | `phase9_evidence.sh` (infra wave-4 plan, Task 22) | Phase 9 evidence recorded under the waiver; PENDING rows listed in the Phase 9 table | jourlez |
+
+---
+
+## Appendix A — superseded status sections (history, kept verbatim)
+
+Superseded by the 2026-10-18 audit register and the Phase 9 closure above. Open items here were either closed (ticked with evidence) or migrated to register rows.
 
 ## RECOVERY 2026-10-03: Linode deleted everything for non-payment (READ FIRST)
 
@@ -56,16 +766,16 @@ Units: 1 DCC = 10^8. Treasury and matcher hold **10M DCC** each, main 40.5M, gen
 Already done but unticked above: #174 merged via #175; `GRAFANA_ADMIN_PASSWORD` in SOPS, monitoring deployed, `admin:admin` → 401.
 
 **Launch blockers:**
-- [ ] B1 **Committee never reaches 3; every third period is empty.** `/generators/at`: 33701 ∅, 34001 ∅, 34201 {gen-0}, 34301 ∅. Self-commit is rejected at the boundary (`Expected the next period start height (34201), got 34301`), and commit txs don't propagate: main's 34301 commit stayed in main's UTX while gen-0's UTX was empty. The cause is node-side, in node-scala, which is out of scope. ⛔ operator decision needed. Adding gen-2 doesn't help until this is fixed.
-- [ ] B2 **T2 finality stalls about 30 min in every empty-committee period**, roughly every 2.5h: 12:40→13:10, 15:12→15:42, and again from 17:44 (finalized 34299 while height was 34354). The Soak Log line 707 "follows today's restarts" is wrong. `HotStuffCommitNotAdvancing` (30m + for 30m) can't catch it.
-- [ ] B3 **Main's miner crashes:** 137× `NoSuchMethodError FinalizationVoting$.of` from the stale `plugins/testnet/grpc.jar` (infra `467339f`, 2026-06-29), which vendors old `io.decentralchain.protobuf` classes ahead of the node jar. `update-node-image.yml:41-50` re-copies it on every deploy. Rebuild it from the current matcher without the vendored protobuf.
-- [ ] B4 **val-0 can never generate:** it isn't in genesis, its wallet key is wrong (#153), and it makes 0 self-commit attempts. ⛔ Decide: fund it plus fix its key, or redefine the committee as main/gen-0/gen-1(/gen-2) and edit the Phase 9 box.
-- [ ] B5 **SECURITY: the treasury seed is public.** `infra/RELAUNCH-20260904.md:126` (public repo, since `2f2c5b9`) contains the literal seed, and its address holds 10M DCC (about 10% of stake). Move the funds to a new KeeWeb-only seed (⛔ operator signs). Also redact lines 122-125 and 549 (the main base64 value plus mnemonic prefixes for gen-0, gen-1 and the matcher) and treat those seeds as weakened.
-- [ ] B6 **SECURITY: the matcher runs on `KeyPair(empty)`.** Pubkey `2eEUvy…`, address `31HrVN…`, balance 0, so the DEX can't settle (0 exchange txs on the chain). `DEFAULT_MATCHER` in data-service/scanner is the empty key too. Fix: `seed-in-base-64` = Base64(Keccak256(Blake2b256(00000000‖utf8(mnemonic)))) (= `dcc-dex-cli generate-account-seed --account-nonce 0`), verify it derives `31VMNV…`, re-run push-secrets so `DEFAULT_MATCHER` refreshes, restart data-service. **First** delete or update matcher repo-level `TESTNET_DEPLOY_*` secrets (2026-06-19, old host), which override the org secret.
-- [ ] B7 **No alert has ever been delivered.** `alertmanager.yml` reads `/etc/alertmanager/github_token`, which compose never mounts, and `alert-webhook` has no `GITHUB_TOKEN` (unhealthy, 503). The only receiver is GitHub; there is no email. Fix both, then test-fire (5.1).
+- [x] B1 (closed: committee of 4 every period since 2026-10-10 (Soak Log 2026-10-10 `generators/at/50214`; 72h soak 2026-10-12..15)) **Committee never reaches 3; every third period is empty.** `/generators/at`: 33701 ∅, 34001 ∅, 34201 {gen-0}, 34301 ∅. Self-commit is rejected at the boundary (`Expected the next period start height (34201), got 34301`), and commit txs don't propagate: main's 34301 commit stayed in main's UTX while gen-0's UTX was empty. The cause is node-side, in node-scala, which is out of scope. ⛔ operator decision needed. Adding gen-2 doesn't help until this is fixed.
+- [x] B2 (closed: HotStuff hand-off fixed in node-scala #68-#77; 72h soak max finality lag 4) **T2 finality stalls about 30 min in every empty-committee period**, roughly every 2.5h: 12:40→13:10, 15:12→15:42, and again from 17:44 (finalized 34299 while height was 34354). The Soak Log line 707 "follows today's restarts" is wrong. `HotStuffCommitNotAdvancing` (30m + for 30m) can't catch it.
+- [x] B3 (closed: plugin jars rebuilt, shadowing check in CI and in update-node-image (2026-10-04)) **Main's miner crashes:** 137× `NoSuchMethodError FinalizationVoting$.of` from the stale `plugins/testnet/grpc.jar` (infra `467339f`, 2026-06-29), which vendors old `io.decentralchain.protobuf` classes ahead of the node jar. `update-node-image.yml:41-50` re-copies it on every deploy. Rebuild it from the current matcher without the vendored protobuf.
+- [x] B4 (closed: val-0 funded 20M and committing (Soak Log 2026-10-10)) **val-0 can never generate:** it isn't in genesis, its wallet key is wrong (#153), and it makes 0 self-commit attempts. ⛔ Decide: fund it plus fix its key, or redefine the committee as main/gen-0/gen-1(/gen-2) and edit the Phase 9 box.
+- [x] B5 (accepted: testnet seeds are public by operator decision 2026-10-06 (register AUD-197)) **SECURITY: the treasury seed is public.** `infra/RELAUNCH-20260904.md:126` (public repo, since `2f2c5b9`) contains the literal seed, and its address holds 10M DCC (about 10% of stake). Move the funds to a new KeeWeb-only seed (⛔ operator signs). Also redact lines 122-125 and 549 (the main base64 value plus mnemonic prefixes for gen-0, gen-1 and the matcher) and treat those seeds as weakened.
+- [x] B6 (closed: infra #184 (2026-10-10), matcher key BEtB5b2k… / 31VMNV…) **SECURITY: the matcher runs on `KeyPair(empty)`.** Pubkey `2eEUvy…`, address `31HrVN…`, balance 0, so the DEX can't settle (0 exchange txs on the chain). `DEFAULT_MATCHER` in data-service/scanner is the empty key too. Fix: `seed-in-base-64` = Base64(Keccak256(Blake2b256(00000000‖utf8(mnemonic)))) (= `dcc-dex-cli generate-account-seed --account-nonce 0`), verify it derives `31VMNV…`, re-run push-secrets so `DEFAULT_MATCHER` refreshes, restart data-service. **First** delete or update matcher repo-level `TESTNET_DEPLOY_*` secrets (2026-06-19, old host), which override the org secret.
+- [x] B7 (closed: #185/#187/#188, alerts delivered and auto-closed) **No alert has ever been delivered.** `alertmanager.yml` reads `/etc/alertmanager/github_token`, which compose never mounts, and `alert-webhook` has no `GITHUB_TOKEN` (unhealthy, 503). The only receiver is GitHub; there is no email. Fix both, then test-fire (5.1).
 - [x] ~~B8 No backups~~ (operator: not wanted for testnet). The `pg-backup.sh` cron dumps the nonexistent `dcc_testnet` to an unwritable log; `BACKUP_OBJ_BUCKET=""`; Linode backups are off; nothing off-account. 10-01 proved that peer sync alone doesn't survive an account-level loss.
-- [ ] B9 **Explorer + faucet down publicly:** `testnet.decentralscan.com` still points at 66.228.55.154 (Namecheap). The cert renewal window opens about 10-06 and the cert expires 11-05. The faucet was likely never funded on this chain; the canary is at 0 (#148, #177).
-- [ ] B10 **Off-box liveness unreliable:** GitHub dropped the crons. `infra-liveness` (*/30) ran on schedule once in 7.5h, and the canary (*/15) runs about every 4-6h. Needs an external uptime checker.
+- [x] B9 (closed: testnet.decentralscan.com → 50.116.30.244, Let's Encrypt cert valid to 2027-01-06 (2026-10-18 audit)) **Explorer + faucet down publicly:** `testnet.decentralscan.com` still points at 66.228.55.154 (Namecheap). The cert renewal window opens about 10-06 and the cert expires 11-05. The faucet was likely never funded on this chain; the canary is at 0 (#148, #177).
+- [x] B10 (closed: LKE CronJob `liveness-trigger` dispatches infra-liveness every 30 min and canary every 15 min) **Off-box liveness unreliable:** GitHub dropped the crons. `infra-liveness` (*/30) ran on schedule once in 7.5h, and the canary (*/15) runs about every 4-6h. Needs an external uptime checker.
 
 **Root causes found 2026-10-05 (live logs + every block 34401–37766; no node-scala source read). Evidence: session scratchpad `eaa7581d…/scratchpad/` (blocks.json, flog/, node.log, matcher.log, cycles.txt):**
 - [ ] RC1 (B1) **Self-commit, three combined defects.** (a) A node only ever mines its own commit, in its own block: all 29 type-19 txs, tx ts = block ts, never relayed, UTX always 0. (b) Off-by-one: while forging x01 (parent x00) the miner targets x01+100, while the validator expects x01 (`Expected the next period start height (x01), got x01+100`), and it **never retries for the rest of the period**: no commit has ever landed at +1, landed offsets are +2..+29. Whoever forges x01 burns its only attempt, which gives the 2→1→0 committee cycle. (c) Main's blocks crash on the stale jar (RC3), so its successful commits die with the block. Code questions: is the target from h+1 vs the validator's parent height? What marks the period "attempted"? Is the commit injected into own blocks only, never broadcast?
@@ -217,637 +927,3 @@ Validated locally: pyhocon, `tofu validate`, kubeconform, promtool `check rules`
 - [ ] **Stale alert text.** The `CommitteeGapUpcoming` description still tells on-call to run the deleted commit-generator workflows.
 - [ ] **Same-box monitoring.** The VPS's own Prometheus can't page about a whole-VPS outage. The off-box `infra-liveness.yml` (Task 0.2) covers that.
 
-## Global Constraints
-
-- **Every node on a chain runs the same binary.** Four digests (VPS pulled imageID + 3 pod imageIDs) must be byte-identical before any chain step is called verified (`RELAUNCH-20260904.md` §5.3, decision D6).
-- **Never auto-clear blacklist; suspension only.** `peer-stall-threshold` heals suspensions only (`PeerDatabaseImpl.scala:66-74` rationale).
-- **`slashing-enabled` stays `no` fleet-wide** until one node has exercised a live equivocation drill (audit F-1, D4).
-- **No re-genesis unless Phase 3 proves the current chain unrecoverable.** PVCs are `Bound` and `linode-block-storage-retain`; the chain is expected to resume.
-- **Evidence before assertions.** Every "verified" checkbox names the command and pastes the decisive output line into the Soak Log (§ at end of this file).
-- **No `gh run watch`.** Poll with `gh run view <id> --json status,conclusion` at ≥45s intervals (memory: GitHub REST budget).
-- **Never touch** the standalone `exchange` repo, `dcc-report`, or (since 2026-09-30) node-scala (memory: never-touch repos).
-- **Commit authorship:** sole author jourlez, no AI trailers.
-- **Secrets never in chat or plan.** Reference KeeWeb entry names only.
-
-Repo roots used below:
-`BC=/Users/jourlez/Documents/Code/Blockchain`, `INFRA=$BC/Ecosystem/infra`, `NODE=$BC/Ecosystem/node-scala`, `MATCHER=$BC/Ecosystem/matcher`, `DCC=$BC/Ecosystem/DecentralChain`, `DOCS=$BC/Ecosystem/docs`.
-Main node REST: `MAIN=https://testnet-node.decentralchain.io`. API keys: KeeWeb `MAIN_NODE_REST_API_KEY`, `GEN_0_NODE_REST_API_KEY`, `GEN_1_NODE_REST_API_KEY`, `VAL_0_NODE_REST_API_KEY`.
-
----
-
-## Phase 0 — Bring the infrastructure back (operator, today)
-
-### Task 0.1: Linode account and power state ⛔
-
-**Files:** none (Linode console). Record results in the Soak Log.
-
-- [ ] **Step 1 ⛔:** Log in to Linode console. Check Billing → any unpaid invoice / suspended state. Pay or escalate. Record the invoice date + amount in the Soak Log (this is the second occurrence; the first was 2026-07-20).
-- [ ] **Step 2:** Linodes → instance behind `linode_instance.backend` (`INFRA/terraform/main.tf:107`). Note power state. If `Offline`, Power On. Expected: status `Running` within ~2 min.
-- [ ] **Step 3:** Kubernetes → cluster `dcc-peer-testnet`. Node pool: 3 nodes. If nodes show offline, use "Recycle" only if they do not come back within 10 min of the account being unblocked (recycling re-images; PVCs survive because they are block-storage with `retain`).
-- [ ] **Step 4:** From workstation:
-```bash
-ping -c 3 66.228.55.154
-curl -s -m 10 $MAIN/node/version
-curl -s -m 10 $MAIN/blocks/height
-```
-Expected: ping replies; version JSON; height ≥ the last height before 2026-09-17 (unknown; must be > 2640 since the chain ran 13 days at ~1 block/min — if it is ≤ 2640 stop and go to Task 3.1 immediately).
-- [ ] **Step 5:** Dispatch read-only diagnostics and wait for completion:
-```bash
-cd $INFRA && gh workflow run cluster-diagnostics.yml -f network=testnet -f roll=false
-# then, ≥45s later, repeat until completed:
-gh run list -R Decentral-America/infra --workflow cluster-diagnostics.yml --limit 1 --json databaseId,status,conclusion
-gh run view <id> -R Decentral-America/infra --log | grep -E "=== (NODES|PODS)|height:|version:" -A0
-```
-Expected: 3 nodes `Ready`; `dcc-gen-0-0`, `dcc-gen-1-0`, `dcc-val-0-0` `1/1 Running`; three `height:` lines non-empty and within 2 blocks of each other and of `$MAIN/blocks/height`.
-- [ ] **Step 6:** Paste the decisive lines into the Soak Log under "Phase 0".
-
-### Task 0.2: Prevent the silent-outage class
-
-**Files:**
-- Modify: `INFRA/terraform/main.tf:107-160` (`linode_instance.backend`)
-- Create: `INFRA/.github/workflows/infra-liveness.yml`
-- Modify: `INFRA/.github/workflows/canary-transaction.yml:5-17` (doc comment) — no logic change
-
-Why: nothing paged anyone for 6 days. The canary was already red for an unrelated reason (0 balance), so its red→red transition on 2026-09-17 carried no signal. Drift-detect ignores power state. Healthchecks only test REST liveness.
-
-- [ ] **Step 1:** Add power-state assertion to tofu so drift-detect flags an Offline instance:
-```hcl
-# INFRA/terraform/main.tf inside resource "linode_instance" "backend"
-  booted = true
-```
-Run `cd $INFRA/terraform && tofu validate`. Expected: `Success! The configuration is valid.`
-- [ ] **Step 2:** Create a scheduled liveness workflow that is independent of wallet balance:
-```yaml
-# INFRA/.github/workflows/infra-liveness.yml
-name: Infra Liveness (Tier 0)
-on:
-  schedule:
-    - cron: '*/30 * * * *'
-  workflow_dispatch:
-permissions:
-  contents: read
-  issues: write
-jobs:
-  probe:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Main node height advances
-        id: main
-        run: |
-          set -euo pipefail
-          H1=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
-          sleep 150
-          H2=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
-          echo "h1=$H1 h2=$H2"
-          test "$H2" -gt "$H1" || { echo "::error::height did not advance ($H1 -> $H2)"; exit 1; }
-      - name: LKE nodes Ready
-        env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-        run: |
-          set -euo pipefail
-          CID=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" https://api.linode.com/v4/lke/clusters | jq -r '.data[] | select(.label=="dcc-peer-testnet") | .id')
-          NOTREADY=$(curl -sf -H "Authorization: Bearer $LINODE_TOKEN" "https://api.linode.com/v4/lke/clusters/$CID/pools" | jq '[.data[].nodes[] | select(.status!="ready")] | length')
-          echo "not-ready pool nodes: $NOTREADY"
-          test "$NOTREADY" -eq 0
-      - name: Open or update alert issue on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TITLE="[ALERT] InfraLiveness: testnet unreachable or not advancing"
-          N=$(gh issue list --search "$TITLE in:title" --state open --json number -q '.[0].number')
-          BODY="Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [ -z "$N" ]; then gh issue create --title "$TITLE" --body "$BODY"; else gh issue comment "$N" --body "$BODY"; fi
-```
-Note the `LINODE_TOKEN` secret already exists (used by `cluster-diagnostics.yml:36`). The `issues: write` permission is required for the alert step.
-- [ ] **Step 3:** Validate YAML locally: `cd $INFRA && python3 -c 'import yaml,sys; yaml.safe_load(open(".github/workflows/infra-liveness.yml"))' && echo OK`. Expected: `OK`.
-- [ ] **Step 4:** Commit on a branch, open PR, merge after CI green:
-```bash
-cd $INFRA && git checkout -b feat/infra-liveness-tier0
-git add terraform/main.tf .github/workflows/infra-liveness.yml
-git commit -m "feat(monitoring): Tier-0 infra liveness probe independent of wallet balance; assert VPS booted in tofu"
-git push -u origin feat/infra-liveness-tier0 && gh pr create --fill
-```
-- [ ] **Step 5:** After merge, dispatch once and confirm green: `gh workflow run infra-liveness.yml` then poll `gh run view`. Expected: `completed success`.
-- [ ] **Step 6:** Apply tofu (⛔ operator, because `provision.yml` is a live apply): `gh workflow run provision.yml -f action=apply -f network=testnet` (check the exact input names at `INFRA/.github/workflows/provision.yml` first). Expected plan: the 3 in-place changes already reported by drift-detect (firewall x2, LKE version) plus `booted`. Nothing destroyed. If the plan shows anything `to destroy`, abort.
-
----
-
-## Phase 1 — Repository hygiene and stale-doc reconciliation (no chain impact)
-
-### Task 1.1: Resolve uncommitted working trees
-
-**Files:** four repos, all currently dirty.
-
-- [ ] **Step 1 ⛔ operator (2026-09-30: the auto-mode classifier blocks the restore/mv/rm for Claude; still uncommitted, `git status` shows the 4 `D` entries):** `$BC` root — four Ecosystem docs deleted uncommitted: `Ecosystem/STATUS.md` (2022 lines, canonical dashboard), `HANDOFF.md`, `INCIDENT-GEN0-PEERS.md`, `DEPLOY.md` (moved to `infra/DEPLOY.md`). Decide: restore `STATUS.md`/`HANDOFF.md`/`INCIDENT-GEN0-PEERS.md` and mark them ARCHIVED (their still-open rows are enumerated in Phase 7/8 of this plan, so nothing is lost), or commit the deletion with a message that names this plan as the successor. Recommended: archive.
-```bash
-cd $BC && git checkout -- Ecosystem/STATUS.md Ecosystem/HANDOFF.md Ecosystem/INCIDENT-GEN0-PEERS.md
-mkdir -p Ecosystem/archive && git mv Ecosystem/STATUS.md Ecosystem/archive/STATUS-2026-08-04.md && git mv Ecosystem/HANDOFF.md Ecosystem/archive/HANDOFF-2026-08-04.md && git mv Ecosystem/INCIDENT-GEN0-PEERS.md Ecosystem/archive/INCIDENT-GEN0-PEERS-2026-08-12.md
-git rm -q Ecosystem/DEPLOY.md   # lives at Ecosystem/infra/DEPLOY.md
-git add TESTNET-FINAL-PLAN-2026-09-23.md
-git commit -m "docs: archive STATUS/HANDOFF/INCIDENT dashboards, drop duplicate DEPLOY.md, add testnet final launch plan"
-```
-- [ ] **Step 2 — OUT OF SCOPE (node-scala, operator 2026-09-30):** `$NODE` (branch `fix/netty-cve-2026-75595`, already merged as PR #62): commit the staged workflow archive + the two untracked plan docs, then delete the local branch.
-```bash
-cd $NODE && git checkout main && git pull -q && git checkout -b chore/archive-promote-vps-and-plans
-git add .github/archived-workflows/README.md .github/workflows/promote-vps-image.yml .github/archived-workflows/promote-vps-image.yml docs/superpowers/plans/2026-09-12-inprocess-peer-stall-detection.md docs/superpowers/plans/2026-09-12-inprocess-self-commit-generation.md
-git commit -m "chore: archive promote-vps-image workflow; commit plans for merged PRs #60/#61"
-git push -u origin HEAD && gh pr create --fill
-```
-- [ ] **Step 3 — OUT OF SCOPE (node-scala, operator 2026-09-30):** `$NODE`: bring `dev` up to `main` (14 commits behind): `git checkout dev && git merge --ff-only origin/main && git push`. Expected: `Fast-forward`.
-- [x] **Step 4 (done 2026-09-30 via infra PR #169, merged):** `$INFRA` (branch `chore/archive-oneoff-diagnostics`): commit `RUNBOOK-t0-soak-and-t2-audit.md`, gitignore `monitoring/__pycache__/`. **2026-09-30:** that branch's only commit (`2df0331`) is already on main. Runbook + gitignore are in **infra PR #169**; tick this box once it merges.
-```bash
-cd $INFRA && echo "monitoring/__pycache__/" >> .gitignore
-git add .gitignore RUNBOOK-t0-soak-and-t2-audit.md && git commit -m "docs: commit T0-soak/T2-audit runbook; ignore pycache" && git push -u origin HEAD && gh pr create --fill
-```
-- [x] **Step 5 (verified 2026-09-30: `publish-maven-package.yml` on DecentralChain main, `publish-protobuf-schemas.yml` gone; local checkout on main, clean):** `$DCC` (branch `chore/archive-unused-workflows`): the staged deletion of `publish-protobuf-schemas.yml` plus untracked `publish-maven-package.yml` is a half-done refactor. Finish or revert; do not leave it. Run `pnpm -w lint` (or the repo's CI command per `README`) and open a PR. Expected: CI green.
-- [x] **Step 6 (verified 2026-09-30: matcher and docs on main, 0 dirty, 0 ahead):** `$MATCHER`, `$DOCS`: clean; nothing to do.
-
-### Task 1.2: Correct stale statements (one commit per repo)
-
-**Files:**
-- Modify: `$BC/CONSENSUS-BUG-INVESTIGATION-REFERENCE.md:109`, `:390-393`
-- Modify: `$INFRA/RELAUNCH-20260904.md:3`, `:321-323`, `:344-346`, `:541-551`, `:642`, `:663`, `:797`
-- Modify: `$NODE/docs/hotstuff-audit-readiness.md:9`, `:319`
-- Modify: `$INFRA/.github/archived-workflows/README.md` (add the three crons retired in `849148d`)
-- Modify: `$NODE/docs/upstream-reports/waves-committee-statehash-timing-bug.md:126-127`
-
-- [ ] **Step 1:** Reference doc: append to §13 "Not yet done" paragraph: `UPDATE 2026-09-23: deployed. Both live images (tag testnet-relaunch-20260904 = sha256:b0d559cf…, and main@2cfdafe860 = sha256:0346f624…) contain 31d4410ba3 (verified with git merge-base --is-ancestor). What is NOT yet done is live observation past height 2640/3325 with zero InvalidStateHash — tracked in TESTNET-FINAL-PLAN-2026-09-23.md Phase 3.` Same one-liner at §8 line 109.
-- [ ] **Step 2:** Runbook header line 3: replace `DRAFT / NOT EXECUTED` with `EXECUTED 2026-09-04 through §7 (genesis, config, image, wipe, restart). §8–§14 NOT executed; superseded by ../../TESTNET-FINAL-PLAN-2026-09-23.md Phases 2–6.` Fix §5.1/§5.2 to state the actual two digests and that unification is Task 2.1. Replace every "PR #152 open" with "PR #152 merged 2026-09-04 (c3c44b9)". Replace line 642's "does not exist on main today" with "exists at monitoring/alerts.yml:59".
-- [ ] **Step 3 — OUT OF SCOPE (file lives in node-scala, operator 2026-09-30):** Audit-readiness: line 319 → "published 2026-09 (HTTP 200 on Central for 1.6.6 protobuf-src); node-scala resolves it since 17b87fb047". Line 9: bump the baseline SHA to `2cfdafe860` and list the HotStuff-touching commits since `9c49632398` (`git log --oneline 9c49632398..2cfdafe860 -- node/src/main/scala/com/decentralchain/consensus node/src/main/scala/com/decentralchain/state/FinalizationState.scala`).
-- [ ] **Step 4:** Archived-workflows README: add a "2026-09-21 round" section listing `auto-commit-generators.yml`, `commit-generators-hotstuff.yml`, `peer-watchdog.yml`, replacement = node-scala PR #60/#61 flags, and the explicit sentence "main node coverage closed by TESTNET-FINAL-PLAN Task 2.2".
-- [ ] **Step 5 — OUT OF SCOPE (file lives in node-scala, operator 2026-09-30):** Waves report doc lines 126-127: "Decision 2026-08-30: permanently internal-only (operator declined external reporting)."
-- [ ] **Step 6:** Commit each repo: `docs: reconcile stale status claims against 2026-09-23 verified state`.
-
----
-
-## Phase 2 — Make the four nodes identical and self-healing (config, then rollout)
-
-### Task 2.1: One digest for all four nodes
-
-**Files:**
-- Modify: `$INFRA/.github/workflows/update-node-image.yml:43`, `deploy-node-config.yml:61`, `restart-host-network.yml:48` (VPS refs, currently `b0d559cf…`)
-- Read: `$INFRA/clusters/testnet/apps/nodes.yaml:526,654,771` (LKE refs, `0346f624…`)
-
-Decision: converge on `sha256:0346f62406518a4e9ecc8414250a03e1cf770bb8f9aeefff294c302274a9a61a` (main@`2cfdafe860`, includes self-commit + peer-stall + netty fix). Nothing newer is on `main`.
-
-- [ ] **Step 1:** Replace the three VPS references:
-```bash
-cd $INFRA && git checkout -b fix/unify-node-digest-0346f624
-sed -i '' 's/b0d559cf4a1ead5a1ae353646176147dc84eb2a3feb6fe2eb13d40c9e0e92098/0346f62406518a4e9ecc8414250a03e1cf770bb8f9aeefff294c302274a9a61a/g' .github/workflows/update-node-image.yml .github/workflows/deploy-node-config.yml .github/workflows/restart-host-network.yml
-grep -c 0346f624 .github/workflows/update-node-image.yml .github/workflows/deploy-node-config.yml .github/workflows/restart-host-network.yml clusters/testnet/apps/nodes.yaml
-```
-Expected: `1 1 1 3` (one per workflow, three in nodes.yaml).
-- [ ] **Step 2:** Add a CI guard so the four refs can never diverge again. Create `$INFRA/scripts/check-digest-parity.sh`:
-```bash
-#!/usr/bin/env bash
-# Fails if the node-scala testnet image digest differs between the LKE manifest and the VPS workflows.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-LKE=$(grep -oE 'node-scala@sha256:[0-9a-f]{64}' clusters/testnet/apps/nodes.yaml | sort -u)
-VPS=$(grep -ohE 'node-scala@sha256:[0-9a-f]{64}' .github/workflows/update-node-image.yml .github/workflows/deploy-node-config.yml .github/workflows/restart-host-network.yml | sort -u)
-echo "LKE: $LKE"; echo "VPS: $VPS"
-[ "$(printf '%s\n%s\n' "$LKE" "$VPS" | sort -u | wc -l | tr -d ' ')" = "1" ] || { echo "::error::node-scala digest differs between LKE and VPS"; exit 1; }
-```
-`chmod +x scripts/check-digest-parity.sh && ./scripts/check-digest-parity.sh`. Expected: two identical lines, exit 0. Add a step invoking it to `.github/workflows/ci.yml`.
-- [ ] **Step 3:** Commit + PR: `fix(testnet): unify node-scala digest across VPS workflows and LKE manifest; add parity check`.
-- [ ] **Step 4 ⛔ (rollout, main node):** after Task 2.2's config lands, run `gh workflow run update-node-image.yml -f network=testnet` (verify input names in the file). Then:
-```bash
-ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker inspect node-scala-testnet --format "{{.Image}} {{index .RepoDigests 0}}"'
-```
-Expected: contains `0346f624…`.
-
-### Task 2.2: Main node gets the in-process self-heal flags
-
-**Files:**
-- Modify: `$INFRA/node-config/testnet/dcc.conf` (`miner {}` block near line 146 where `quorum = 0` lives; `network {}` block near line 115-119 where `enable-blacklisting = no` lives)
-- Reference: `$NODE/node/src/main/resources/application.conf:167` (`peer-stall-threshold = 900` default semantics), `:253` (`self-commit-to-generation = no`)
-
-Design note (from `2026-09-12-inprocess-peer-stall-detection.md:16`): main has `known-peers = []` and `peers-exchange = no`, so the detector must not log an alarm when there are no candidates; the code gates the log on "something was actually cleared" (`894f99cc5d`). Safe to enable.
-
-- [ ] **Step 1:** Edit `dcc.conf`:
-```hocon
-  miner {
-    # ...existing keys (quorum = 0 etc.)...
-    self-commit-to-generation = yes
-  }
-  network {
-    # ...existing keys (enable-blacklisting = no, known-peers = [])...
-    peer-stall-threshold = 900
-  }
-```
-- [ ] **Step 2:** Validate HOCON parses and the keys land in the right blocks:
-```bash
-pip3 install -q pyhocon
-python3 - <<'EOF'
-from pyhocon import ConfigFactory
-c = ConfigFactory.parse_file("node-config/testnet/dcc.conf")
-print("self-commit:", c.get("dcc.miner.self-commit-to-generation"))
-print("peer-stall :", c.get("dcc.network.peer-stall-threshold"))
-EOF
-```
-Expected: `self-commit: True` and `peer-stall : 900`. (`dcc.` prefix per `application.conf` root key; if the file uses a different root, `pyhocon` raises and the path must be corrected.)
-- [ ] **Step 3:** Commit + PR: `config(testnet): enable in-process self-commit and peer-stall self-heal on main node (closes the gap left by retiring the external crons)`.
-- [ ] **Step 4 ⛔:** Deploy: `gh workflow run deploy-node-config.yml -f network=testnet`. Then confirm on the VPS:
-```bash
-ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker logs node-scala-testnet --since 10m 2>&1 | grep -iE "self-commit|peer-stall|stall detector" | head'
-```
-Expected: at least one startup log line naming the settings (exact text per `MinerImpl`/`NetworkServer` logs added in PR #60/#61).
-
-### Task 2.3: val-0 `quorum` contradicts its own rationale
-
-**Files:** `$INFRA/clusters/testnet/apps/nodes.yaml:426` (`quorum = 0`), rationale at `:139`/`:287` ("Only the bootstrap seed (main VPS) keeps quorum=0").
-
-- [ ] **Step 1:** `git log -S"quorum = 0" --format='%h %cs %s' -- clusters/testnet/apps/nodes.yaml | head` to learn why val-0 got 0. If no deliberate reason, set `quorum = 1` at line 426 to match gen-0/gen-1.
-- [ ] **Step 2:** Commit + PR: `config(testnet): val-0 quorum=1, consistent with documented policy (only main keeps 0)`. Flux rolls it; confirm with `kubectl -n dcc rollout status statefulset/dcc-val-0` via cluster-diagnostics or a kubeconfig from `export-kubeconfig.yml`.
-
-### Task 2.4: val-0 wallet lacks its generator key (infra issue #153) ⛔
-
-**Files:** `$INFRA/clusters/testnet/apps/nodes.yaml` val-0 block (wallet seed Secret reference), KeeWeb `VAL_0_NODE_WALLET_SEED`, SOPS secret for val-0.
-
-- [ ] **Step 1:** Derive the address from KeeWeb `VAL_0_NODE_WALLET_SEED` locally (never print the seed): use `dcc-dex-cli`/node's `GenesisBlockGenerator.toFullAddressInfo` per `RELAUNCH-20260904.md` §2.2. Compare with the val-0 generator address in `node/genesis-dcc-testnet-relaunch.conf` and with what the node reports: `curl -s -H "X-API-Key: $VAL0_KEY" http://127.0.0.1:16871/addresses` through the diagnostics port-forward.
-- [ ] **Step 2:** If they differ, the Secret mounted into `dcc-val-0-0` holds a different seed than genesis expects. Fix the SOPS value to the genesis seed (⛔ push-secrets.yml), roll the pod, re-run Step 1. Expected: addresses equal.
-- [ ] **Step 3:** Confirm self-commit now works: after one generation period, `curl -s $MAIN/generators/at/<nextPeriodStart>` includes val-0's address (period arithmetic in `RELAUNCH-20260904.md` §4.3). Close #153 with the evidence.
-
-### Task 2.5: Add the `slashing-enabled` key explicitly (off) to every config
-
-**Files:** `dcc.conf` hotstuff block (near `authoritative = true` at `:161`), `nodes.yaml:170,315,452`.
-
-Why: `RELAUNCH-20260904.md` §12.4 says "set on exactly one node" but the key appears nowhere, so the drill has no switch. Making the default explicit also documents intent.
-
-- [ ] **Step 1:** Add `slashing-enabled = no` next to `authoritative = true` in all four blocks. `grep -c "slashing-enabled = no" node-config/testnet/dcc.conf clusters/testnet/apps/nodes.yaml` → `1 3`.
-- [ ] **Step 2:** Commit + PR: `config(testnet): make slashing-enabled=no explicit on all four nodes ahead of the staged drill`.
-
-### Task 2.6: Healthchecks must detect a stalled chain, not just a live REST
-
-**Files:**
-- Modify: `$INFRA/compose/node-scala.yml:81` (main; currently `/node/version`)
-- Modify: `$INFRA/clusters/testnet/apps/nodes.yaml:574-588, 700-714, 817+` (readiness/liveness `/node/status`)
-- Modify: `$INFRA/compose/prometheus.yml:150` (alert-webhook check ends `|| exit 0`)
-- Modify: `$INFRA/compose/blockchain-postgres-sync.yml:36`, `compose/scanner.yml:25`
-
-Design: keep k8s readiness as `/node/status` (readiness must not flap on a temporarily slow chain), but add a **liveness** script that fails if `/blocks/height` has not changed for 15 minutes. For docker-compose, same idea with a state file.
-
-- [ ] **Step 1:** Main node compose healthcheck:
-```yaml
-    healthcheck:
-      test: ["CMD-SHELL", "H=$(curl -sf http://127.0.0.1:6869/blocks/height | sed 's/[^0-9]//g'); P=$(cat /tmp/last_h 2>/dev/null || echo 0); T=$(cat /tmp/last_t 2>/dev/null || echo 0); N=$(date +%s); if [ \"$H\" != \"$P\" ]; then echo $H >/tmp/last_h; echo $N >/tmp/last_t; exit 0; fi; [ $((N-T)) -lt 900 ]"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-```
-- [ ] **Step 2:** LKE liveness probe (each of the 3 StatefulSets), leaving readiness as-is:
-```yaml
-          livenessProbe:
-            exec:
-              command: ["sh","-c","H=$(wget -qO- http://127.0.0.1:6869/blocks/height | sed 's/[^0-9]//g'); P=$(cat /tmp/last_h 2>/dev/null || echo 0); T=$(cat /tmp/last_t 2>/dev/null || echo 0); N=$(date +%s); if [ \"$H\" != \"$P\" ]; then echo $H >/tmp/last_h; echo $N >/tmp/last_t; exit 0; fi; [ $((N-T)) -lt 900 ]"]
-            initialDelaySeconds: 180
-            periodSeconds: 60
-            failureThreshold: 3
-```
-(Port differs per node: gen-1 `6870`, val-0 `6871` — check the existing `containerPort` in each block.)
-- [ ] **Step 3:** `prometheus.yml:150`: remove `|| exit 0` so the webhook receiver check can fail. `bps.yml:36`: keep `/readiness` but add `&& curl -sf http://127.0.0.1:<bps-port>/metrics | grep -q 'bps_last_indexed_height'` only if that metric exists (check `apps/blockchain-postgres-sync` for exported metric names; otherwise leave and rely on the Prometheus rule in Task 5.1). `scanner.yml:25`: probe `GET /api/faucet` expecting non-503 is wrong when `DCC_FAUCET_SEED` unset by design; leave scanner as-is and alert via Prometheus blackbox in Task 5.1 instead.
-- [ ] **Step 4:** Validate: `docker compose -f compose/node-scala.yml config >/dev/null && echo OK`; `kubectl --dry-run=client -f clusters/testnet/apps/nodes.yaml apply >/dev/null 2>&1 || kubeconform clusters/testnet/apps/nodes.yaml`. Expected: no errors.
-- [ ] **Step 5:** Commit + PR: `fix(health): liveness fails when block height stalls 15 min; unmask alert-webhook healthcheck`. Roll out via existing deploy workflows (⛔ for the VPS restart).
-
----
-
-## Phase 3 — Verify the live chain (runbook §8–§9, never executed)
-
-Precondition: Phase 0 green, Tasks 2.1–2.2 rolled out. All commands from the workstation unless noted; LKE via `kubectl port-forward` after `gh workflow run export-kubeconfig.yml` (or the cluster-diagnostics output).
-
-### Task 3.1: Same binary, same chain, advancing
-
-- [ ] **Step 1:** Four `/node/version` strings:
-```bash
-curl -s $MAIN/node/version
-for p in 16869:dcc-gen-0-0:6869 16870:dcc-gen-1-0:6870 16871:dcc-val-0-0:6871; do L=${p%%:*}; R=${p#*:}; POD=${R%%:*}; PORT=${R##*:}; kubectl -n dcc port-forward $POD $L:$PORT >/dev/null 2>&1 & sleep 2; curl -s http://127.0.0.1:$L/node/version; echo; kill %% ; done
-```
-Expected: 4 identical JSON bodies.
-- [ ] **Step 2:** Four image digests byte-identical:
-```bash
-ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker inspect node-scala-testnet --format "{{index .RepoDigests 0}}"'
-kubectl -n dcc get pods -l app=dcc-node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].imageID}{"\n"}{end}'
-```
-Expected: all four end in `0346f62406518a4e9ecc8414250a03e1cf770bb8f9aeefff294c302274a9a61a`.
-- [ ] **Step 3:** Heights within 2 of each other, and advancing over 30 min:
-```bash
-for i in 1 2 3; do date -u +%T; curl -s $MAIN/blocks/height; curl -s $MAIN/blocks/height/finalized 2>/dev/null; echo; sleep 600; done
-```
-Expected: both numbers strictly increase each sample. If `finalized` is pinned while `height` climbs → T0 stall class (memory `t0-stall-20260730`), go to Task 6.3 before anything else.
-- [ ] **Step 4:** Zero state-hash rejections on all four since power-on:
-```bash
-ssh -i $BC/deploy_key_testnet deploy@66.228.55.154 'docker logs node-scala-testnet --since 24h 2>&1 | grep -c InvalidStateHash'
-for p in dcc-gen-0-0 dcc-gen-1-0 dcc-val-0-0; do echo -n "$p "; kubectl -n dcc logs $p --since=24h | grep -c InvalidStateHash; done
-```
-Expected: `0` x4. Any non-zero → stop, capture `docker logs ... | grep -B5 -A5 InvalidStateHash` into `$NODE/.superpowers/sdd/stall-$(date +%F).log`, and open a Task 6.x investigation before continuing.
-- [ ] **Step 5:** Confirm the chain is past both historical failure heights and that the 2600–3100 window (where 2640 died: `sponsorshipHeight = 3000` gating) was crossed cleanly:
-```bash
-H=$(curl -s $MAIN/blocks/height | jq .height); echo $H
-curl -s "$MAIN/blocks/headers/seq/2600/2700" | jq -r '.[] | "\(.height) \(.generator) \(.transactionCount)"' | head -5
-curl -s "$MAIN/blocks/headers/at/3325" | jq '{height, generator, stateHash}'
-```
-Expected: `H` well above 3325; headers exist and are non-empty for 2600–2700 and 3325.
-
-### Task 3.2: Activation status exactly as intended (runbook §8.2)
-
-- [ ] **Step 1:**
-```bash
-curl -s $MAIN/activation/status | jq '{height, features: [.features[] | {id, blockchainStatus, nodeStatus, activationHeight, supportingBlocks}]}'
-```
-Expected: ids 1–25 `ACTIVATED` at height 0/1; id 26 present with `nodeStatus: IMPLEMENTED`, `blockchainStatus` in `{VOTING, APPROVED, ACTIVATED}` with `supportingBlocks > 0`; no id ≥ 27 activated or approved.
-- [ ] **Step 2:** Repeat against gen-0/gen-1/val-0 via port-forward. Expected: identical `features` arrays.
-- [ ] **Step 3:** Feature-26 economics check once `ACTIVATED`: `curl -s $MAIN/blockchain/rewards | jq` → `currentReward` equals the AdjustedFullReward (20 DCC-equivalent, per plan Task 2 hunk (c)); before activation it is 6-equivalent. Record both observations with heights in the Soak Log. If 26 stays `VOTING` after ~50h of all-generators-healthy (`RELAUNCH-20260904.md` §12.5), investigate which generator is not voting (`supportingBlocks` vs blocks by generator).
-
-### Task 3.3: Committee for the next period is non-empty (runbook §9)
-
-- [ ] **Step 1:** Compute the next period start (period length from `dcc.conf` hotstuff settings; arithmetic at `RELAUNCH-20260904.md` §4.3) and query:
-```bash
-curl -s -o /tmp/gen.json -w '%{http_code}\n' "$MAIN/generators/at/<nextPeriodStart>"; jq length /tmp/gen.json; jq -r '.[]' /tmp/gen.json
-```
-Expected: `200`, length `3`, the three generator addresses (gen-0, gen-1, val-0). If val-0 missing → Task 2.4 not done. If main missing that is expected (main is bootstrap seed, not a committee generator — confirm against `nodes.yaml` rationale at `:139`).
-- [ ] **Step 2:** Confirm `dcc_next_period_committee_size` metric > 0 in Prometheus: `curl -s 'http://127.0.0.1:9090/api/v1/query?query=dcc_next_period_committee_size'` over an SSH tunnel to the VPS. Expected: value ≥ 3.
-
-### Task 3.4: Fund the canary wallet and make the canary meaningful (issue #148)
-
-**Files:** `$INFRA/.github/workflows/canary-transaction.yml`; KeeWeb `TREASURY_SEED`; canary address `31LAqgqVTLySNCPuYqgLAYhcgS76wvBaLr9` (per `infra/docs/superpowers/plans/2026-07-24-tier6-canary-monitoring.md:26-36`, re-derive from the seed to be sure).
-
-- [ ] **Step 1:** Balance now: `curl -s $MAIN/addresses/balance/31LAqgqVTLySNCPuYqgLAYhcgS76wvBaLr9 | jq .balance`. Expected today: `0`.
-- [ ] **Step 2 ⛔:** Transfer 100 DCC from treasury to the canary address (canary spends 0.002 DCC per run → ~1000 days). Use the admin-dashboard treasury route (`api.treasury.fund.ts`, idempotent) or `dcc-dex-cli`. Re-check balance ≥ `10000000000`.
-- [ ] **Step 3:** Dispatch canary: `gh workflow run canary-transaction.yml`; poll; Expected: `success`, log line `Canary tx <id> confirmed at height <h> in <ms>ms`.
-- [ ] **Step 4:** Add a canary-balance guard so a future 0-balance is a distinct alert, not a generic failure: in the canary script before broadcast, fetch balance and `console.error('Canary tx failed: CANARY_UNFUNDED balance=' + bal)` if `< 10 * fee`. Commit: `fix(canary): distinguish unfunded wallet from network failure`.
-- [ ] **Step 5:** Close #148 with the run URL. Add "re-fund canary" to `RELAUNCH-20260904.md` §10.1 for any future re-genesis.
-
----
-
-## Phase 4 — Downstream services: write the missing reset procedures, then run them
-
-Runbook §10 is literally `TBD` for three services and silent for four more. These are needed both now (services have been down 6 days and may have stale state vs. the chain) and for any future re-genesis.
-
-### Task 4.1: blockchain-postgres-sync (BPS) reset procedure
-
-**Files:**
-- Create: `$INFRA/runbooks/reset-bps-testnet.md`
-- Read: `$DCC/apps/blockchain-postgres-sync/README.md:84` (`BPS_STARTING_HEIGHT`), `$INFRA/compose/blockchain-postgres-sync.yml`
-
-- [ ] **Step 1:** Write the procedure (verify container/db names against the compose file first):
-```bash
-# on the VPS
-docker stop blockchain-postgres-sync-testnet
-docker exec -i postgres-testnet psql -U postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='bps_testnet';"
-docker exec -i postgres-testnet psql -U postgres -c "DROP DATABASE bps_testnet;" -c "CREATE DATABASE bps_testnet OWNER bps;"
-# BPS_STARTING_HEIGHT=0 in the env file, then:
-docker start blockchain-postgres-sync-testnet
-docker logs -f blockchain-postgres-sync-testnet 2>&1 | grep -m1 -E "height [0-9]+ .*(indexed|synced)"
-```
-- [ ] **Step 2:** For TODAY (no re-genesis): only restart and confirm no "Requested start height exceeds current blockchain height" (memory: BPS stores height; after a node restart it can race). If it appears, `docker restart blockchain-postgres-sync-testnet` once the node height exceeds the stored height.
-- [ ] **Step 3:** Verify BPS caught up: `docker exec -i postgres-testnet psql -U postgres -d bps_testnet -tAc "select max(height) from blocks_raw"` ≈ `$MAIN/blocks/height`.
-- [ ] **Step 4:** Link the runbook from `RELAUNCH-20260904.md` §10 (replace the TBD). Commit.
-
-### Task 4.2: Matcher state reset procedure (preserve `account.dat`)
-
-**Files:**
-- Create: `$INFRA/runbooks/reset-matcher-testnet.md`
-- Read: `$MATCHER/dex/src/main/resources/application.conf:6,78,442-452,520` (data-directory, order-db, snapshots, LevelDB event store), `$INFRA/compose/matcher.yml`, `RELAUNCH-20260904.md:609-615`
-
-- [ ] **Step 1:** Write the procedure:
-```bash
-# on the VPS
-docker stop matcher-testnet
-ls -la /opt/dcc/data/matcher-testnet          # expect: account.dat, data/ (LevelDB), order-db/, snapshots/, journal/
-cp -a /opt/dcc/data/matcher-testnet/account.dat /opt/dcc/backup/matcher-account.dat.$(date +%F)
-find /opt/dcc/data/matcher-testnet -mindepth 1 -maxdepth 1 ! -name account.dat -exec rm -rf {} +
-docker start matcher-testnet
-curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must equal the pre-reset key
-```
-- [ ] **Step 2:** Verify the matcher account still holds funds on the chain: `curl -s $MAIN/addresses/balance/31VMNVAvVh67dPZ41nMnYZvhoZFW7wwPrmq | jq .balance` (genesis matcher address per runbook §2.2). Expected: ~1B units minus fees.
-- [ ] **Step 3:** For TODAY: restart only, then place-and-cancel one order through the exchange UI or `dcc-dex-cli` and confirm `GET /matcher/orderbook/<pair>` responds 200.
-- [ ] **Step 4:** Add to `RELAUNCH-20260904.md` §10. Commit.
-
-### Task 4.3: data-service, scanner, exchange, admin-dashboard: verify statelessness and URLs
-
-- [ ] **Step 1:** data-service: restart after BPS (`restart-services.yml`); confirm `DEFAULT_MATCHER` set (`RELAUNCH-20260904.md:596`); `curl -s https://testnet-data-service.decentralchain.io/transactions/exchange?limit=1` → 200.
-- [ ] **Step 2:** scanner: `grep -rn "createClient\|pg\.\|Pool(" $DCC/apps/scanner/src | head` → confirm it reads only via data-service/BPS and Redis (rate-limit). Record "stateless over BPS + Redis" as verified, or list the tables it owns.
-- [ ] **Step 3:** Faucet: `curl -s -o /dev/null -w '%{http_code}\n' https://<scanner>/api/faucet` → not 503. Faucet balance: derive address from KeeWeb `FAUCET_SEED`, `curl -s $MAIN/addresses/balance/<addr>`; if < 100k DCC, ⛔ transfer from treasury (prior relaunches used 1M). Treasury balance = `1000000000000000` minus known outflows.
-- [ ] **Step 4:** exchange + admin-dashboard: `grep -n "decentralchain.io" $DCC/apps/exchange/.env.* $DCC/apps/admin-dashboard/.env.* 2>/dev/null` → every URL must be `testnet-node`, `testnet-matcher`, `testnet-data-service`. Fix any `matcher.decentralchain.io` (docs CSV mismatch, Task 8.3).
-- [ ] **Step 5:** Admin E2E once, on demand (nightly cron removed deliberately): `gh workflow run admin-e2e.yml -R Decentral-America/infra`. Expected: success; if it fails, triage issue #142 rather than re-enabling the cron.
-
-### Task 4.4: Secrets gaps that will bite on the next `push-secrets`
-
-**Files:** SOPS `secrets/testnet.env` (never print), KeeWeb.
-
-- [ ] **Step 1:** `REDIS_PASSWORD` absent from SOPS while `push-secrets.yml` expects it (memory `testnet-complete-chain:64`). Add the current value (from the running container env or the one-shot `inject-redis-secret.yml`) to SOPS so the next push does not break the faucet rate-limiter.
-- [ ] **Step 2:** `DCC_CANARY_SEED` requires two provisioning steps (`canary-transaction.yml:5-17`): SOPS push AND `gh secret set DCC_CANARY_SEED --env testnet`. Confirm the env secret exists: `gh secret list -e testnet -R Decentral-America/infra | grep CANARY`.
-- [ ] **Step 3:** Grafana admin password: wire `GF_SECURITY_ADMIN_PASSWORD` from KeeWeb `GRAFANA_ADMIN_PASSWORD` in `compose/grafana.yml` (currently default admin/admin per memory). Alertmanager SMTP: confirm `smtp_auth_password` in the LKE `alertmanager-config` Secret equals KeeWeb `SMTP_PASSWORD`.
-- [ ] **Step 4:** KeeWeb backup hygiene (`Ecosystem/KEEWEB_BACKUP.md`): remove the inline OpenSSH private key block (lines 119-130) — reference the KeeWeb entry instead; fix the duplicate entry number 27; execute the 4 pending deletions at lines 254-259; add the four undocumented names (`ADMIN_DASHBOARD_GITHUB_PAT`, `SENTRY_AUTH_TOKEN`, `GRAFANA_URL`, `REDIS_PASSWORD`). Commit: `docs(secrets): remove inline key material, fix numbering, add missing entry names`.
-
----
-
-## Phase 5 — Alerts armed and proven to page
-
-### Task 5.1: Arm and test-fire (runbook §11)
-
-**Files:** `$INFRA/monitoring/alerts.yml`, `monitoring/alertmanager.yml:20-26`, `clusters/testnet/monitoring/kube-prometheus-stack.yaml:160-199`, `compose/prometheus.yml`.
-
-- [ ] **Step 1:** Deploy monitoring: `gh workflow run deploy-monitoring-stack.yml -f network=testnet`. Expected: success.
-- [ ] **Step 2:** Rules loaded: over SSH tunnel `curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[].rules[].name'` → includes `BlockProductionStalled`, `FinalizationStalled`, `FinalizationNotAdvancing`, `HotStuffCommitNotAdvancing`, `HotStuffEquivocationDetected`, `CommitteeGapUpcoming`, `ExporterDown`, `ServiceDown`.
-- [ ] **Step 3:** Add two rules that today's outage proves missing (append to `alerts.yml`):
-```yaml
-  - alert: MainNodeUnreachable
-    expr: up{job="node-scala"} == 0
-    for: 5m
-    labels: {severity: critical}
-    annotations: {summary: "main node exporter target down 5m"}
-  - alert: LkeGeneratorsDown
-    expr: count(up{job=~"dcc-gen.*|dcc-val.*"} == 1) < 3
-    for: 10m
-    labels: {severity: critical}
-    annotations: {summary: "fewer than 3 LKE generators scraped for 10m"}
-```
-(Adjust `job` labels to the actual scrape config names in `compose/prometheus.yml` and `clusters/testnet/monitoring/`.) `docker run --rm -v $INFRA/monitoring:/m prom/prometheus promtool check rules /m/alerts.yml` → `SUCCESS`.
-- [ ] **Step 4:** Test-fire: `curl -XPOST http://127.0.0.1:9093/api/v2/alerts -d '[{"labels":{"alertname":"TestFire","severity":"critical"}}]'` on the VPS tunnel → a GitHub issue appears from the webhook bot within 2 min. Same on the LKE Alertmanager → email arrives at `info@decentralchain.io`. Record both timestamps. Resolve the test issue.
-- [ ] **Step 5:** Note in `RUNBOOK-t0-soak-and-t2-audit.md:47,50`: `FinalizationStalled`/`FinalizationNotAdvancing` cover the finalized-height stall requirement; add a Grafana panel for `finalizedHeight` vs `height` (dashboard JSON under `monitoring/grafana/`; confirm panel exists with `jq '.panels[].title' <dashboard>.json`).
-- [ ] **Step 6:** Commit: `feat(alerts): infra-down rules; record test-fire evidence`.
-
----
-
-## Phase 6 — Consensus evidence still owed (testnet-gating subset)
-
-### Task 6.1: Bug 2 ("how far is the chain locked in") — determine whether Task D already closed it
-
-**Files:** `$BC/CONSENSUS-BUG-INVESTIGATION-REFERENCE.md:147-157`; `$NODE/node/src/main/scala/com/decentralchain/state/FinalizationState.scala`; node-scala commits from the 2026-08-30 relaunch (memory `testnet-final-relaunch-20260830:21` — "Task D finalization-rollback bug was real", DeterministicFinality cluster).
-
-- [ ] **Step 1:** `cd $NODE && git log --oneline --since=2026-08-25 -- node/src/main/scala/com/decentralchain/state/FinalizationState.scala node/src/main/scala/com/decentralchain/state/BlockchainUpdaterImpl.scala | head -20`. Read each for "rollback", "microblock discard", "finalized height".
-- [ ] **Step 2:** Write a failing test if no rollback coverage exists: in `node/tests/.../FinalizationRollbackSpec.scala`, append a microblock that advances the finalized-height value, discard it (`removeAfter`), assert the finalized height returns to its pre-microblock value and the next key block's state hash equals the appender's recompute. Run `sbt "node-tests/testOnly *FinalizationRollbackSpec"`.
-- [ ] **Step 3:** If it fails: implement both halves together per §9 (per-liquid-point finalized tracking with correct rollback; block-builder must not mix discarded-piece data), following TDD; full `sbt "node-tests/test"` zero regressions; PR to main. If it passes: update §9 Bug 2 to "CLOSED by <commit>, covered by FinalizationRollbackSpec" with the commit hash.
-- [ ] **Step 4:** Same pass for §8 line 110 (committee-*eligibility* logic vs. stale rollback): `grep -rn "committedGenerators\|nextCommittedGenerators" node/src/main/scala | grep -v Hash` — list every non-hash consumer; for each, state in the doc whether it reads the rolled-back or live list. Close or open accordingly.
-
-### Task 6.2: Live epoch transition + committee rotation evidence (T10)
-
-- [ ] **Step 1:** Identify the next committee-period boundary height. Capture 10 min before and after: `/generators/at/<h>`, `/blocks/height/finalized`, `/debug/hotstuff` (or the actual HotStuff status route in `FinalityApiRoute`), and Kamon counters `hotstuff.stale-target-*` from Prometheus.
-- [x] **Step 2:** Expected: committee set changes or is re-confirmed at the boundary; finalized height continues without a >2-period gap; `stale-target` counters do not grow unboundedly. Paste into the Soak Log and into `hotstuff-audit-readiness.md:108,333` as the T10 live evidence.
-
-**Result (soak window):** about 85 boundaries with no finality gap (max lag 4). The committee went from 4 to 5 members at 56301 (drill offender), excluded the offender at 56355, and was back to 4 at 56401. Recorded in [SOAK-2026-10-12.md](SOAK-2026-10-12.md). The `stale-target` Kamon counters are not exported to Prometheus, so continuous finality stands in for that check.
-
-### Task 6.3: T0 finality watch (the 2026-07-30 pin was never diagnosed)
-
-- [ ] **Step 1:** Every 6h for 72h: `curl -s $MAIN/blocks/height; curl -s $MAIN/blocks/height/finalized`. Lag must stay bounded (record the max). If lag grows monotonically for >30 min: pull gen-0/gen-1 logs for `endorse|Endorsement|quorum` in that window before any restart, save to `$NODE/.superpowers/sdd/t0-<date>.log`, then diagnose (memory `t0-stall-20260730` deferral reasons no longer apply — kubectl access exists via `export-kubeconfig.yml`).
-
-### Task 6.4: Crash and partition drills (runbook §12.1)
-
-- [ ] **Step 1 (crash):** `kubectl -n dcc delete pod dcc-gen-1-0` during a period in which gen-1 is in the committee. Expected: pod back `Running` < 3 min, height and finalized height keep advancing on main, no `InvalidStateHash`, gen-1 rejoins (`/peers/connected` on main includes gen-1 within 5 min — proves the in-process peer-stall path is not needed for the ordinary case).
-- [ ] **Step 2 (partition):** Temporarily add a Calico NetworkPolicy denying egress from `dcc-gen-0-0` to the VPS IP for 20 min, then remove. Expected: main continues with the remaining quorum; after removal, gen-0 reconnects without manual `peers/connect`. Confirm the stall detector log line ("cleared N suspensions") appears at most once and only if suspensions actually existed.
-- [x] **Step 3:** Record both in the Soak Log; mark `hotstuff-audit-readiness.md:97,324`.
-
-**Result:** the crash drill passed 2026-10-10; inside the soak window, gen-0 was deliberately recreated twice and rejoined cleanly. The partition drill was re-run **inside** the soak window on 2026-10-15 04:22–04:32Z: finality froze at 63442 while partitioned, all 4 nodes converged within 30s of the heal, 0 InvalidStateHash, 0 restarts. Details in [SOAK-2026-10-12.md](SOAK-2026-10-12.md).
-
-### Task 6.5: Equivocation drill with slashing on exactly ONE node ⛔ (runbook §12.4)
-
-- [ ] **Step 1:** Wait until Tasks 6.2–6.4 are recorded and the chain is ≥ 24h past power-on (first-boot lockedQC window, `hotstuff-audit-readiness.md:124-134`).
-- [ ] **Step 2 ⛔:** Set `slashing-enabled = yes` on gen-0 only (`nodes.yaml:170` block). Flux rolls it.
-- [ ] **Step 3:** Produce an equivocation from a throwaway generator using the node-it harness technique (`FourNodeHotStuffTestSuite` equivocation scenario) against testnet, or by running a second gen-1 instance with the same key for one block (⛔, destructive to gen-1's reputation on the chain; use a funded throwaway generator instead if possible).
-- [ ] **Step 4:** Expected: `HotStuffEquivocationDetected` fires; gen-0 emits the evidence tx; `/transactions/info/<id>` shows the `HotStuffEquivocationProof` applied; the offender's generating balance is penalised per the T5 rules. Other three nodes (slashing off) accept the block containing the evidence.
-- [ ] **Step 5:** Decide fleet-wide `slashing-enabled` and record the decision in `hotstuff-audit-readiness.md:326` and D4 of the source plan.
-
-**Result 2026-10-12 (Claude):** drill run with a throwaway committee member instead of a real node.
-- Offender `31Q7J8cVtBcGDkuUfuppqvm7Cq7BDgDAuVP` was funded at h54946 and committed at h56240 (tx `5p4r2mgS…`) for period 56301, as committee index #4.
-- Tool: node-scala `EquivocationDrill` (#76, test scope). It signed two PREPARE votes for view 56350, epoch 563, blocks `3E8NPnL…` and `CZ1gr7p…`, and sent them to main over P2P at 16:14:24Z.
-- `slashing-enabled = yes` was set on gen-0 only (infra #207) and reverted after the drill (#209).
-- **Detection:** all four nodes logged `EQUIVOCATION DETECTED: voter #4` and report `hotStuffEquivocationsTotal = 1`. The `HotStuffEquivocationDetected` alert fired at 16:15:41Z.
-- **Proof in a block:** gen-0 folded the proof into block **56354** (`7zjDVaTX…`). Every node accepted that block: same id, no fork, finality lag stayed at 3.
-- **Exclusion:** `/generators/at` shows the offender with `conflictHeight = 56355` and committee balance 0.
-- **GAP FOUND, deposit not forfeited:** the offender's balance stayed 1999.9 DCC, and its deposit lock was released at the punishment height. `BlockDiffer.calculatePenalties` charges the 100 DCC only for T0 `voting.conflict` endorsements, never for `voting.hotstuffConflicts`. `RocksDBWriter.collectGenerationDepositChanges` then releases the lock at `punishmentHeight`. So a HotStuff equivocator is excluded but keeps its deposit, which contradicts the T5 design spec. The fix needs a height-gated consensus change; block 56354 is already in the chain unpenalised.
-- **Fleet decision:** `slashing-enabled` stays **off** everywhere until that fix ships and the external audit is done.
-- **Fix (2026-10-14):** node-scala `fix/hotstuff-equivocation-penalty`. `calculatePenalties` now also debits `hotstuffConflicts` voters, for proofs at or above `functionality.hot-stuff-equivocation-penalty-height`. Testnet sets that to 60000 (this branch), above block 56354, so the drill block replays unchanged. Three new unit tests cover it: forfeit at the gate, no forfeit below it, and the block JSON now shows `hotstuffConflicts`. Rollout comes after the 72h soak, with the config and the image in the same Flux-suspended window.
-
-### Task 6.6: 72h soak record (closes runbook §12.1, audit-readiness §8 first box)
-
-- [x] **Step 1:** Start the clock after Task 3.1 passes with all four on `0346f624`. Log every 6h: height, finalized height, `InvalidStateHash` count (all four), committee size, canary success rate (`gh run list --workflow canary-transaction.yml --limit 24`), any alert fired.
-- [x] **Step 2:** Pass criteria: zero `InvalidStateHash`; finalized-height lag max recorded and < 2 periods; canary ≥ 95% success; all drills (6.2, 6.4) inside the window; no pod restarts other than deliberate.
-- [x] **Step 3:** Write `$INFRA/SOAK-2026-XX-XX.md` from the Soak Log; link from `RUNBOOK-t0-soak-and-t2-audit.md`. (Correction: this does **not** start the 60-day mainnet T0 clock. The runbook's Step 1 says testnet soaks don't count.)
-
-**Result: PASS**, see [SOAK-2026-10-12.md](SOAK-2026-10-12.md). 72h, 2026-10-12T04:15:35Z → 2026-10-15T04:15:35Z, on node-scala `sha256:9283525c…` throughout. Results: 0 InvalidStateHash; max finality lag 4 (Prometheus, full window); canary 301/301; drills 6.2, 6.4 and 6.5 inside the window; no unplanned restarts. Sign-off tag `testnet-final-2026-10-14`.
-
----
-
-## Phase 7 — Security hygiene
-
-### Task 7.1: Rotate the REST API keys (staged since June, never rolled out)
-
-**Files:** infra branch `security/rotate-api-keys` (commit `1141c3a`, unpushed per `HANDOFF.md:281/342`); KeeWeb entries `*_NODE_REST_API_KEY`; `verify-api-keys.yml`.
-
-- [ ] **Step 1:** `cd $INFRA && git branch -a | grep rotate` — if the branch exists locally, rebase onto main; else regenerate 4 keys + hashes (`node/src/main/scala/.../ApiKeyHash` procedure documented in `RUNBOOK-mainnet-edge-and-key-rotation.md`).
-- [ ] **Step 2 ⛔:** Push new hashes via `push-secrets.yml`, roll all four nodes (Flux + `deploy-node-config.yml`), update KeeWeb, then `gh workflow run verify-api-keys.yml`. Expected: 4x `200` with new keys, 4x `403` with old keys.
-- [ ] **Step 3:** Update GitHub env secrets that hold the keys (`GEN0_KEY`, `GEN1_KEY`, `VAL0_KEY` used by `cluster-diagnostics.yml`).
-
-### Task 7.2: Rotate the deploy SSH key (pasted into a chat session 2026-09-02)
-
-- [ ] **Step 1:** `ssh-keygen -t ed25519 -f $BC/deploy_key_testnet.new -C deploy@testnet`; add pubkey to VPS `deploy` user via existing session; `TF_VAR_DEPLOY_SSH_PUBLIC_KEY` in KeeWeb and GitHub; `DEPLOY_SSH_KEY` secret; remove old pubkey from `~/.ssh/authorized_keys`; test `ssh -i deploy_key_testnet.new deploy@66.228.55.154 uptime`.
-- [ ] **Step 2:** `git rm --cached` nothing (keys are untracked at `$BC/deploy_key_testnet*`; confirm with `git ls-files | grep deploy_key` → empty). Delete the old private key file.
-
-### Task 7.3: Remaining audit-report items with no status tag
-
-- [ ] 01 pruning (mainnet 60-node scale) — the node-scala tracking issue is OUT OF SCOPE (operator 2026-09-30): defer; open a tracking issue in node-scala with the report text; not testnet-gating.
-- [ ] 02 exchange-indexer Postgres growth: add a Prometheus rule on `pg_database_size_bytes{datname="bps_testnet"}` growth > X/day and disk-free < 20%; commit with Task 5.1.
-- [ ] 04 over-provisioned compute: revisit after the soak; cost only.
-- [ ] 0c exchange WCAG (2 axe-core checks): DecentralChain issue; not testnet-gating.
-- [ ] 5a faucet rate-limit Redis wiring: covered by Task 4.4 Step 1 (`REDIS_PASSWORD`) — verify `REDIS_URL` set in scanner env, then mark FIXED.
-
----
-
-## Phase 8 — Ecosystem debt that shows up as red on dashboards
-
-### Task 8.1: matcher nightly Network/Chaos tests (matcher #26, failing since 2026-09-10)
-
-- [ ] **Step 1:** `gh run view 34455102525 -R Decentral-America/matcher --log-failed | grep -E "FAILED|\*\*\* |All attempts" | head` → identify the suite. If "All attempts are out"/GC-bound → runner starvation (memory `matcher-dexit-flakiness`): move `@NetworkTests` to a larger runner (`runs-on: ubuntu-latest-8-cores` or self-hosted) in `nightly-network-tests.yml`; do not loosen timeouts. Otherwise treat as a real bug and open a systematic-debugging task.
-- [ ] **Step 2:** One green nightly, then close #26. **2026-09-30:** `nightly-network-tests.yml` now triggers on `v*` tags + `workflow_dispatch` only (no cron), so there is no nightly to go green. #26 is still OPEN and the failing suite was never diagnosed. Do Step 1 on a manual dispatch, then close #26 with that run.
-
-### Task 8.2: Test-debt branches never merged (`docs/test-debt-inventory.md`)
-
-- [ ] **node-scala part OUT OF SCOPE (operator 2026-09-30). matcher part resolved (verified 2026-09-30): no `ignore-triage` branch exists locally or on the remote, `d91766a5f` is not in matcher history, and the `ignore{}` triage landed via matcher PR #21 (`587820f28`, 2026-08-03). The inventory never referenced that branch.** Original: node-scala `test/fix-class-a-ignores` (`d963e5f22d`) and matcher `test/matcher-ignore-triage` (`d91766a5f`): `git branch -a | grep -E "fix-class-a|ignore-triage"`; if present, rebase and PR; if gone, update the inventory to say so.
-- [ ] DEX-982 deprecation window and DEX-1402 WS test: leave as documented; not testnet-gating.
-
-### Task 8.3: Public docs point at the right testnet
-
-**Files:** `$DOCS/docs/_static/02_decentralchain/tables/025_*.csv`, `026_*.csv`, `028_*.csv` (`matcher.decentralchain.io` → `testnet-matcher.decentralchain.io`), `029_*.csv`, `030_Faucet-Obtaining-Tokens.csv` (TBA → scanner faucet URL), `docs/04_building-apps/03_how-to-guides.md:35,63,79`, `04_wallet-integration.md:17` (`nodes.decentralchain.io` does not resolve → `testnet-node.decentralchain.io`).
-
-- [ ] **Step 1 (2026-10-01: edits DONE in docs PR #19, merged, docs main = dev = `491a264`. data-service, exchange (`testnet.decentral.exchange`, returns 200), matcher, explorer, faucet and the dead `nodes.*` samples are fixed. REMAINING: the 200-check for the data-service, matcher, explorer and faucet hosts, which resolve to the offline Linode VPS. Tick after Phase 0):** Edit; `curl -s -o /dev/null -w '%{http_code}\n' <each URL>` → 200 for every URL in those tables. Commit: `docs: publish live testnet endpoints; fix matcher host and dead nodes.* host`.
-
----
-
-## Phase 9 — Sign-off: definition of "final testnet"
-
-All boxes below must be true, each with a Soak Log line (command + output + date):
-
-- [ ] Four nodes on `sha256:0346f624…` (or a newer single digest), byte-identical `/node/version`.
-- [ ] Main node has `self-commit-to-generation = yes` and `peer-stall-threshold = 900`; all four have explicit `slashing-enabled`.
-- [ ] `InvalidStateHash` = 0 on all four across the 72h soak; chain height > 3325 and past 2600–3100 cleanly.
-- [ ] Features 1–25 activated, 26 `ACTIVATED` with reward = 20-equivalent observed, none ≥ 27.
-- [ ] `/generators/at/<next>` = 3 addresses every period for 72h; val-0 present (#153 closed).
-- [ ] Canary ≥ 95% green over 72h (#148 closed); Tier-0 liveness workflow green.
-- [ ] Alerts: rules loaded, both receivers test-fired with evidence; `MainNodeUnreachable`/`LkeGeneratorsDown` present.
-- [ ] Downstream: BPS max height ≈ chain height; matcher order round-trip OK; data-service 200; faucet claim OK; treasury/faucet balances recorded; exchange/admin URLs correct; admin-e2e green once.
-- [ ] Drills recorded: pod crash, partition, live epoch transition, equivocation with slashing on one node + fleet decision.
-- [ ] Bug 2 status resolved to CLOSED-with-commit or FIXED (Task 6.1); §8 line 110 resolved.
-- [ ] Security: API keys rotated and verified, SSH key rotated, KeeWeb backup cleaned, `REDIS_PASSWORD` in SOPS, canary env secret present.
-- [ ] Docs: reference doc, relaunch runbook, audit-readiness, archived-workflows README reconciled; public docs endpoints 200.
-- [ ] Working trees clean in all in-scope repos (DecentralChain, matcher, infra, docs). The node-scala `dev == main` clause is OUT OF SCOPE (operator 2026-09-30).
-
-Tag on sign-off: `cd $NODE && git tag -a testnet-final-$(date +%Y%m%d) -m "Testnet final: soak passed, see infra/SOAK-*.md" <digest commit> && git push --tags`; pin the same digest as the Release image.
-
----
-
-## Explicitly deferred to stagenet/mainnet (not testnet-gating; listed so nobody re-derives them)
-
-- Reference §7 Phase 2/3: legacy node build (untouched since 2024), stagenet legacy→modern handoff at 10k blocks, storage compatibility, Phase 3 mainnet migration.
-- `hotstuff.authoritative` advisory vs enforcing decision (F-1); external consensus audit; 60-day T0 soak (not started: needs a mainnet-candidate or stagenet chain, per the runbook); mainnet LKE HA (`lke_ha=true`, dedicated CPU, ≥2 pool); gen nodes on separate LKE nodes.
-- HotStuff design item "view = height under Waves-NG" (memory `hotstuff-t2-step5:129`), C1 single-active-view pacemaker, P3 100MB frame cap, E1/P5 defaults.
-- Consensus rule changes SC-575 / SC-580 / SC-695 (network governance via a new feature id).
-- Audit item 01 (pruning), `committedGeneratorsHash` None-acceptance hardening, `maxCommittedGenerators` cap.
-- Waves upstream reporting: permanently internal-only (operator decision).
-- Prometheus federation Newark→LKE; matcher first versioned release; `AGE_SECRET_KEY` for stagenet/mainnet envs; `SENTRY_AUTH_TOKEN` mainnet.
-- `Ecosystem/AUDIT-T2-FINALITY.md` is lost; its ledger is partially reconstructed in memory `hotstuff-t2-step5:276`. Re-create only if the external audit needs it.
-
----
-
-## Soak Log (append-only; one line per verified checkbox)
-
-| Date (UTC) | Task | Command | Decisive output | Who |
-|---|---|---|---|---|
-| 2026-09-23 | 0 (pre) | `gh run view 35867921158` | 3 LKE workers NotReady; dcc-gen-0/gen-1/val-0 Pending 6d1h | Claude (read-only) |
-| 2026-09-23 | 0 (pre) | `curl $MAIN/blocks/height` | timeout; VPS no ping | Claude |
-| 2026-09-23 | Ground truth | `git merge-base --is-ancestor 31d4410ba3 testnet-relaunch-20260904` | true (carry-fee fix in both live images) | Claude |
-| 2026-09-30 | Status | `curl` testnet-node / mainnet-node / grafana.testnet | no connection (Linode still offline) | Claude |
-| 2026-09-30 | Status (new) | `dig +short A decentralchain.io decentralscan.com @1.1.1.1` | empty for both (apex DNS missing); whois: registered to 2027 | Claude |
-| 2026-09-30 | Status | `gh run list -R Decentral-America/DecentralChain -b main` @ `b940c744a` | CI, CodeQL, RIDE CI, Trivy: success | Claude |
-| 2026-09-30 | Status | `pnpm audit --audit-level=moderate --prod` on DecentralChain main | No known vulnerabilities found | Claude |
-| 2026-09-30 | Status | `gh api repos/Decentral-America/docs/pages` + `curl -sI docs.decentralchain.io/en/main/` | build_type=workflow, https_enforced=true; 200, last-modified 2026-09-30 | Claude |
-| 2026-09-30 | 1.1 Step 5 | `git ls-tree origin/main .github/workflows/` (DecentralChain) | publish-maven-package.yml present; publish-protobuf-schemas.yml absent | Claude |
-| 2026-09-30 | 1.1 Step 6 | `git status` / `rev-list origin/main..HEAD` (matcher, docs) | 0 dirty, 0 ahead | Claude |
-| 2026-09-30 | 8.2 (matcher) | `git branch -a \| grep ignore-triage` (matcher) | no branch; triage in PR #21 `587820f28` | Claude |
-| 2026-09-30 | 1.1 Step 4 + merges | `gh pr view 117/169`; `git rev-parse origin/main origin/dev` | both MERGED; DecentralChain dev=main `38e405f5f`, infra dev=main `62cbd74` | operator + Claude |
-| 2026-10-01 | 8.3 (edits) | `gh pr view 19 -R Decentral-America/docs`; `curl -o /dev/null -w %{http_code} https://testnet.decentral.exchange/` | MERGED; exchange 200; other testnet hosts resolve to 66.228.55.154 (offline) | Claude |
-| 2026-10-01 | Offline prep | `gh pr view 171 -R Decentral-America/infra` | 13 commits; digest-parity OK; tofu validate OK; LKE liveness kept REST (restart-storm risk) | Claude |
-| 2026-10-01 | Security | `git show origin/main:.github/workflows/push-secrets.yml` + matcher `AccountStorage.load` | MATCHER_SEED never written; in-mem seed "" → KeyPair(empty) | Claude |
-| 2026-10-04 | Recovery | heights via REST / kubectl exec | main 33482 (fin 33382), gen-0 22894, gen-1 9927, val-0 8958, all syncing; liveness green | Claude |
-| 2026-10-04 | 3.1 Step 4 | `grep -c InvalidStateHash` (main docker logs 12h; gen-0/gen-1/val-0 kubectl logs 12h) | 0 / 0 / 0 / 0 | Claude |
-| 2026-10-04 | 3.1 Steps 1-2 | `/node/version` x4; main image `0346f6240651`, LKE pods `sha256:0346f624…` | all `DecentralChain v1.8.0`, one digest | Claude |
-| 2026-10-04 | 3.2 | `curl $MAIN/activation/status` | 26 features ACTIVATED (1–26), none ≥ 27, height 34239 | Claude |
-| 2026-10-04 | 2.2 / 2.5 | `grep` on the live `/opt/dcc/config/node-testnet/dcc.conf` | `self-commit-to-generation = yes`, `peer-stall-threshold = 900`, `slashing-enabled = no` | Claude |
-| 2026-10-04 | 4.1 Step 3 | `select max(height) from blocks_microblocks` (bps_testnet) vs `$MAIN/blocks/height` | 34239 = 34239 (BPS caught up) | Claude |
-| 2026-10-04 | 6.x observation | main `docker logs` HotStuff | T2 stalled 15:12→15:42 UTC at 33997; WATCHDOG reset, then committed 34102 and stayed steady (111 commits / 2 resets in 90 min). Follows today's restarts; watch during the soak | Claude |
-| 2026-10-10 | 9 (E2E) | `gh run view 38020563749` (admin-e2e full) | 213/217: chained txs (transfer from just-funded account, invoke/SetScript after setup) accepted with 200 and then lost | Claude |
-| 2026-10-10 | 9 (E2E) | compare `MicroBlock(X -> Y) appended` log order vs `/blocks/headers/at/H` `.reference` | 4/18 key blocks orphaned the last microblock; UTX cleanup evicted dependents of the re-queued priority txs | Claude |
-| 2026-10-10 | 9 (E2E) | node-scala #68/#70/#71/#72/#73 merged, staggered rollout (infra #199-#203) | all 4 nodes `node-scala@sha256:e2806d3c…` (b07339c), finality lag 3 after each step, Flux no re-roll | Claude |
-| 2026-10-11 | 9 (E2E) | `gh run view 38097076161 / 38097329352 / 38097581676` | 217/217 three consecutive full runs; UTX watcher max wait 17s (was 356s); infra #142 closed | Claude |
-| 2026-10-10 | 2 (val-0) | `curl $MAIN/generators/at/50214` | 4 committee members incl. val-0 31XTtK5S… (self-commit 2PnG1nPg…); infra #153 closed | Claude |
-| 2026-10-10 | 8 (BPS) | DecentralChain #119/#120 deployed; main node restarted | BPS restarts=0 across node restart, synced to tip; logs at info | Claude |
-| 2026-10-10 | 8 (CI) | node-scala #69 genesis-replay dispatch `38048452814` | peer resolved via DNS (50.116.30.244); reached height 3734 (≥2500) | Claude |
-| 2026-10-10 | Open | node-it run history (`gh run list --workflow node-it.yml`) | OneNodeFinalization "finalization activated and works" / FourNodeHotStuff "finalizes on every node" intermittent on main since 2026-07-30; separate investigation | Claude |
-| 2026-10-12 | 6.5 drill | `EquivocationDrill equivocate` + node logs + `/generators/at` | detected on 4/4 nodes, proof in block 56354 accepted by all, offender excluded from h56355; deposit NOT forfeited (gap) | Claude |
-| 2026-10-15 | 6.4 partition (in window) | iptables on main vs LKE node IP, 04:22–04:32Z, systemd-run auto-heal | fin frozen 63442 during; all 4 at 63454 within 30s of heal, same id at 63458, lag 3; 0 ISH, 0 restarts | Claude |
-| 2026-10-15 | 6.6 soak | full-window `grep InvalidStateHash`; Prometheus `max_over_time(dcc_finality_lag[72h])`; canary runs in window | 0 / max 4 (avg 3.01) / 301/301: PASS, SOAK-2026-10-12.md | Claude |
-| 2026-10-15 | 6.5 fix rollout | node-scala #77 (fb4e980) + infra #213 (penalty height 60000), image `sha256:8fccecebb65a…` | all 4 nodes on the digest with `hot-stuff-equivocation-penalty-height = 60000` loaded; 0 ISH; same block id at 64801; committee 4; finality lag max 4. NOT staggered: the `apps` suspend was stripped by the `flux-system` reconcile, so the 3 LKE pods rolled at once at 15:52:56Z; chain unaffected. Procedure fixed in runbooks/staggered-node-rollout.md | Claude |

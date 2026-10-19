@@ -1,0 +1,10 @@
+# actionlint configuration (CI gate since the 2026-10-18 audit, AUD-051).
+# Info/style shellcheck classes are not gated: they flag intentional word splitting and
+# grouped redirects across many existing scripts. Warnings and errors always fail CI.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - 'SC2086:info'
+      - 'SC2129:style'
+      - 'SC2016:info'
+      - 'SC2006:style'

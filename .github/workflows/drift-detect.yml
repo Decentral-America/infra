@@ -189,7 +189,9 @@ jobs:
           )
         run: |
           set -euo pipefail
-          if [ -n "$(tofu state list)" ]; then
+          RES=$(tofu state list | wc -l | tr -d ' ')
+          echo "resources=${RES}" >> "$GITHUB_OUTPUT"
+          if [ "${RES}" -gt 0 ]; then
             echo "has_state=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_state=false" >> "$GITHUB_OUTPUT"
@@ -273,7 +275,7 @@ jobs:
               echo "⏭️ **Not provisioned** — no \`$NETWORK.tfvars\`, or its workspace has no state (never applied). Skipped." >> "$GITHUB_STEP_SUMMARY"
               ;;
             clean)
-              echo "✅ **No drift detected** — live infrastructure matches the desired state." >> "$GITHUB_STEP_SUMMARY"
+              echo "✅ **No drift detected** — ${{ steps.state.outputs.resources }} resources in state match live infrastructure (only resources managed by this workspace are compared)." >> "$GITHUB_STEP_SUMMARY"
               ;;
             drift)
               echo "⚠️ **Drift detected** — live infrastructure differs from terraform state." >> "$GITHUB_STEP_SUMMARY"

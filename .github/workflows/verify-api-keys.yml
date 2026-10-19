@@ -12,6 +12,10 @@ jobs:
     timeout-minutes: 10
     environment: testnet
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Install kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
 
@@ -31,16 +35,16 @@ jobs:
 
       - name: Verify main node API key
         env:
-          SSH_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          DEPLOY_KEY:      ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST:     ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER:     ${{ secrets.TESTNET_DEPLOY_USER }}
           MAIN_API_KEY: ${{ secrets.MAIN_NODE_REST_API_KEY }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
+          ./scripts/ssh-setup.sh "$SSH_HOST"
           echo "${MAIN_API_KEY}" > /tmp/.main_key
-          scp -i /tmp/id_rsa -o StrictHostKeyChecking=no /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
+          scp /tmp/.main_key "${SSH_USER}@${SSH_HOST}:/tmp/.main_key" 2>/dev/null
           rm -f /tmp/.main_key
-          RESULT=$(ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+          RESULT=$(ssh "${SSH_USER}@${SSH_HOST}" \
             'KEY=$(cat /tmp/.main_key | tr -d "\n"); rm -f /tmp/.main_key
              HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" http://localhost:6869/peers/connected)
              echo $HTTP')
@@ -49,7 +53,6 @@ jobs:
             echo "FAIL: Main node rejected key (HTTP $RESULT). Check api-key-hash in dcc.conf."
             exit 1
           fi
-          rm -f /tmp/id_rsa
 
       - name: Verify gen-0 API key
         env:

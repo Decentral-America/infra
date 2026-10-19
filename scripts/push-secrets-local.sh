@@ -84,7 +84,12 @@ else
   exit 1
 fi
 
-SSH="ssh -i ${DEPLOY_KEY_FILE} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 deploy@${SERVER_IP}"
+# Pinned host key only (ssh/known_hosts); refuse a host that is not pinned.
+if ! grep -qE "^${SERVER_IP//./\\.} ssh-ed25519 " "${REPO_ROOT}/ssh/known_hosts"; then
+  echo "[push-secrets] FATAL: ${SERVER_IP} has no pinned host key in ssh/known_hosts (see its header)"
+  exit 1
+fi
+SSH="ssh -i ${DEPLOY_KEY_FILE} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${REPO_ROOT}/ssh/known_hosts -o HostKeyAlgorithms=ssh-ed25519 -o ConnectTimeout=10 deploy@${SERVER_IP}"
 
 # ── Verify SOPS is available ──────────────────────────────────────────────────
 if ! command -v sops &>/dev/null; then
@@ -144,6 +149,8 @@ GITHUB_PAT=$(     extract 'ADMIN_DASHBOARD_GITHUB_PAT')
 GRAFANA_URL=$(    extract 'GRAFANA_URL')
 SENTRY_TOKEN=$(   extract 'SENTRY_AUTH_TOKEN')
 TREASURY_SEED=$(  extract 'TREASURY_SEED')
+DCC_RO_PASS=$(    extract 'DCC_RO_PASSWORD')       # Postgres role dcc_ro (data-service)
+DCC_PAIRS_PASS=$( extract 'DCC_PAIRS_PASSWORD')    # Postgres role dcc_pairs (pairs daemon)
 
 MATCHER_SEED_B64=$(extract 'MATCHER_SEED_BASE64')
 # The matcher key comes from SOPS only (never read back from the live matcher: it echoes whatever
@@ -184,6 +191,10 @@ echo "[push-secrets] Uploading secrets patch..."
   # Last line of the group: an `if`, not `[[ ]] &&`, so an absent TREASURY_SEED does not make
   # the group return 1 and abort the script under `set -o pipefail`.
   if [[ -n "${TREASURY_SEED:-}" ]]; then printf 'TREASURY_SEED=%s\n' "${TREASURY_SEED}"; fi
+  # Role passwords for data-service (dcc_ro) and the pairs daemon (dcc_pairs); the renderer
+  # refuses to write those env files without them (fail closed).
+  if [[ -n "${DCC_RO_PASS:-}" ]]; then printf 'DCC_RO_PASSWORD=%s\n' "${DCC_RO_PASS}"; fi
+  if [[ -n "${DCC_PAIRS_PASS:-}" ]]; then printf 'DCC_PAIRS_PASSWORD=%s\n' "${DCC_PAIRS_PASS}"; fi
 } | $SSH "sudo tee /tmp/secrets-patch.env > /dev/null && \
   sudo touch /opt/dcc/secrets/${NETWORK}.env && \
   sudo bash -c 'cat /tmp/secrets-patch.env /opt/dcc/secrets/${NETWORK}.env \

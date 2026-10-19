@@ -1,111 +1,72 @@
-# ── DecentralChain Scala Node ──────────────────────────────────────────────────
+# ── DecentralChain Scala Node (VPS main node) ─────────────────────────────────
 #
-# Prerequisites (set by bootstrap.sh and deploy-container.yml):
-#   IMAGE_TAG — full image reference, e.g. ghcr.io/decentral-america/node-scala:abc123
-#   NETWORK   — mainnet | testnet | stagenet
+# The ONE definition of the main node container. Started only by scripts/node-up.sh
+# (update-node-image.yml / deploy-node-config.yml / restart-host-network.yml), which
+# passes NODE_SCALA_IMAGE from node-config/<network>/vps-image.env (digest-pinned,
+# rule D6). There is deliberately no tag-based variable: a tag-based deploy (e.g. an
+# old deploy-container.yml caller) fails here instead of drifting the node.
 #
-# Volumes:
-#   node-state-<NETWORK> — persistent blockchain state (named, survives upgrades)
+# Host networking, as the live node has run since the relaunch: P2P 6868 must be
+# reachable by the LKE peers, and Caddy/BPS/matcher reach REST 6869, BlockchainUpdates
+# 6881 and DEX gRPC 6887 on 127.0.0.1.
 #
-# Ports (all except P2P are localhost-only):
-#   6869 — REST API     (internal; expose via reverse proxy only)
-#   6868 — P2P          (must be externally reachable for peer discovery)
-#   6881 — BlockchainUpdates gRPC extension (used by blockchain-postgres-sync)
-#   6887 — DEX extension gRPC              (used by the matcher)
-#   6870 — metrics                         (internal; scrape via Prometheus)
-#
-# Dependency note:
-#   The DEX matcher (matcher.yml) connects to THIS node on localhost:6887 and
-#   localhost:6881. Deploy node-scala BEFORE the matcher on any new server.
+# State: external volume node-state-<network> (survives container replacement).
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
   node-scala:
-    image: "${IMAGE_TAG:?IMAGE_TAG is required}"
+    image: "${NODE_SCALA_IMAGE:?NODE_SCALA_IMAGE must be set to a digest from node-config/<network>/vps-image.env -- deploy with update-node-image.yml}"
     container_name: "node-scala-${NETWORK:-mainnet}"
     restart: unless-stopped
+    network_mode: host
 
-    # Secrets are written by bootstrap.sh; never baked into the image.
+    # Only DCC_WALLET_SEED and DCC_WALLET_PASSWORD (scripts/render-service-env.sh); the
+    # entrypoint moves them into a 0600 temp config and unsets them.
     env_file:
-      - /opt/dcc/secrets/${NETWORK:-mainnet}.env
+      - /opt/dcc/secrets/node-scala-${NETWORK:-mainnet}.env
 
     # Constants only — never duplicate env_file keys here.
     environment:
-      # Map the env_file NETWORK var to DCC_NETWORK for the entrypoint.
-      # Without this, DCC_NETWORK defaults to "mainnet" (Dockerfile ENV) and
-      # non-mainnet deploys start with the wrong blockchain type.
+      # Without this, DCC_NETWORK defaults to "mainnet" (Dockerfile ENV).
       DCC_NETWORK: "${NETWORK:-mainnet}"
-      # JVM heap size — 2g is sufficient for testnet (low chain history, low load).
-      # Scale to 6g for stagenet/mainnet on a 16 GB host.
+      # JVM heap — 2g is sufficient for testnet.
       DCC_HEAP_SIZE: "2g"
-      # Bind the REST API on all interfaces so Caddy (host-network) can proxy it.
-      # The entrypoint sets -Ddcc.rest-api.bind-address=$DCC_REST_API_BIND (default 127.0.0.1).
-      # Port 6869 is still mapped to 127.0.0.1 on the host — not directly reachable externally.
-      DCC_REST_API_BIND: "0.0.0.0"
-      # Confirmed live 2026-08-31: setting DCC_LOG_LEVEL as a shell env var before `docker compose up`
-      # silently did nothing, because compose only forwards host env vars a container explicitly
-      # references here -- this key was simply missing, so the entrypoint's
-      # -Dlogback.stdout.level=${DCC_LOG_LEVEL} always fell back to the Dockerfile's baked-in INFO
-      # default regardless of what was exported on the host. Wiring it through (same pattern as
-      # DCC_NETWORK above) so `DCC_LOG_LEVEL=DEBUG docker compose up ...` actually works for live
-      # debugging.
+      # The entrypoint passes -Ddcc.rest-api.bind-address=$DCC_REST_API_BIND. Loopback only:
+      # Caddy (host network) is the sole public path; the host firewall is the second layer.
+      DCC_REST_API_BIND: "127.0.0.1"
+      # `DCC_LOG_LEVEL=DEBUG docker compose up ...` for live debugging (compose forwards only
+      # variables referenced here).
       DCC_LOG_LEVEL: "${DCC_LOG_LEVEL:-INFO}"
 
-    ports:
-      # REST API — localhost only; expose via Caddy reverse proxy
-      - "127.0.0.1:6869:6869"
-      # P2P — world-reachable for peer discovery (firewall allows TCP 6868)
-      - "6868:6868"
-      # BlockchainUpdates gRPC — localhost only; blockchain-postgres-sync connects here
-      - "127.0.0.1:6881:6881"
-      # DEX extension gRPC — localhost only; matcher connects here
-      - "127.0.0.1:6887:6887"
-      # Prometheus metrics — localhost only
-      - "127.0.0.1:6870:6870"
-
     volumes:
-      # Blockchain state — named volume survives image upgrades and docker rm
       - "node-state-${NETWORK:-mainnet}:/var/lib/dcc"
-      # Network config — entrypoint.sh requires /etc/dcc/dcc.conf to exist before
-      # it creates the combined config (user config + injected wallet secrets).
-      # Without this mount, DCC_WALLET_SEED and DCC_WALLET_PASSWORD are never applied.
+      # entrypoint.sh requires /etc/dcc/dcc.conf before it builds the combined config.
       - "/opt/dcc/config/node-${NETWORK:-mainnet}/dcc.conf:/etc/dcc/dcc.conf:ro"
-      # DEX extension plugins — bind-mounted read-only into the node's plugin classpath.
-      # The DEXExtension JAR provides the gRPC service on port 6887 used by the matcher.
-      # Populated by: scp dcc-ext_*.jar deploy@server:/opt/dcc/plugins/<network>/dcc-ext.jar
+      # Plugin jars (plugins/<network>/ in this repo), loaded ahead of the node's own classes.
       - "/opt/dcc/plugins/${NETWORK:-mainnet}:/usr/share/dcc/lib/plugins:ro"
 
-    # docker compose up --wait blocks until the container is running/healthy.
-    # Healthy = REST answers AND /blocks/height changed within the last 15 min
-    # (900s). /node/version only proved the JVM was up: a node stuck on one
-    # height (the 2026-09-01 height-2640 InvalidStateHash stall class) stayed
-    # "healthy". State lives in /tmp (tmpfs), so a restart starts a fresh
-    # 15-min window. Uses wget because the node-scala image has no curl.
-    # $$ is compose's escape for a literal $. Note: docker only MARKS the
-    # container unhealthy (visible to `docker ps`, `--wait`, and the exporter),
-    # it does not restart it. TESTNET-FINAL-PLAN Task 2.6.
+    # Healthy = REST answers AND /blocks/height changed within the last 15 min (900s).
+    # /node/version only proved the JVM was up: a node stuck on one height (the
+    # height-2640 InvalidStateHash stall class) stayed "healthy". State lives in /tmp
+    # (tmpfs), so a restart starts a fresh window. wget: the image has no curl. $$ is
+    # compose's escape for a literal $. TESTNET-FINAL-PLAN Task 2.6.
     healthcheck:
       test: ["CMD-SHELL", 'H=$$(wget -qO- -T 5 http://127.0.0.1:6869/blocks/height | sed ''s/[^0-9]//g''); [ -n "$$H" ] || exit 1; N=$$(date +%s); P=$$(cat /tmp/.liveness_h 2>/dev/null); T=$$(cat /tmp/.liveness_t 2>/dev/null || echo "$$N"); if [ "$$H" != "$$P" ]; then echo "$$H" >/tmp/.liveness_h; echo "$$N" >/tmp/.liveness_t; exit 0; fi; [ $$((N-T)) -lt 900 ]']
       interval: 60s
       timeout: 10s
-      start_period: 120s
+      start_period: 300s
       retries: 3
 
-    # ── Container security hardening ──────────────────────────────────────────
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # The JVM writes blockchain state and LevelDB files to the named volume;
-    # root filesystem is read-only — only named volumes are writable.
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777,exec
     deploy:
       resources:
         limits:
-          # JVM heap (2g) + RocksDB native + JVM overhead ≈ 3.5 GB peak for testnet.
-          # Scale to 10g for stagenet/mainnet on a 16 GB host.
           memory: 4g
         reservations:
           memory: 1g
@@ -116,16 +77,6 @@ services:
         max-size: "100m"
         max-file: "5"
 
-# External volumes — pre-created by bootstrap.sh with a fixed name that has
-# no compose project prefix. This ensures blockchain state is preserved even
-# if the deploy project name changes (docker compose managed volumes are
-# named {project}_{volume}, so changing --project-name orphans the data).
-# bootstrap.sh: docker volume create node-state-<network>
-# NOTE: existing testnet server has legacy volume named dcc-node-state-testnet.
-# Migrate during next maintenance window:
-#   docker volume create node-state-testnet
-#   docker run --rm -v dcc-node-state-testnet:/from -v node-state-testnet:/to alpine sh -c "cp -av /from/. /to/"
-# Until then the testnet external.name below stays as dcc-node-state-testnet.
 volumes:
   node-state-mainnet:
     external: true

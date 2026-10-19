@@ -11,7 +11,7 @@
 #   NETWORK=testnet docker compose -f /opt/dcc/compose/websocket-api.yml up -d
 #
 # Depends on redis being healthy (start redis.yml first).
-# Caddy reverse-proxies HTTPS + WSS from WEBSOCKET_DOMAIN → localhost:8080.
+# Caddy reverse-proxies HTTPS + WSS from websocket_domain → 127.0.0.1:8081.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:

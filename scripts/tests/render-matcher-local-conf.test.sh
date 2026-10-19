@@ -10,6 +10,7 @@ grep -qx '  address-scheme-character = "!"' <<<"${out}" || fail "address scheme"
 grep -qx '  account-storage.type = in-mem' <<<"${out}" || fail "in-mem storage"
 grep -qx '  account-storage.in-mem.seed-in-base-64 = "c2VlZA=="' <<<"${out}" || fail "seed line"
 grep -qx '  rest-api.api-key-hashes = \["hash1"\]' <<<"${out}" || fail "api key hash"
+grep -qx '  rest-api.address = "127.0.0.1"' <<<"${out}" || fail "matcher REST must bind 127.0.0.1"
 if grep -qE 'encrypted-file|redis\.address|postgres|password' <<<"${out}"; then fail "dead/unsafe block present"; fi
 # Fail closed on a missing seed or an unknown chain id.
 if NETWORK=testnet CHAIN_ID=33 MATCHER_SEED_B64='' MATCHER_HASH=h bash "${SUT}" >/dev/null 2>&1; then fail "empty seed accepted"; fi
