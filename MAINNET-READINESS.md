@@ -55,7 +55,7 @@ leftover punch-list for a real mainnet: **stake blast-radius (leasing), sentry-n
 
 ### Our status
 - 🟡 Voting machinery present but **tuned differently** (ours: `feature-check-blocks-period=3000`, `blocks-for-feature-activation=2700` = 90%) and **everything pre-activated `{1–25,28}` from height 0** → governance never exercised (CFG-1).
-- 🟡 Finality: `auto-commit-generators.yml` re-commits generators; `FinalizationStalled` alert exists. Missing: committed-stake **headroom** monitoring.
+- 🟡 Finality: generators self-commit in-process (`self-commit-to-generation`); `FinalizationStalled` alert exists. Missing: committed-stake **headroom** monitoring.
 
 ### Actions
 1. 🧊 **Mainnet genesis** = pre-activate only a small stable core; gate all post-launch protocol changes (incl. BLS finality #25) through height voting. Requires a **fresh mainnet genesis** (not a testnet reset).

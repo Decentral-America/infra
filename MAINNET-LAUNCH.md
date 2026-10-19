@@ -33,7 +33,7 @@
 ## Phase 2 — Validator onboarding + cold-treasury leasing
 - **Per generator:** generate a **cold/offline treasury seed** (never loaded on a node; custody in KeePassium / air-gapped), fund it from the genesis distribution, then **lease** the stake to the generator's hot account, keeping ~5,000 DCC hot. Full mechanics + the depth ordering hazard are in `LEASING-CUSTODY-DESIGN.md` (rehearsal ✅ validated on testnet 2026-07-16).
 - **Sequence:** one generator at a time; wait `generatingBalanceDepth` before the next so ≥2/3 committed stake (finality) holds throughout. Sign treasury txs **offline**; broadcast the signed tx from any node.
-- **Onboarding:** each generator broadcasts `CommitToGeneration` (tx 19, 100-DCC deposit) per generation period; wire `auto-commit-generators.yml` equivalent for mainnet + finality-headroom monitoring.
+- **Onboarding:** each generator broadcasts `CommitToGeneration` (tx 19, 100-DCC deposit) per generation period; rely on in-process `self-commit-to-generation` (node-scala PR #60) as on testnet + finality-headroom monitoring.
 - **Decentralization:** onboard independent validators (not all operator-run) before/at launch so no single party holds >1/3 (finality-halt) or >1/2 (liveness) of generating stake.
 
 ## Phase 3 — Sentry-node topology

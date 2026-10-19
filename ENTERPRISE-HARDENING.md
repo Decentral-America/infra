@@ -60,7 +60,7 @@ node placement. So true fault-tolerance needs BOTH node spread AND stake rebalan
   then spreads gen-0/gen-1 to distinct nodes; optionally make it `required` with 3 nodes present.
   Apply via **`provision.yml`** (uses GH-secret Linode+R2 creds — no local creds needed). Pods
   reschedule; PVCs (Linode block volumes) reattach → data intact; expect a brief finality dip +
-  re-commit (run `auto-commit-generators.yml` after).
+  re-commit (in-process self-commit handles it; check Scenario F if a node stays out).
 - **Stake rebalance for 1-fault tolerance:** equalize stake across main+gen-0+gen-1 so ANY 2-of-3
   = 2/3 (tolerate one validator/node down). Transfer DCC (treasury/faucet) to top up main to ~match
   the gens (~2.51e15 each). Then losing any one validator keeps finality live.

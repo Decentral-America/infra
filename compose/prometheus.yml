@@ -1,4 +1,4 @@
-# docker-compose for Prometheus — Newark backend node
+# docker-compose for Prometheus — main VPS (Dallas, 50.116.30.244)
 # Scrapes the DCC chain metrics exporter (which calls DCC REST API over HTTPS).
 # Location on server: /opt/dcc/compose/prometheus.yml
 #

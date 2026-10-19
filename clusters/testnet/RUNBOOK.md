@@ -215,9 +215,9 @@ now genuinely raise the authoritative `finalizedHeight` (feature-25), not just a
 A cross-committee-epoch fork hazard (T10: two committees each honestly forming a QC for a different block
 at the same view/height) was found and fixed the same window (`committeeEpoch` bound into vote/QC bytes,
 protobuf-schemas 1.6.5). On 2026-08-13, a separate connectivity bug (`NetworkServer.scala` suspending
-peers on benign graceful closes — see `docs/incidents/INCIDENT-GEN0-PEERS.md` follow-up) had stalled
+peers on benign graceful closes) had stalled
 `hotStuffFinalizedHeight` for hours by starving gen-0/gen-1 of a stable connection to main; fixed
-(node-scala PR #58) and recovered via `migrate-state-snapshot.yml`. Full audit-scope detail, threat
+(node-scala PR #58) and recovered via the since-archived `migrate-state-snapshot.yml`. Full audit-scope detail, threat
 model, and the mainnet enable-gate checklist live in `node-scala/docs/hotstuff-audit-readiness.md` — not
 duplicated here.
 
@@ -225,37 +225,34 @@ duplicated here.
 
 ## Scenario F — Generator Commitment (CommitToGenerationTransaction)
 
-**Auto-commit:** `auto-commit-generators.yml` runs on a dual staggered cron (every 5 min, ~12 attempts/hour) to keep all 3 generators committed for the next generation period. Each generation period is 100 blocks ≈ 50 min. **T2 HotStuff stops after the current period ends if NextGens < 2.**
+**How it works now:** every generator (main, gen-0, gen-1, val-0) commits itself in-process
+(`dcc.miner.self-commit-to-generation = yes`, node-scala PR #60). The external commit workflows
+(`auto-commit-generators.yml`, `commit-generators-hotstuff.yml`, `peer-check.yml`) were retired; see
+`.github/archived-workflows/README.md`. A generation period is 100 blocks (~50 min).
 
-**Check commitment status:**
+**Check commitment:** the exporter publishes `dcc_current_period_committee_size` and
+`dcc_next_period_committee_size` (alerts `CommitteeShrinking`, `CommitteeGapUpcoming`). By hand:
 ```bash
-gh workflow run peer-check.yml --repo Decentral-America/infra
-# Look for: CurGens >= 2 AND NextGens >= 2
+H=$(curl -s https://testnet-node.decentralchain.io/blocks/height | jq .height)
+START=$(( ((H-1)/100)*100 + 1 ))
+curl -s https://testnet-node.decentralchain.io/generators/at/$START | jq 'length'          # current committee (4)
+curl -s https://testnet-node.decentralchain.io/generators/at/$((START+100)) | jq 'length'  # next (404 "[]" until the first commit lands)
 ```
 
-**Manual emergency commit:**
+**Manual commit (only if a node's self-commit is rejected repeatedly; its log says `Self-commit ... rejected`):**
+sign a type-19 transaction on THAT node's loopback with its own API key, then broadcast it. Public
+`/transactions/sign` is blocked by Caddy. Read the key from SOPS through an env var; never type it.
 ```bash
-gh workflow run auto-commit-generators.yml --repo Decentral-America/infra
-# OR the manual workflow:
-gh workflow run commit-generators-hotstuff.yml --repo Decentral-America/infra
+# main (on the VPS):
+curl -s -X POST -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"type":19,"sender":"31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6"}' http://127.0.0.1:6869/transactions/sign > /tmp/ctg.json
+curl -s -X POST -H 'Content-Type: application/json' -d @/tmp/ctg.json http://127.0.0.1:6869/transactions/broadcast; rm -f /tmp/ctg.json
+# LKE node: kubectl port-forward -n dcc dcc-gen-0-0 16869:6869 (gen-1 serves REST on 6870), then the same two calls.
 ```
 
-**CommitToGeneration via node REST API (manual):**
-```bash
-# Each node signs for itself — BLS auto-derived, period start auto-filled
-# gen-0:
-kubectl port-forward dcc-gen-0-0 -n dcc 16869:6869
-curl -X POST http://localhost:16869/transactions/sign \
-  -H "X-API-Key: KEY" -H "Content-Type: application/json" \
-  -d '{"type":19,"sender":"ADDRESS"}'
-# Then broadcast: curl -X POST http://localhost:16869/transactions/broadcast -d '<signed_tx>'
-
-# gen-1 (uses port 6870 internally):
-kubectl port-forward dcc-gen-1-0 -n dcc 16870:6870
-curl -X POST http://localhost:16870/transactions/sign ...
-```
-
-**Quorum math:** Main ~26.7M DCC, gen-0 ~26.7M DCC, gen-1 ~26.7M DCC (total ~80M). Any 2-of-3 = ~53.4M > 53.3M threshold. T2 requires any majority of committed generators.
+**Quorum math:** finality needs endorsements from ≥ 2/3 of the committee's generating balance. Since the
+2026-10-18 rebalance (AUD-182) main alone holds more than 2/3 (see `TOPOLOGY.md` "Stake and fault
+tolerance"): main can finalize alone, and **losing main halts finality by design**.
 
 ---
 
@@ -279,27 +276,26 @@ curl -X POST http://localhost:16870/transactions/sign ...
 
 **Symptom:** `kubectl get pods -n dcc` shows generators `1/1 Running`, REST API healthy
 (`/blocks/height` responds), but height is stuck (e.g. at genesis height 1 on the
-Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block production.
+LKE nodes) and `/peers/connected` shows 0. No block production.
 
 **Topology (must hold):**
 
 | Node | Host | P2P bind | declared-address | known-peers |
 |------|------|----------|------------------|-------------|
-| Newark (compose) | 50.116.30.244 | `dcc.network.port = 6868` | `50.116.30.244:6868` | the 3 Frankfurt nodes |
+| main (VPS, Dallas, host network) | 50.116.30.244 | `dcc.network.port = 6868` | `50.116.30.244:6868` | none (`known-peers = []`; the LKE nodes dial main) |
 | dcc-gen-0 (LKE)  | 139.162.144.243 | 6863 | `139.162.144.243:6863` | Dallas:6868 + gen-1 + val-0 |
 | dcc-gen-1 (LKE)  | 139.162.144.243 | 6864 | `139.162.144.243:6864` | Dallas:6868 + gen-0 + val-0 |
 | dcc-val-0 (LKE)  | 139.162.144.243 | 6865 | `139.162.144.243:6865` | Dallas:6868 + gen-0 + gen-1 |
 
 **Layered checklist (work top-down — each layer must pass before the next matters):**
 
-1. **Newark P2P bind == published port.** `dcc.network.port` MUST equal the compose
-   publish (`6868:6868`) and the Linode firewall inbound rule (6868). A mismatch
-   (historically `port = 6863` vs publish 6868) makes Newark unreachable even though
-   docker-proxy shows `0.0.0.0:6868 LISTEN`. Verify: `nc -zv 50.116.30.244 6868` from
-   outside → must succeed.
-2. **Firewall egress.** Newark's Cloud Firewall `outbound_policy = DROP` must allow
+1. **Main P2P reachable.** Main runs with host networking (`compose/node-scala.yml`), so
+   `dcc.network.port = 6868` is the listening port; the Linode firewall and the host firewall
+   (`host/nftables/dcc-host.nft`) both allow inbound 6868. Verify from outside:
+   `nc -zv 50.116.30.244 6868` → succeeds.
+2. **Firewall egress.** Main's Cloud Firewall `outbound_policy = DROP` must allow
    the Frankfurt P2P ports. `terraform/main.tf` `allow-p2p-out` is `6863-6868`. Test
-   from Newark: `python3 -c "import socket;socket.create_connection(('139.162.144.243',6863),5)"`
+   from main: `python3 -c "import socket;socket.create_connection(('139.162.144.243',6863),5)"`
    → OPEN, not TimeoutError. A **timeout** (vs connection-refused) means a firewall is
    dropping packets; **refused** means the port simply isn't listening.
 3. **Frankfurt inbound.** LKE Cloud Firewall (`linode_firewall.lke_nodes`) must allow
@@ -310,26 +306,8 @@ Frankfurt nodes / 2412 on Newark) and `/peers/connected` shows 0. No block produ
    wait 2-3 min, then `kubectl logs -n dcc dcc-gen-0-0 | grep -iE "Connecting|Connected|handshake|Channel closed"`.
    Healthy nodes log `Connecting to /<ip>:<port>` then `Connected to ...`.
 
-**KNOWN OPEN ISSUE (as of 2026-06-10):** Layers 1-4 verified GREEN (Newark binds 6868
-and is externally reachable; egress widened to 6863-6868 and applied; Frankfurt P2P
-6863/6864 reachable from both Newark and the public internet; pod config correct with
-known-peers present). However layer 5 fails: the node emits **no outbound connection
-attempt at all** — not even at DEBUG — over multiple minutes, despite
-`max-outbound-connections = 100` (default), correct `known-peers`, and
-`NetworkServerL1.apply` constructing the server + scheduling the connect task
-unconditionally. Newark (long-running, single node) shows the same: it has never had a
-peer. Next diagnostic requires **interactive cluster access** (not 8-min CI cycles):
-  - `kubectl exec` into a generator and confirm the effective logback level for
-    `com.decentralchain.network` (the `-Dlogback.stdout.level` may not lower the
-    network logger; a logback `<logger name="com.decentralchain.network" level="TRACE"/>`
-    override may be required to see `doConnect`).
-  - Confirm `scheduleConnectTask` fires and what `peerDatabase.nextCandidate` returns
-    (it should resolve `settings.knownPeers`); check whether the candidates are being
-    added to `excludedAddresses` (self/declared-address collision) or silently dropped.
-  - Verify the handshake `applicationName` (`Constants.ApplicationName + "!"`) matches
-    between Newark and Frankfurt by capturing a handshake frame.
-  - **Recommended:** pull a kubeconfig locally (`linode-cli lke kubeconfig-view <id>`)
-    for sub-second iteration instead of CI round-trips.
+**History:** the 2026-06-10 "no outbound connection attempt" issue recorded here was resolved on
+2026-07-08 (handshake-timeout and dedup fixes, IR-6 causes 1-4); peering has worked since.
 
 **val-0 specific:** exits 61 `CANNOT GET CONSOLE TO ASK WALLET PASSWORD` if it lacks
 either a seed (`DCC_WALLET_SEED`) or `wallet.password = ""`. Both are now set; if it
@@ -351,11 +329,11 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
 - **Recover:** confirm height advances again on all nodes; watch for a fork on rejoin (IR-4).
 
 ### IR-2 — Finality stall (blocks produced but not finalizing)
-- **Detect:** `FinalizationStalled` (`dcc_finality_lag > 250`) or `FinalizationNotAdvancing` (30 min static). Chain keeps producing (FairPoS is unaffected) — finality is what's behind.
-- **Triage:** finality needs ≥ 2/3 of generating-balance **committed** for the current generation period. Check committed generators (RUNBOOK Scenario F: `CurGens`/`NextGens` should be ≥ 2). A generator that missed its `CommitToGeneration` (tx type 19) drops committed stake below 2/3.
-- **Mitigate:** run `auto-commit-generators.yml` (or the manual commit in Scenario F) to re-commit generators for the period; verify each generator's commit landed.
-- **Recover:** `dcc_finalized_height` resumes advancing, lag returns to ~1 generation-period (100). Not chain-fatal, but fix promptly — a sustained stall means no economic finality.
-- **Observational HotStuff** (`HotStuffCommitNotAdvancing`, WARNING) is **not** authoritative — never page-worthy; diagnose with `hotstuff-status.yml`, don't treat as a chain incident.
+- **Detect:** `FinalizationStalled` (`dcc_finality_lag > 20` for 10 min; normal ~3) or `FinalizationNotAdvancing` (30 min static). Chain keeps producing; finality is what's behind. `HotStuffCommitNotAdvancing` fires when T2 commits stop while blocks continue.
+- **Triage:** finality needs ≥ 2/3 of the committee's generating balance endorsing. Main alone holds more than 2/3 (AUD-182), so first check main: up, synced, has its LKE peers, and logs no `[HotStuff] WATCHDOG` loop. Then the committee for the period (Scenario F).
+- **Mitigate:** restart a wedged node (`update-node-image.yml` for main, `scripts/roll-testnet-node.sh` for an LKE node). Commit a missing generator by hand only as in Scenario F.
+- **Recover:** `dcc_finalized_height` advances again and the lag returns to ~3. Not chain-fatal, but fix promptly: a sustained stall means no economic finality.
+- **HotStuff is authoritative on testnet** (`hotstuff.authoritative = true` since 2026-08-03): a T2 stall caps the finality lag near 100 (the `height - max-rollback` fallback), which is exactly what `FinalizationStalled` catches.
 
 ### IR-3 — Key compromise (generator/main seed, API key, SOPS age, or SSH key)
 - **Detect:** unexpected transactions from a node/generator address; a leaked secret; anomalous admin/API access.
@@ -371,17 +349,15 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
 ### IR-4 — Fork / reorg
 - **Detect:** nodes disagree on the block at a height (different block IDs/signatures); a node reports a lower cumulative score; explorer shows a reorg.
 - **Triage:** identify the canonical chain = highest cumulative score **and** highest `finalized` height. **Feature-25-finalized blocks must never be reverted** — if a *finalized* block forked, that is a critical consensus bug: halt and escalate (do not auto-heal).
-- **Mitigate (non-finalized divergence, normal):** FairPoS resolves by score automatically once the mesh reconnects. For a node stuck on a minority branch, roll it back below the divergence via the node's own API (`POST /debug/rollback`, loopback + API key only) and let it resync. **DO NOT wipe + p2p-resync a gen node on the current testnet chain** — see IR-5: the chain is un-resyncable from genesis, so a wipe strands the node. Recover a gen node with `migrate-state-snapshot.yml` instead.
+- **Mitigate (non-finalized divergence, normal):** FairPoS resolves by score automatically once the mesh reconnects. For a node stuck on a minority branch, roll it back below the divergence via the node's own API (`POST /debug/rollback`, loopback + API key only) and let it resync. If that fails, use the IR-5 recovery.
 - **Recover:** all nodes converge on one chain; `finalized` height monotonic across nodes; no double-spends in the reorged range.
 
 ### IR-5 — Gen node can't sync / `InvalidStateHash` (build or state-hash divergence)
-- **Detect:** a k8s gen node is stuck far below main's tip and cycling (`~30s` handshake loop); its log shows `ExtensionAppender ... error appending ... InvalidStateHash(Some(expected),Some(computed))` then a rollback; `peer-check.yml` / `hotstuff-status.yml` show the gen height frozen while main advances.
-- **Root cause (2026-07-16 incident):** two independent failure modes, both surfacing as `InvalidStateHash`:
-  1. **Wrong node build.** The gen nodes were pinned to an image (`9f6672ce`, later `a84096a6`) whose state-hash logic differs from the DCC HotStuff build `be2dcfc0` that forged the chain. Fix: pin ALL nodes to the exact chain-forging build. Main's `be2dcfc0` is republished as `ghcr.io/decentral-america/node-scala:node-scala-testnet-be2dcfc0` (digest `sha256:9d7d4f31…`) — the whole fleet (k8s `nodes.yaml` + the 3 VPS deploy workflows) is **digest-pinned** to it. Never let the mutable `node-scala-testnet-latest` tag drive a node — it has drifted to an incompatible mainline build.
-  2. **Internally-inconsistent chain history.** Even on the correct build, a from-genesis re-sync dies at **~height 25.5k** because blocks forged before a state-hash fix (now in `be2dcfc0`) commit hashes the current build cannot reproduce. Main survives only because it never re-validates history (trusts its RocksDB). **Therefore this chain CANNOT be recovered by wipe + p2p-resync.**
-- **Mitigate / Recover — state-snapshot migration (`migrate-state-snapshot.yml`, confirm=`MIGRATE`):** briefly stops main for a consistent RocksDB snapshot, streams `data/` (chain state only — not wallet, not `peers.dat`), then for each gen node scales the StatefulSet to 0, mounts its PVC in a loader pod, replaces `/var/lib/dcc/data` with main's snapshot, and scales back up. Gen nodes then adopt main's exact tip state without re-validating history and forge/validate new (post-fix) blocks normally. This is the ONLY recovery path for a wiped/diverged gen node — `resync-gen-nodes.yml` (wipe + p2p) will strand it.
-- **If a gen self-forks during recovery:** with `quorum=1`, three gen nodes can satisfy quorum among themselves and forge their own chain when they can't see main (feature-25 then finalizes it → irreversible). Set gen `miner.enable=no` during any catch-up, then re-enable only once the node is AT the tip (via snapshot). Nodes coming up from a snapshot are already at the tip, so this is moot for the snapshot path.
-- **Verify:** all nodes at the same height with `restarts=0`; finality lag drops from ~100 (main-solo) to ~1–3 (committee endorsing); over time gen addresses (`31Pm…`=gen-0, `31dL…`=gen-1) appear in the block-generator distribution.
+- **Detect:** an LKE node is stuck far below main's tip and cycling; its log shows `InvalidStateHash(Some(expected),Some(computed))` then a rollback; `LkeGeneratorsDown` fires or its height in `cluster-diagnostics.yml` is frozen while main advances.
+- **First check the build:** all four nodes must run the same digest (rule D6: `node-config/testnet/vps-image.env` = the three pins in `nodes.yaml`; `scripts/check-digest-parity.sh`). A different build is the usual cause (2026-07-16 incident).
+- **Recover — P2P resync (default):** scale the StatefulSet to 0, delete that node's PVC, scale back to 1; the node syncs from genesis over P2P. Set `miner.enable = no` for that node during the catch-up (with `quorum = 1` a lagging node must not forge its own branch), and re-enable it at the tip. Proven on the current (2026-09-04 relaunch) chain on 2026-10-04, when all three LKE nodes resynced from genesis to ~34k. A full replay past height 56354 (equivocation proof) and 60000 (deposit forfeiture) has not been exercised by a fresh node (AUD-035, node-scala plan).
+- **Recover — state transplant (fallback):** if the resync itself stops with `InvalidStateHash`, transplant main's RocksDB `data/` into the PVC with a loader pod. The procedure is the archived `.github/archived-workflows/migrate-state-snapshot.yml` (read it; restore it to `.github/workflows/` only for that run).
+- **Verify:** all nodes at the same height with `restarts=0`; finality lag back to ~3; the node's address appears in the block-generator distribution again.
 
 ### IR-6 — Peer connectivity loops / "0 connected peers" / stuck at 1 active generator
 - **Detect:** admin-dashboard "Active Generators" stuck at 1 (it counts distinct generators over the
@@ -408,9 +384,8 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
      likely triggered by `HandshakeHandler`'s own duplicate-connection dedup, which keys on
      `(host, nonce)` not direction) became a 30s penalty box — see the T2 HotStuff rollout history note
      in Scenario E above for the fix + recovery detail; not repeated here.
-- **Mitigate/Recover (generic):** if a gen node has fallen far enough behind that connectivity alone
-  won't let it catch up in reasonable time, use `migrate-state-snapshot.yml` (IR-5) rather than waiting
-  it out or wiping — this chain is not resyncable from genesis.
+- **Mitigate/Recover (generic):** if a node has fallen far enough behind that connectivity alone
+  won't let it catch up in reasonable time, use the IR-5 recovery (P2P resync, then state transplant).
 - **Verify:** stable connections with zero suspend-loop recurrence across multiple
   `cluster-diagnostics.yml` runs; heights converge; over time all generator addresses (not just main)
   appear in the block-generator distribution again.
@@ -420,8 +395,8 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
   re-checking before assuming a sixth new cause.
 
 ### Escalation & contacts
-- Secrets/keys: `Ecosystem/KEEWEB_BACKUP.md` (KeePassium) — main #1, gen-0 #2, gen-1 #3, API keys #11–13, AGE (testnet) #16, faucet #26, treasury #27. Stagenet/mainnet age keys are held by the operator (not in the export).
-- Deploy substrates & release flow: `clusters/testnet/TOPOLOGY.md`. Node image cutover: `deploy-testnet-release.yml`.
+- Secrets/keys: SOPS (`secrets/testnet.env`, decrypt with the testnet age key) and the operator's KeeWeb vault.
+- Deploy substrates & release flow: `clusters/testnet/TOPOLOGY.md`. Node image changes: `pin-node-image-digest.yml` PR + `runbooks/staggered-node-rollout.md`.
 
 ---
 
@@ -449,10 +424,10 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
 
 ## Gotchas — What NOT to Do
 
-- `restart-host-network.yml` **WIPES chain data** — use `update-node-image.yml` instead.
-- `peer-watchdog.yml` **SIGKILLs the node** — emergency tool only; causes a BPS crash + effective chain reset for that node.
-- Do not use Docker bridge mode for the main node — causes TCP failures reaching it from LKE.
-- Do not write matcher's `local.conf` to `/opt/dcc/data/matcher-testnet/config/` — silently ignored; it must go to `/opt/dcc/config/matcher-testnet/local.conf`.
-- blockchain-postgres-sync (BPS) crashes after a node restart — restart it too: `docker start blockchain-postgres-sync-testnet` on Newark.
-- Do not use `gh run watch` — burns the GitHub REST rate limit (1200/hr for the whole org). Use the `/monitor-ci` pattern (GraphQL polling + artifact download) instead.
-- Do not recall credentials from memory — always read `Ecosystem/KEEWEB_BACKUP.md` first; it's updated when secrets rotate, your memory isn't.
+- `restart-host-network.yml` **WIPES the main node's chain data**. Use `update-node-image.yml` / `deploy-node-config.yml` instead.
+- Never start the main node by hand with `docker run`: `scripts/node-up.sh` (via those workflows) is the only path, and it runs the digest from `vps-image.env`.
+- Do not use Docker bridge mode for the main node; it causes TCP failures reaching it from LKE.
+- Do not write the matcher's `local.conf` to `/opt/dcc/data/matcher-testnet/config/`, which is silently ignored. It lives at `/opt/dcc/config/matcher-testnet/local.conf` and only `push-secrets.yml` writes it (`scripts/render-matcher-local-conf.sh`).
+- blockchain-postgres-sync (BPS) exits when the node's gRPC stream drops and restarts on its own (restart policy). If it does not, `docker start blockchain-postgres-sync-testnet` on the VPS.
+- Do not use `gh run watch`: it burns the GitHub REST rate limit (1200/hr for the whole org). Use GraphQL polling plus artifact download instead.
+- Do not recall credentials from memory: read them from SOPS or the operator's vault.

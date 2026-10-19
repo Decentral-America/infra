@@ -10,14 +10,9 @@
 >
 > **Canonical ecosystem deploy runbook:** see [DEPLOY.md](DEPLOY.md). This README stays focused on infra-repo internals.
 >
-> **Known overlap, not yet reconciled (2026-08-13):** this README's "Master secrets inventory" and
-> "Per-secret reference" sections below cover much of the same ground as `DEPLOY.md`'s Sections A/C/D
-> (org secrets, infra repo secrets, deploy secrets) — the two have already drifted (e.g. this README
-> notes the resolved `CENTRAL_USERNAME`/`CENTRAL_PASSWORD` → `MAVEN_CENTRAL_*` rename; `DEPLOY.md`'s
-> table doesn't mention it at all). `DEPLOY.md` is the broader, 168-item cross-repo canonical inventory;
-> treat this README's tables as a lighter-weight subset until someone does a full line-by-line
-> reconciliation — don't trust either blindly for a specific secret's current status without checking
-> the actual GitHub/SOPS source.
+> **Secrets inventory:** `DEPLOY.md` sections A–D are the single inventory of GitHub secrets
+> (names, scope, where referenced), regenerated from the live GitHub API. This README explains the
+> secret *architecture* only and no longer keeps a second, drifting table.
 
 ---
 
@@ -125,58 +120,7 @@ credentials (`DEPLOY_*`) are infra-scoped and the deploy job's
 
 ## Master secrets inventory
 
-Complete count across the entire ecosystem. No secrets live in the `DecentralChain`
-or `blockchain-postgres-sync` repo.
-
-| Location | Secret(s) | Count | Status |
-|----------|-----------|------:|--------|
-| **Org** (`Decentral-America`) | `NX_CLOUD_ACCESS_TOKEN` | 1 | ✅ set |
-| **Org** | `NPM_TOKEN` | 1 | ✅ set |
-| **Org** | `MAVEN_GPG_PRIVATE_KEY` | 1 | ✅ set |
-| **Org** | `MAVEN_GPG_PASSPHRASE` | 1 | ✅ set |
-| **Org** | `CENTRAL_USERNAME` | 1 | ✅ set (⚠ can delete — replaced by `MAVEN_CENTRAL_USERNAME`) |
-| **Org** | `CENTRAL_PASSWORD` | 1 | ✅ set (⚠ can delete — replaced by `MAVEN_CENTRAL_PASSWORD`) |
-| **Org** | `MAVEN_CENTRAL_USERNAME` | 1 | ✅ set |
-| **Org** | `MAVEN_CENTRAL_PASSWORD` | 1 | ✅ set |
-| **Org** | `CODECOV_TOKEN` | 1 | ✅ set |
-| **Org** | `DOCKERHUB_TOKEN` | 1 | ✅ set |
-| **Org** | `GHCR_TOKEN` | 1 | ✅ set |
-| **Org** | `CLOUDFLARE_API_TOKEN` | 1 | ✅ set |
-| **Org** | `CLOUDFLARE_ACCOUNT_ID` | 1 | ✅ set |
-| **Org** | `SENTRY_AUTH_TOKEN` | 1 | ✅ set |
-| **Org** | `MAVEN_GPG_KEY_ID` | 1 | ✅ set |
-| **Org** | `NVD_API_KEY` | 1 | ✅ set |
-| **Org** | `CHROME_EXTENSION_ID` | 1 | ❌ missing |
-| **Org** | `CHROME_CLIENT_ID` | 1 | ❌ missing |
-| **Org** | `CHROME_CLIENT_SECRET` | 1 | ❌ missing |
-| **Org** | `CHROME_REFRESH_TOKEN` | 1 | ❌ missing |
-| **Org** | `FIREFOX_ADDON_GUID` | 1 | ❌ missing |
-| **Org** | `FIREFOX_JWT_ISSUER` | 1 | ❌ missing |
-| **Org** | `FIREFOX_JWT_SECRET` | 1 | ❌ missing |
-| **Org** | `EDGE_PRODUCT_ID` | 1 | ❌ missing |
-| **Org** | `EDGE_CLIENT_ID` | 1 | ❌ missing |
-| **Org** | `EDGE_API_KEY` | 1 | ❌ missing |
-| **infra repo** (`mainnet` env) | `DEPLOY_HOST` | 1 | ❌ missing |
-| **infra repo** (`mainnet` env) | `DEPLOY_USER` | 1 | ❌ missing |
-| **infra repo** (`mainnet` env) | `DEPLOY_SSH_KEY` | 1 | ❌ missing |
-| **infra repo** (`mainnet` env) | `DEPLOY_HOST_FINGERPRINT` | 1 | ❌ missing |
-| **infra repo** (`stagenet` env) | same 4 DEPLOY_* secrets | 4 | ❌ missing |
-| **infra repo** (`testnet` env) | same 4 DEPLOY_* secrets | 4 | ✅ set (server live: 66.228.55.154) |
-| **infra repo** (repo-level) | `LINODE_TOKEN` | 1 | ✅ set |
-| **infra repo** (repo-level) | `R2_ACCESS_KEY_ID` | 1 | ✅ set (R2 state backend) |
-| **infra repo** (repo-level) | `R2_SECRET_ACCESS_KEY` | 1 | ✅ set (R2 state backend) |
-| **Server** `/opt/dcc/secrets/*.env` | written by bootstrap (see §[Server .env](#server-env-file-reference)) | — | written at provision time |
-| **DecentralChain repo** | — | **0** | nothing needed |
-
-> ✅ **MAVEN_CENTRAL naming mismatch — RESOLVED** (2026-05-23). `publish-protobuf-serialization.yml`
-> was updated to use `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` (matching all other
-> 6 publish workflows). Both secrets are now set at org level. The legacy `CENTRAL_USERNAME` /
-> `CENTRAL_PASSWORD` secrets can be safely deleted from the org once confirmed no other workflow
-> references them:
-> ```bash
-> gh secret delete CENTRAL_USERNAME --org Decentral-America
-> gh secret delete CENTRAL_PASSWORD --org Decentral-America
-> ```
+See [DEPLOY.md](DEPLOY.md) sections A–D (generated from the live GitHub API; names only).
 
 ---
 
@@ -1309,51 +1253,17 @@ ssh deploy@<DEPLOY_HOST> \
 
 ## Operations
 
-Recurring operational workflows for the LKE testnet cluster.
+Recurring operational workflows for the testnet:
 
----
+| Workflow | Schedule | What it checks or does |
+|---|---|---|
+| `infra-liveness.yml` | every 30 min (LKE `liveness-trigger` CronJob; GitHub cron backup) | main height advances, LKE pool ready, alerting deadman (`Watchdog` + alert-webhook), Flux Kustomizations Ready |
+| `canary-transaction.yml` | every 15 min (same trigger) | a real transfer confirms on testnet |
+| `matcher-canary.yml` | hourly (same trigger) | a crossing order pair matches and settles on chain |
+| `drift-detect.yml` | weekly | `tofu plan` vs live Linode resources |
+| `ghcr-cleanup.yml` | weekly | prunes untagged GHCR versions, never `testnet-pinned-*` |
+| `prune-released-chain-volumes.yml` | weekly | deletes old Released chain-data PVs |
 
-### `auto-commit-generators.yml` — T2 HotStuff generator commitment
-
-**File:** `.github/workflows/auto-commit-generators.yml`
-**Schedule:** Every 5 minutes (dual staggered cron: `*/10` + `5,15,25,35,45,55`, ~12 attempts/hour).
-**Trigger:** Also available via `workflow_dispatch` for manual runs.
-**Environment:** `testnet`
-
-**What it does:** DCC HotStuff consensus requires each generator wallet to re-commit to the
-next generation period every 100 blocks (~50 minutes). Without this, a generator falls out
-of the active set and block production degrades. This workflow automates three commitment
-transactions per cycle:
-
-| Generator | Address | REST port | Secret |
-|-----------|---------|-----------|--------|
-| Main node | `31RPEKcz71a3hdxt8z7qLhTpRMuRV2kUyr6` | `6869` (SSH to server) | `MAIN_NODE_REST_API_KEY` |
-| gen-0 (LKE) | `31PmKNdHAU5sZbtg8TrzKh8WfE7E8xBc9WD` | `6869` (kubectl port-forward) | `GEN_0_NODE_REST_API_KEY` |
-| gen-1 (LKE) | `31dLhqhGoGVhtkf5msWFmgZn1ErrVR6b9qV` | `6870` (kubectl port-forward) | `GEN_1_NODE_REST_API_KEY` |
-
-**Mechanism:** Signs and broadcasts a type-19 (GeneratorCommitment) transaction to each
-node's REST API. For the main node, the workflow SSHs in and calls `localhost`. For gen-0
-and gen-1 (running on LKE), it fetches the cluster kubeconfig via the Linode API and uses
-`kubectl port-forward` to reach the pod's REST port.
-
-**Secrets required in the `testnet` environment:**
-
-| Secret | Purpose |
-|--------|---------|
-| `LINODE_TOKEN` | Fetch LKE kubeconfig via Linode API |
-| `TESTNET_DEPLOY_SSH_KEY` | SSH key for main-node commitment + finality report |
-| `TESTNET_DEPLOY_HOST` | IP of the main testnet node |
-| `TESTNET_DEPLOY_USER` | SSH username on the main testnet node |
-| `MAIN_NODE_REST_API_KEY` | API key hash for the main node's REST API |
-| `GEN_0_NODE_REST_API_KEY` | API key hash for dcc-gen-0's REST API |
-| `GEN_1_NODE_REST_API_KEY` | API key hash for dcc-gen-1's REST API |
-
-**Final step:** After committing all generators, the workflow SSHs to the main node and
-calls `GET /blocks/height` and `GET /blocks/height/finalized` to log the chain tip, the
-feature-25 Deterministic Finality finalized height, and the lag between them. This serves
-as a lightweight health check after each commitment cycle.
-
-**Manual run:**
-```bash
-gh workflow run auto-commit-generators.yml --repo Decentral-America/infra
+Generator commitment is in-process on every node (`dcc.miner.self-commit-to-generation = yes`); the old
+`auto-commit-generators.yml` was retired (`.github/archived-workflows/README.md`).
 ```
