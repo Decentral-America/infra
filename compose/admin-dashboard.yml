@@ -28,6 +28,9 @@ services:
       # The admin image refuses to start in production without its own public URL (OAuth
       # callback and absolute links); it no longer bakes in a per-network default.
       ADMIN_DASHBOARD_URL: "https://${NETWORK:-mainnet}-admin.decentralchain.io"
+      # Treasury fund/sweep/scan need a GitHub login on this comma-separated list; an empty list
+      # denies everyone in production (apps/admin-dashboard treasuryAccess.ts).
+      ADMIN_DASHBOARD_TREASURY_USERS: "${ADMIN_DASHBOARD_TREASURY_USERS:-jourlez}"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/healthz"]
       interval: 30s
