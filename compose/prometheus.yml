@@ -205,6 +205,8 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--web.listen-address=127.0.0.1:9093'
       - '--storage.path=/alertmanager'
+      # Single instance: no HA gossip. The default listened on 0.0.0.0:9094 tcp+udp.
+      - '--cluster.listen-address='
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9093/-/ready || exit 1"]
       interval: 60s

@@ -31,8 +31,9 @@ services:
       DCC_NETWORK: "${NETWORK:-mainnet}"
       # JVM heap — 2g is sufficient for testnet.
       DCC_HEAP_SIZE: "2g"
-      # The entrypoint passes -Ddcc.rest-api.bind-address=$DCC_REST_API_BIND.
-      DCC_REST_API_BIND: "0.0.0.0"
+      # The entrypoint passes -Ddcc.rest-api.bind-address=$DCC_REST_API_BIND. Loopback only:
+      # Caddy (host network) is the sole public path; the host firewall is the second layer.
+      DCC_REST_API_BIND: "127.0.0.1"
       # `DCC_LOG_LEVEL=DEBUG docker compose up ...` for live debugging (compose forwards only
       # variables referenced here).
       DCC_LOG_LEVEL: "${DCC_LOG_LEVEL:-INFO}"

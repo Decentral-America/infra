@@ -1,0 +1,31 @@
+#!/usr/sbin/nft -f
+# DCC testnet VPS host firewall, OBSERVE-ONLY (AUD-052 staged rollout, stage 1). Same rules as
+# dcc-host.nft, but the policy is accept and the final rule only logs what WOULD be dropped
+# ("dcc-host-would-drop: " in the kernel log). Applied by hand for the observation window; never
+# installed as a service. See dcc-host.nft for why this lives in its own table.
+table inet dcc_host
+delete table inet dcc_host
+table inet dcc_host {
+  chain input {
+    type filter hook input priority filter + 10; policy accept;
+
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid counter
+
+    # Containers on Docker bridge networks reaching host services.
+    iifname "docker0" accept
+    iifname "br-*" accept
+
+    # ICMP and ICMPv6 (IPv6 neighbour discovery, router advertisements, PMTU).
+    meta l4proto icmp accept
+    meta l4proto ipv6-icmp accept
+
+    # SSH (GitHub runners; fail2ban), HTTP/HTTPS and HTTP/3 (Caddy), DCC P2P (LKE peers).
+    tcp dport { 22, 80, 443, 6868 } accept
+    udp dport 443 accept
+
+    limit rate 10/minute burst 20 packets log prefix "dcc-host-would-drop: " level info
+    counter
+  }
+}

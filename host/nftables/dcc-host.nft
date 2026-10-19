@@ -1,0 +1,36 @@
+#!/usr/sbin/nft -f
+# DCC testnet VPS host firewall, ENFORCING (AUD-052). Installed as /etc/dcc/dcc-host.nft and
+# loaded by dcc-host-firewall.service. Defense in depth behind the Linode cloud firewall
+# (dcc-firewall-testnet, inbound 22/80/443/6868): one cloud-firewall edit must not expose the
+# node REST API, gRPC, matcher, data-service, websocket, BPS metrics or alertmanager gossip.
+#
+# Own table, INPUT hook only. Docker's and fail2ban's iptables-nft chains are untouched; a packet
+# must be accepted by every base chain on the hook, so this table can only add drops.
+# NEVER enable Debian's nftables.service: its /etc/nftables.conf begins with `flush ruleset`,
+# which would delete Docker's and fail2ban's rules.
+table inet dcc_host
+delete table inet dcc_host
+table inet dcc_host {
+  chain input {
+    type filter hook input priority filter + 10; policy drop;
+
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid drop
+
+    # Containers on Docker bridge networks reaching host services.
+    iifname "docker0" accept
+    iifname "br-*" accept
+
+    # ICMP and ICMPv6 (IPv6 neighbour discovery, router advertisements, PMTU).
+    meta l4proto icmp accept
+    meta l4proto ipv6-icmp accept
+
+    # SSH (GitHub runners; fail2ban), HTTP/HTTPS and HTTP/3 (Caddy), DCC P2P (LKE peers).
+    tcp dport { 22, 80, 443, 6868 } accept
+    udp dport 443 accept
+
+    limit rate 10/minute burst 20 packets log prefix "dcc-host-drop: " level info
+    counter drop
+  }
+}

@@ -38,4 +38,6 @@ printf '  dcc-blockchain-client.blockchain-updates-grpc.no-data-timeout = 5m\n'
 printf '  account-storage.type = in-mem\n'
 printf '  account-storage.in-mem.seed-in-base-64 = "%s"\n' "${MATCHER_SEED_B64}"
 printf '  rest-api.api-key-hashes = ["%s"]\n' "${MATCHER_HASH}"
+# The image's dex.conf binds 0.0.0.0; only Caddy (host network, 127.0.0.1:6886) needs the REST API.
+printf '  rest-api.address = "127.0.0.1"\n'
 printf '}\n'
