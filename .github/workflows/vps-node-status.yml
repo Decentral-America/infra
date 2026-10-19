@@ -15,14 +15,18 @@ jobs:
     timeout-minutes: 5
     environment: testnet
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Query VPS node finality and services
         env:
-          SSH_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
+          DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.TESTNET_DEPLOY_HOST }}
           SSH_USER: ${{ secrets.TESTNET_DEPLOY_USER }}
         run: |
-          echo "$SSH_KEY" > /tmp/id_rsa && chmod 600 /tmp/id_rsa
-          ssh -i /tmp/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+          ./scripts/ssh-setup.sh "$SSH_HOST"
+          ssh \
             "${SSH_USER}@${SSH_HOST}" \
             'set +e
              echo "=== Finality ==="
@@ -60,4 +64,3 @@ jobs:
              else
                echo "$MATCHER_REDIS_LINES"
              fi'
-          rm -f /tmp/id_rsa

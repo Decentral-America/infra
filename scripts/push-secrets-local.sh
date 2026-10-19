@@ -84,7 +84,12 @@ else
   exit 1
 fi
 
-SSH="ssh -i ${DEPLOY_KEY_FILE} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 deploy@${SERVER_IP}"
+# Pinned host key only (ssh/known_hosts); refuse a host that is not pinned.
+if ! grep -qE "^${SERVER_IP//./\\.} ssh-ed25519 " "${REPO_ROOT}/ssh/known_hosts"; then
+  echo "[push-secrets] FATAL: ${SERVER_IP} has no pinned host key in ssh/known_hosts (see its header)"
+  exit 1
+fi
+SSH="ssh -i ${DEPLOY_KEY_FILE} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${REPO_ROOT}/ssh/known_hosts -o HostKeyAlgorithms=ssh-ed25519 -o ConnectTimeout=10 deploy@${SERVER_IP}"
 
 # ── Verify SOPS is available ──────────────────────────────────────────────────
 if ! command -v sops &>/dev/null; then

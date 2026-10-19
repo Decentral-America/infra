@@ -25,7 +25,6 @@
 #   <PREFIX>_DEPLOY_HOST             — Linode server IP
 #   <PREFIX>_DEPLOY_USER             — SSH user
 #   <PREFIX>_DEPLOY_SSH_KEY          — Ed25519 private key (base64)
-#   <PREFIX>_DEPLOY_HOST_FINGERPRINT — Ed25519 host fingerprint
 #
 # Note: infra repo must be PUBLIC for cross-org reusable workflows to work
 # on GitHub Free plan. No secrets are in the code — all sensitive values are
@@ -164,27 +163,14 @@ jobs:
           repository: Decentral-America/infra
           persist-credentials: false
 
-      - name: Set up SSH credentials
-        # Writes the deploy key to a mode-600 file and pre-populates known_hosts
-        # so subsequent scp/ssh steps do not need StrictHostKeyChecking=no.
-        # All remote operations use native scp/ssh — no third-party actions.
-        #
-        # KNOWN GAP: DEPLOY_HOST_FINGERPRINT is documented above as a required
-        # secret but is never actually compared against ssh-keyscan's result —
-        # this trusts whatever key the host presents at connect time (TOFU on
-        # every ephemeral runner, not just the first-ever connection). Closing
-        # this needs someone who knows the exact stored format (ssh-keygen -lf
-        # SHA256 fingerprint vs raw known_hosts line) to wire up the compare
-        # without risking a false-mismatch that blocks every deploy.
+      - name: Set up SSH credentials (pinned host key)
+        # scripts/ssh-setup.sh writes the deploy key, the PINNED host key from infra's
+        # ssh/known_hosts and an ssh config with StrictHostKeyChecking yes. The old trust-on-first-use scan
+        # trusted whatever key the host presented on every run; a host with no pin is refused.
         env:
           DEPLOY_HOST: ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_HOST || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_HOST || secrets.MAINNET_DEPLOY_HOST }}
           DEPLOY_KEY:  ${{ inputs.network == 'testnet' && secrets.TESTNET_DEPLOY_SSH_KEY || inputs.network == 'stagenet' && secrets.STAGENET_DEPLOY_SSH_KEY || secrets.MAINNET_DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+        run: ./scripts/ssh-setup.sh "$DEPLOY_HOST"
 
       - name: Upload compose file to server
         # Uploads compose/<service>.yml to $compose_dir/ (filename only, no subdirectory prefix).

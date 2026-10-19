@@ -118,7 +118,7 @@ replays its local event queue and snapshots.
 
 ```bash
 # on the VPS, once node-scala-testnet is up and advancing
-docker restart matcher-testnet        # or: gh workflow run restart-services.yml (⛔ operator)
+docker restart matcher-testnet
 sleep 120
 curl -s http://127.0.0.1:6886/matcher                                   # public key, same as before the outage
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:6886/matcher/orderbook   # 200
