@@ -34,6 +34,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write
 
 concurrency:
   group: pin-node-image-digest
@@ -53,12 +54,15 @@ jobs:
 
       - uses: regclient/actions/regctl-installer@1b705e32d40851370799ea5814e83d0a5f6a70dc  # v0.1.0
 
-      # node-scala is a private package: anonymous reads are denied. GHCR_TOKEN (classic PAT with
-      # write:packages, shared with ghcr-cleanup.yml) also lets the tag step below write.
+      # The package is public, so reads need no credential; the testnet-pinned-* tag push below
+      # writes to it. That uses this run's GITHUB_TOKEN (packages: write above), which works once
+      # the node-scala package grants this repo write access (package settings, Manage Actions
+      # access). No long-lived PAT is involved.
       - name: Log in to GHCR
         env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: printf '%s' "$GHCR_TOKEN" | regctl registry login ghcr.io -u decentral-america --pass-stdin
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | regctl registry login ghcr.io -u "$ACTOR" --pass-stdin
 
       - name: Resolve digest
         id: resolve
