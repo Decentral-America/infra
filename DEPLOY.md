@@ -39,23 +39,24 @@
 
 ### A–D. GitHub secrets (org, infra repo, infra environments)
 
-Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only, never values), with the workflow files that reference each name across infra, node-scala, matcher, DecentralChain and docs (archived workflows excluded). `**unreferenced**` rows are cleanup candidates (Task 26 of the 2026-10-18 audit plan). Regenerate: `scripts/secrets-inventory.py --eco <dir with each repo's .github>`.
+Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only, never values), with the workflow files that reference each name across infra, node-scala, matcher, DecentralChain and docs (archived workflows excluded). `**unreferenced**` rows are cleanup candidates (matching is case-insensitive, like GitHub's own secret lookup) (Task 26 of the 2026-10-18 audit plan). Regenerate: `scripts/secrets-inventory.py --eco <dir with each repo's .github>`.
 
 | Scope | Secret | Updated | Referenced by (workflow files; archived excluded) |
 |---|---|---|---|
 | infra env infra-testnet-provision | `TF_VAR_DEFAULT_MATCHER` | 2026-06-12 | infra:drift-detect.yml, infra:provision.yml |
-| infra env infra-testnet-provision | `TF_VAR_DEPLOY_SSH_PUBLIC_KEY` | 2026-10-10 | **unreferenced** |
-| infra env infra-testnet-provision | `TF_VAR_ROOT_PASSWORD` | 2026-06-04 | **unreferenced** |
+| infra env infra-testnet-provision | `TF_VAR_DEPLOY_SSH_PUBLIC_KEY` | 2026-10-10 | infra:provision.yml |
+| infra env infra-testnet-provision | `TF_VAR_ROOT_PASSWORD` | 2026-06-04 | infra:provision.yml |
 | infra env testnet | `AGE_SECRET_KEY` | 2026-06-07 | infra:push-secrets.yml, infra:update-caddy.yml |
 | infra env testnet | `DCC_CANARY_SEED` | 2026-07-25 | infra:canary-transaction.yml, infra:matcher-canary.yml |
 | infra env testnet | `DEPLOY_SSH_KEY` | 2026-10-10 | infra:push-secrets.yml |
+| infra repo | `AGE_KEY_TESTNET` | 2026-10-22 | infra:bootstrap-flux.yml |
 | infra repo | `E2E_RATE_LIMIT_BYPASS_KEY` | 2026-07-06 | infra:admin-e2e.yml, infra:update-caddy.yml |
-| infra repo | `FLUX_DEPLOY_KEY_TESTNET` | 2026-06-10 | **unreferenced** |
+| infra repo | `FLUX_DEPLOY_KEY_TESTNET` | 2026-06-10 | infra:bootstrap-flux.yml |
 | infra repo | `GEN_0_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
 | infra repo | `GEN_0_SEED_PHRASE` | 2026-06-30 | infra:admin-e2e.yml, infra:stress-test.yml |
 | infra repo | `GEN_1_NODE_REST_API_KEY` | 2026-10-10 | infra:cluster-diagnostics.yml, infra:verify-api-keys.yml |
 | infra repo | `LINODE_TOKEN` | 2026-06-04 | infra:bootstrap-flux.yml, infra:cluster-diagnostics.yml, infra:deploy-monitoring-stack.yml, infra:drift-detect.yml, infra:export-kubeconfig.yml, infra:infra-liveness.yml, infra:provision.yml, infra:prune-released-chain-volumes.yml, infra:verify-api-keys.yml |
-| infra repo | `MAIN_NODE_REST_API_KEY` | 2026-10-10 | infra:verify-api-keys.yml |
+| infra repo | `MAIN_NODE_REST_API_KEY` | 2026-10-10 | infra:admin-e2e.yml, infra:verify-api-keys.yml |
 | infra repo | `R2_ACCESS_KEY_ID` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
 | infra repo | `R2_SECRET_ACCESS_KEY` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
 | infra repo | `TOFU_STATE_PASSPHRASE` | 2026-06-07 | infra:drift-detect.yml, infra:provision.yml |
@@ -63,7 +64,7 @@ Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only
 | org | `CLOUDFLARE_ACCOUNT_ID` | 2026-06-07 | DecentralChain:deploy-exchange.yml, infra:drift-detect.yml, infra:provision.yml |
 | org | `CLOUDFLARE_API_TOKEN` | 2026-05-26 | DecentralChain:deploy-exchange.yml |
 | org | `CODECOV_TOKEN` | 2026-05-15 | DecentralChain:bps.yml, DecentralChain:ci.yml, DecentralChain:websocket-api.yml, matcher:ci.yml, node-scala:ci.yml |
-| org | `DOCKERHUB_TOKEN` | 2026-05-15 | DecentralChain:deploy-admin-dashboard.yml, DecentralChain:deploy-bps.yml, DecentralChain:deploy-data-service.yml, DecentralChain:deploy-scanner.yml, DecentralChain:deploy-websocket-api.yml, node-scala:on-release-published.yml, node-scala:publish-node-scala.yml |
+| org | `DOCKERHUB_TOKEN` | 2026-05-15 | DecentralChain:deploy-admin-dashboard.yml, DecentralChain:deploy-bps.yml, DecentralChain:deploy-data-service.yml, DecentralChain:deploy-scanner.yml, DecentralChain:deploy-websocket-api.yml, node-scala:on-release-published.yml |
 | org | `GHCR_TOKEN` | 2026-06-22 | infra:ghcr-cleanup.yml |
 | org | `MAVEN_CENTRAL_PASSWORD` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:maven-central-deployment-status.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-release-published.yml |
 | org | `MAVEN_CENTRAL_USERNAME` | 2026-05-26 | DecentralChain:_publish-maven.yml, DecentralChain:maven-central-deployment-status.yml, DecentralChain:publish-groth16.yml, DecentralChain:publish-ride.yml, node-scala:check-pr.yaml, node-scala:on-push-default-branch.yml, node-scala:on-release-published.yml |
@@ -79,7 +80,7 @@ Generated from the live GitHub API by `scripts/secrets-inventory.py` (names only
 | org | `TESTNET_DEPLOY_SSH_KEY` | 2026-10-10 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
 | org | `TESTNET_DEPLOY_USER` | 2026-06-08 | infra:deploy-container.yml, infra:deploy-monitoring-stack.yml, infra:deploy-node-config.yml, infra:infra-liveness.yml, infra:restart-host-network.yml, infra:update-caddy.yml, infra:update-node-image.yml, infra:verify-api-keys.yml, infra:vps-node-status.yml, matcher:deploy-matcher.yml |
 
-42 secrets, 10 unreferenced.
+36 secrets, 0 unreferenced.
 
 ### E. On-Server Env Vars (Layer 2) — 16 items
 
