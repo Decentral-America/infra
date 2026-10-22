@@ -25,7 +25,8 @@ def workflow_texts(eco):
 
 
 def references(name, texts):
-    pat = re.compile(r"secrets\.%s\b" % re.escape(name))
+    # GitHub secret names are case-insensitive: `secrets.Foo_bar` resolves FOO_BAR.
+    pat = re.compile(r"secrets\.%s\b" % re.escape(name), re.IGNORECASE)
     return sorted(k for k, t in texts.items() if pat.search(t))
 
 
