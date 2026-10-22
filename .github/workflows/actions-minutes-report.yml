@@ -1,0 +1,84 @@
+name: Actions Minutes Report
+
+# Budget guard. Every Actions minute in any repo of the org counts against the shared 2000 free
+# minutes, and one burst day (2026-10-19: 3,271 matcher minutes) cost more than a normal month.
+# Weekly: month-to-date minutes and gross/net per repo from the org billing usage API, the projected
+# month end, pool consumption vs 2000, burst days; opens (or refreshes) ONE issue while a threshold
+# is exceeded and closes it when clear. One cheap job on purpose: this must not be a cost itself.
+#
+# Needs the repository secret BILLING_READ_TOKEN: a fine-grained PAT or GitHub App token with
+# organization "Administration: read" (GITHUB_TOKEN cannot read org billing). Without it the job
+# still passes but its summary says the token is missing.
+# Thresholds and the weighting rules live in scripts/actions_minutes_report.py (env overridable).
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: actions-minutes-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Month-to-date usage report
+        id: report
+        env:
+          BILLING_READ_TOKEN: ${{ secrets.BILLING_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BILLING_READ_TOKEN:-}" ]; then
+            {
+              echo "## Actions minutes report: NOT RUN"
+              echo
+              echo "The repository secret \`BILLING_READ_TOKEN\` is missing, so the org billing usage API cannot be read."
+              echo "Create a fine-grained PAT (or GitHub App token) with organization **Administration: read** and store it:"
+              echo
+              echo '`gh secret set BILLING_READ_TOKEN --repo Decentral-America/infra`'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::BILLING_READ_TOKEN is not set; the Actions minutes report did not run"
+            exit 0
+          fi
+          Y=$(date -u +%Y); M=$(date -u +%-m)
+          CODE=$(curl -sS -m 30 -o usage.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${BILLING_READ_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/organizations/Decentral-America/settings/billing/usage?year=${Y}&month=${M}")
+          if [ "$CODE" != 200 ]; then
+            echo "## Actions minutes report: billing API returned HTTP ${CODE}" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::billing usage API returned HTTP ${CODE} (token expired or missing Administration: read?)"
+            exit 1
+          fi
+          python3 scripts/actions_minutes_report.py usage.json --issue-body issue-body.md | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Open, refresh or close the budget issue
+        if: steps.report.outputs.alert != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT: ${{ steps.report.outputs.alert }}
+        run: |
+          set -euo pipefail
+          TITLE="[BUDGET] GitHub Actions minutes over threshold"
+          N=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number -q '.[0].number')
+          if [ "$ALERT" = true ]; then
+            if [ -z "$N" ]; then
+              gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body-file issue-body.md
+            else
+              gh issue edit "$N" -R "$GITHUB_REPOSITORY" --body-file issue-body.md
+            fi
+          elif [ -n "$N" ]; then
+            gh issue close "$N" -R "$GITHUB_REPOSITORY" --comment "No threshold exceeded in the latest report; closing."
+          fi

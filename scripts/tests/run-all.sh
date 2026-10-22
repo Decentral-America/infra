@@ -12,8 +12,8 @@ if compgen -G "monitoring/tests/test_*.py" >/dev/null; then
   echo "== monitoring/tests (python)"
   python3 -m unittest discover -s monitoring/tests -p 'test_*.py' || rc=1
 fi
-if compgen -G "monitoring/canary/*.test.mjs" >/dev/null; then
-  echo "== monitoring/canary (node)"
-  node --test monitoring/canary/*.test.mjs || rc=1
+if compgen -G "clusters/testnet/apps/monitors/scripts/*.test.mjs" >/dev/null; then
+  echo "== in-cluster monitors (node)"
+  node --test clusters/testnet/apps/monitors/scripts/*.test.mjs || rc=1
 fi
 exit "${rc}"

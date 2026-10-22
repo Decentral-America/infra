@@ -1,46 +1,27 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Canary Transaction (Tier 6 synthetic monitoring)
+# Canary Transaction (Tier 6 synthetic monitoring): MANUAL run.
 #
-# Submits a real, minimal-value transfer against the live testnet on a schedule,
-# using a dedicated canary wallet. This job reads DCC_CANARY_SEED from a GitHub
-# Actions secret (${{ secrets.DCC_CANARY_SEED }} below), which requires TWO
-# separate provisioning steps, not just one:
-#   1. The seed is stored SOPS-encrypted in secrets/testnet.env (see that file's
-#      DCC_CANARY_SEED entry) and pushed by this repo's push-secrets.yml — but
-#      that workflow only SSHes the decrypted value into the remote VPS's
-#      /opt/dcc/secrets/${NETWORK}.env for server-side Docker Compose. It never
-#      calls the GitHub API, so it cannot populate a GitHub Actions secret.
-#   2. Someone with repo admin access must ALSO run, once:
-#        gh secret set DCC_CANARY_SEED --env testnet --repo Decentral-America/infra
-#      (or use the GitHub UI: Settings → Environments → testnet → Secrets) to
-#      create the Actions secret this workflow actually reads. Without this
-#      separate step, `${{ secrets.DCC_CANARY_SEED }}` is empty even after step 1
-#      is complete.
+# The scheduled canary runs IN-CLUSTER (LKE CronJob `canary-transaction`, every 15 min,
+# clusters/testnet/apps/monitors, runbooks/in-cluster-monitors.md). It used to be dispatched from
+# here about 100 times a day; every run is an Actions run counted against the org's free minutes,
+# so the schedule moved off GitHub. This workflow stays for manual runs ("is the canary path
+# healthy right now?") and executes the SAME script as the CronJob.
 #
-# The transfer is a self-transfer: the canary account sends to its own address
-# (derived from its seed via @decentralchain/ts-lib-crypto's `address`), so no
-# second funded account needs to be created or maintained.
-#
-# Failure (broadcast rejected, or not confirmed within the timeout) opens a
-# GitHub Issue using the exact same title/label convention monitoring/alert-webhook.py
-# already uses for every other testnet alert (title prefix `[ALERT] {name}`,
-# labels `alert` + `severity:{sev}`), so this failure mode surfaces in the same
-# place as Alertmanager-driven alerts.
-#
-# An unfunded canary wallet is its OWN alert (`CanaryWalletUnfunded`), not the
-# generic `CanaryTransactionFailed`. Before broadcasting, the script reads the
-# canary balance and exits 3 with `CANARY_UNFUNDED` if it is below 10x the tx
-# fee. Issue #148: the canary sat red for weeks on a 0 balance, so when the
-# whole testnet went dark on 2026-09-17 the red->red transition carried no
-# signal. Re-fund from the treasury (TESTNET-FINAL-PLAN Task 3.4 Step 2).
+# The transfer is a self-transfer from the canary wallet (DCC_CANARY_SEED, environment `testnet`
+# secret; the same seed is in the cluster Secret `monitors`, SOPS-encrypted). An unfunded wallet is
+# its own alert (`CanaryWalletUnfunded`, exit 3, issue #148); re-fund from the treasury.
+# Failure opens a GitHub Issue in the alert-webhook.py format (`[ALERT] {name}`, labels `alert` +
+# `severity:{sev}`), deduplicated against an already open one.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Canary Transaction (Tier 6 synthetic monitoring)
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'  # every 15 min
   workflow_dispatch: {}
+
+concurrency:
+  group: canary-transaction
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -53,92 +34,27 @@ jobs:
     environment: testnet
 
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version: '24'
 
-      - name: Install signing/broadcast dependencies
-        run: npm install --no-save @decentralchain/transactions@latest @decentralchain/ts-lib-crypto@latest
-
-      # @decentralchain/protobuf-serialization@2.0.0's pbjs-generated dist/index.js does
-      # `import * as $protobuf from "protobufjs/minimal"` with no file extension. protobufjs
-      # ships no "exports" map, so Node's ESM resolver (unlike CJS require()) requires the
-      # exact file path and refuses to guess ".js" — every `import` of @decentralchain/transactions
-      # crashes with ERR_MODULE_NOT_FOUND before this fix. Confirmed reproducing on both Node 22
-      # and Node 24 (this job's version, the current Active LTS) with a plain `npm install` of the published package,
-      # so this is not specific to this workflow's setup. Tracked upstream at
-      # github.com/Decentral-America/protobuf-serialization; this sed is the minimal workaround
-      # until a patched version is published there — remove once that lands and this step
-      # starts failing to find a match (i.e. once it's already fixed upstream).
-      - name: Work around missing .js extension in protobuf-serialization's ESM import
-        run: |
-          sed -i 's#"protobufjs/minimal"#"protobufjs/minimal.js"#' \
-            node_modules/@decentralchain/protobuf-serialization/dist/index.js
+      # Installed next to the script (Node's ESM resolver looks for node_modules from the importing
+      # file's directory). Same exact versions as the CronJob (scripts/run-canary.sh).
+      - name: Install signing/broadcast dependencies (exact versions)
+        run: npm install --no-save --no-audit --no-fund --prefix clusters/testnet/apps/monitors/scripts @decentralchain/transactions@5.0.1 @decentralchain/ts-lib-crypto@2.0.0
 
       - name: Sign, broadcast, and confirm a minimal canary transfer
         id: canary
         env:
           DCC_CANARY_SEED: ${{ secrets.DCC_CANARY_SEED }}
         run: |
-          # Written inside the checkout (which has the node_modules from the
-          # install step above), not /tmp: Node's ESM resolver walks up from
-          # the importing file's own directory looking for node_modules, and
-          # /tmp has no ancestor that contains one, so `node /tmp/canary.mjs`
-          # fails with ERR_MODULE_NOT_FOUND even though the packages are
-          # installed — confirmed by a live run (2026-07-25).
-          cat <<'EOF' > canary.mjs
-          import { transfer, broadcast, waitForTx } from '@decentralchain/transactions';
-          import { address } from '@decentralchain/ts-lib-crypto';
-
-          const API_BASE = 'https://testnet-node.decentralchain.io/';
-          const CHAIN_ID = '!'; // matches DCC_TEST_CHAIN_ID used elsewhere in this project's E2E config
-          const SEED = process.env.DCC_CANARY_SEED;
-
-          if (!SEED) {
-            console.error('Canary tx failed: DCC_CANARY_SEED is not set');
-            process.exit(1);
-          }
-
-          // Self-transfer: avoids needing a second funded account to maintain.
-          const recipient = address(SEED, CHAIN_ID);
-
-          const start = Date.now();
-          const tx = transfer({ amount: 100_000, chainId: CHAIN_ID, recipient }, SEED);
-
-          // Unfunded-wallet guard (issue #148): an empty canary wallet gets its
-          // own alert (exit 3), not the generic network-failure one. If the
-          // balance read itself fails, the node is the problem, so that stays
-          // the generic failure (exit 1).
-          const MIN_BALANCE = 10 * Number(tx.fee);
-          let bal;
-          try {
-            const res = await fetch(`${API_BASE}addresses/balance/${recipient}`, { signal: AbortSignal.timeout(15_000) });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            bal = Number((await res.json()).balance);
-            if (!Number.isFinite(bal)) throw new Error('balance field missing or not a number');
-          } catch (err) {
-            console.error(`Canary tx failed: balance lookup for ${recipient} failed: ${err?.message ?? err}`);
-            process.exit(1);
-          }
-          if (bal < MIN_BALANCE) {
-            console.error(`Canary tx failed: CANARY_UNFUNDED balance=${bal} min=${MIN_BALANCE} address=${recipient}`);
-            process.exit(3);
-          }
-
-          try {
-            await broadcast(tx, API_BASE);
-            const confirmed = await waitForTx(tx.id, { apiBase: API_BASE, timeout: 120_000 });
-            const latencyMs = Date.now() - start;
-            console.log(`Canary tx ${tx.id} confirmed at height ${confirmed.height} in ${latencyMs}ms`);
-            process.exit(0);
-          } catch (err) {
-            console.error(`Canary tx failed: ${err?.message ?? err}`);
-            process.exit(1);
-          }
-          EOF
           rc=0
-          node canary.mjs || rc=$?
+          node clusters/testnet/apps/monitors/scripts/canary-transaction.mjs || rc=$?
           if [ "$rc" -eq 3 ]; then
             echo "reason=unfunded" >> "$GITHUB_OUTPUT"
           elif [ "$rc" -ne 0 ]; then
@@ -173,7 +89,7 @@ jobs:
           **Severity:** high
           **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          > Auto-opened by the canary-transaction workflow (Tier 6 synthetic monitoring). Close when resolved."
+          > Auto-opened by a manual run of canary-transaction.yml. Close when resolved."
           else
             echo "Alert $NAME already open as issue #$EXISTING — not creating a duplicate."
           fi

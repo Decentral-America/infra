@@ -154,6 +154,7 @@ jobs:
     name: File issue on scheduled failure
     runs-on: ubuntu-latest
     needs: [e2e]
+    timeout-minutes: 5
     if: failure() && github.event_name == 'schedule'
     permissions:
       issues: write

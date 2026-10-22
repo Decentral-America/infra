@@ -1,24 +1,23 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Matcher settlement canary (AUD-043)
 #
-# Every hour: two canary accounts place a crossing sell and buy (1 CANARY @ 0.01 DCC), the run waits
+# MANUAL run of the check that the LKE CronJob `matcher-canary` runs every hour
+# (clusters/testnet/apps/monitors, runbooks/in-cluster-monitors.md): two canary accounts place a crossing sell and buy (1 CANARY @ 0.01 DCC), the run waits
 # until the matcher reports both orders Filled and the ExchangeTransaction carrying both orders is on
 # the main node. That exercises order intake, matching, the matcher's signing key, the node broadcast
 # and settlement end to end; the matcher's own healthcheck only proves port 6886 is open.
 #
 # Accounts: A = DCC_CANARY_SEED (environment secret, same as canary-transaction.yml), B = a sibling
-# seed derived from it. The CANARY asset and B's funding come from monitoring/canary/matcher-canary-setup.mjs
+# seed derived from it. The CANARY asset and B's funding come from clusters/testnet/apps/monitors/scripts/matcher-canary-setup.mjs
 # (one-time); the asset id is the repository variable MATCHER_CANARY_ASSET_ID.
 #
-# Scheduling: the LKE liveness-trigger CronJob dispatches this on the :00 tick (GitHub cron runs
-# hours late); the schedule below is a backup. Failure opens an alert issue in the same format as
-# alert-webhook.py / canary-transaction.yml.
+# Scheduling: in-cluster only. The GitHub schedule and the dispatching CronJob were removed because
+# every dispatched run counts against the org's free Actions minutes. Failure opens an alert issue in
+# the same format as alert-webhook.py / canary-transaction.yml.
 # ──────────────────────────────────────────────────────────────────────────────
 name: Matcher Settlement Canary
 
 on:
-  schedule:
-    - cron: '7 * * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -48,7 +47,7 @@ jobs:
       # file's directory. transactions@5.0.1 imports cleanly on Node 24 (5.0.0 needed a sed patch).
       - name: Install signing dependencies (exact versions)
         if: vars.MATCHER_CANARY_ASSET_ID != ''
-        run: npm install --no-save --prefix monitoring/canary @decentralchain/transactions@5.0.1 @decentralchain/ts-lib-crypto@2.0.0
+        run: npm install --no-save --prefix clusters/testnet/apps/monitors/scripts @decentralchain/transactions@5.0.1 @decentralchain/ts-lib-crypto@2.0.0
 
       - name: Place, match and settle a canary trade
         id: canary
@@ -56,14 +55,14 @@ jobs:
           DCC_CANARY_SEED: ${{ secrets.DCC_CANARY_SEED }}
           MATCHER_CANARY_ASSET_ID: ${{ vars.MATCHER_CANARY_ASSET_ID }}
         run: |
-          # The hourly dispatch starts on merge; until the one-time setup has issued the CANARY asset
+          # Until the one-time setup has issued the CANARY asset
           # and set the repository variable there is nothing to trade, so skip instead of alerting.
           if [ -z "${MATCHER_CANARY_ASSET_ID:-}" ]; then
-            echo "::notice::MATCHER_CANARY_ASSET_ID is not set; run monitoring/canary/matcher-canary-setup.mjs once. Skipping."
+            echo "::notice::MATCHER_CANARY_ASSET_ID is not set; run clusters/testnet/apps/monitors/scripts/matcher-canary-setup.mjs once. Skipping."
             exit 0
           fi
           rc=0
-          node monitoring/canary/matcher-canary.mjs || rc=$?
+          node clusters/testnet/apps/monitors/scripts/matcher-canary.mjs || rc=$?
           if [ "$rc" -eq 3 ]; then echo "reason=unfunded" >> "$GITHUB_OUTPUT"; elif [ "$rc" -ne 0 ]; then echo "reason=failed" >> "$GITHUB_OUTPUT"; fi
           exit "$rc"
 
@@ -93,7 +92,7 @@ jobs:
           **Severity:** high
           **Run:** $RUN_URL
 
-          > Auto-opened by matcher-canary.yml. Close when resolved."
+          > Auto-opened by a manual run of matcher-canary.yml. Close when resolved."
           else
             gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing: $RUN_URL"
           fi

@@ -1,0 +1,257 @@
+# In-cluster synthetic monitors (runbooks/in-cluster-monitors.md). Each CronJob runs the check itself
+# and, on failure, opens ONE [ALERT] issue (alert-issues.yml labels it), the same signal the GitHub
+# workflows produced. The workflows remain as workflow_dispatch for manual runs. The off-box deadman in
+# infra-liveness.yml (every 3 h) fails if these CronJobs stop running or fail without an alert issue.
+#
+# Staggered on purpose: canary-transaction :00/:15/:30/:45, matcher-canary :07, infra-liveness :20/:50.
+# canary-transaction and matcher-canary share the canary seed (account A), so they never start together.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: canary-transaction
+  namespace: dcc
+  labels:
+    app.kubernetes.io/part-of: monitors
+spec:
+  schedule: "*/15 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: monitors
+            app: canary-transaction
+        spec:
+          restartPolicy: Never
+          serviceAccountName: default
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: monitor
+              image: node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+              command: ["sh", "/app/run-canary.sh", "canary-transaction.mjs", "CanaryTransactionFailed", "canary transaction did not confirm against testnet", "CanaryWalletUnfunded", "canary wallet balance is below 10x the tx fee (re-fund from treasury)"]
+              env:
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: monitors
+                      key: github-token
+                - name: DCC_CANARY_SEED
+                  valueFrom:
+                    secretKeyRef:
+                      name: monitors
+                      key: dcc-canary-seed
+                - name: GITHUB_REPO
+                  value: "Decentral-America/infra"
+                - name: HOME
+                  value: /work
+                - name: npm_config_cache
+                  value: /tmp/npm
+                - name: MONITOR_NAME
+                  value: "canary-transaction"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 384Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /app
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: work
+                  mountPath: /tmp
+                  subPath: tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: monitor-scripts
+                defaultMode: 0555
+            - name: work
+              emptyDir:
+                sizeLimit: 512Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: matcher-canary
+  namespace: dcc
+  labels:
+    app.kubernetes.io/part-of: monitors
+spec:
+  schedule: "7 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: monitors
+            app: matcher-canary
+        spec:
+          restartPolicy: Never
+          serviceAccountName: default
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: monitor
+              image: node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+              command: ["sh", "/app/run-canary.sh", "matcher-canary.mjs", "MatcherSettlementCanaryFailed", "a crossing order pair did not match and settle on testnet", "MatcherCanaryUnfunded", "matcher canary accounts lack DCC or CANARY (re-run matcher-canary-setup.mjs funding)"]
+              env:
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: monitors
+                      key: github-token
+                - name: DCC_CANARY_SEED
+                  valueFrom:
+                    secretKeyRef:
+                      name: monitors
+                      key: dcc-canary-seed
+                - name: GITHUB_REPO
+                  value: "Decentral-America/infra"
+                - name: HOME
+                  value: /work
+                - name: npm_config_cache
+                  value: /tmp/npm
+                - name: MONITOR_NAME
+                  value: "matcher-canary"
+                - name: MATCHER_CANARY_ASSET_ID
+                  value: "Hs5y6vFumpwVp6my7rVEmJEQQD3wiQ29qJhnixNqPit5"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 384Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /app
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: work
+                  mountPath: /tmp
+                  subPath: tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: monitor-scripts
+                defaultMode: 0555
+            - name: work
+              emptyDir:
+                sizeLimit: 512Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: infra-liveness
+  namespace: dcc
+  labels:
+    app.kubernetes.io/part-of: monitors
+spec:
+  schedule: "20,50 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 420
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: monitors
+            app: infra-liveness
+        spec:
+          restartPolicy: Never
+          serviceAccountName: infra-liveness
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: monitor
+              image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+              command: ["python3", "/app/infra-liveness.py"]
+              env:
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: monitors
+                      key: github-token
+                - name: GITHUB_REPO
+                  value: "Decentral-America/infra"
+                - name: NODE_URL
+                  value: "https://testnet-node.decentralchain.io"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 384Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /app
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: work
+                  mountPath: /tmp
+                  subPath: tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: monitor-scripts
+                defaultMode: 0555
+            - name: work
+              emptyDir:
+                sizeLimit: 512Mi

@@ -1257,12 +1257,17 @@ Recurring operational workflows for the testnet:
 
 | Workflow | Schedule | What it checks or does |
 |---|---|---|
-| `infra-liveness.yml` | every 30 min (LKE `liveness-trigger` CronJob; GitHub cron backup) | main height advances, LKE pool ready, alerting deadman (`Watchdog` + alert-webhook), Flux Kustomizations Ready |
-| `canary-transaction.yml` | every 15 min (same trigger) | a real transfer confirms on testnet |
-| `matcher-canary.yml` | hourly (same trigger) | a crossing order pair matches and settles on chain |
+| CronJob `infra-liveness` (LKE, `clusters/testnet/apps/monitors`) | every 30 min, in-cluster | main height advances, every LKE node Ready, Flux Kustomizations Ready; failure opens one `[ALERT]` issue |
+| CronJob `canary-transaction` (LKE, same dir) | every 15 min, in-cluster | a real transfer confirms on testnet |
+| CronJob `matcher-canary` (LKE, same dir) | hourly, in-cluster | a crossing order pair matches and settles on chain |
+| `infra-liveness.yml` | every 3 h (off-box deadman) | main node producing blocks, LKE pool ready, alerting deadman (`Watchdog` + alert-webhook), Flux Ready, and that the three CronJobs above still run and are not failing silently (`scripts/check-monitor-cronjobs.py`) |
+| `canary-transaction.yml`, `matcher-canary.yml` | manual only | the same checks as the CronJobs on demand; no schedule, so they cost no Actions minutes |
+| `actions-minutes-report.yml` | weekly (Mon 07:00 UTC) | org Actions minutes per repo, projection, pool use, burst days; one `[BUDGET]` issue when a threshold is exceeded (needs the `BILLING_READ_TOKEN` secret) |
 | `drift-detect.yml` | weekly | `tofu plan` vs live Linode resources |
 | `ghcr-cleanup.yml` | weekly | prunes untagged GHCR versions, never `testnet-pinned-*` |
 | `prune-released-chain-volumes.yml` | weekly | deletes old Released chain-data PVs |
+
+The in-cluster monitors, why they are not GitHub schedules and how to operate them: `runbooks/in-cluster-monitors.md`.
 
 Generator commitment is in-process on every node (`dcc.miner.self-commit-to-generation = yes`); the old
 `auto-commit-generators.yml` was retired (`.github/archived-workflows/README.md`).

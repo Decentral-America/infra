@@ -305,7 +305,7 @@ This file covers all three launch networks:
 | Hosts, node roles, stake, ports, deploy paths | `clusters/testnet/TOPOLOGY.md` |
 | Which node-scala build runs | `node-config/testnet/vps-image.env` (CI-checked equal to `clusters/testnet/apps/nodes.yaml`) |
 | Which app images run, and the sign-off | the latest `testnet-final-*` GitHub Release of this repo |
-| Is it healthy now | `infra-liveness.yml`, `canary-transaction.yml`, `matcher-canary.yml` run history; Grafana `https://grafana.testnet.decentralchain.io` |
+| Is it healthy now | `kubectl -n dcc get cronjobs,jobs` (CronJobs `infra-liveness`, `canary-transaction`, `matcher-canary`; see `runbooks/in-cluster-monitors.md`) and the `infra-liveness.yml` deadman run history; Grafana `https://grafana.testnet.decentralchain.io` |
 | Mainnet / stagenet | not provisioned by this IaC (`terraform/mainnet.tfvars` is unapplied) |
 
 ---
