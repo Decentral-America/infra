@@ -69,7 +69,7 @@ For a lasting pause (for example while the matcher is being reset) suspend the p
 deadman only warns about a suspended CronJob.
 
 The monitors run as ordinary (non-hostNetwork) pods, so the `monitors-egress` NetworkPolicy is
-enforced: DNS and HTTPS only. `infra-liveness` is the only one with a ServiceAccount token (read-only
+enforced: DNS and HTTPS only, plus TCP 6443 for `infra-liveness` (the API Service is DNAT'd to the control plane on 6443 before the policy is evaluated). `infra-liveness` is the only one with a ServiceAccount token (read-only
 RBAC on nodes, and Flux Kustomizations and pods in `flux-system`).
 
 ## Failure modes

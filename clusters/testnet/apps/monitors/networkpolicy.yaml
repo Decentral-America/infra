@@ -1,7 +1,7 @@
 # default-deny-all (nodes.yaml) covers the dcc namespace. The monitors are ordinary pods (not
 # hostNetwork), so unlike the node pods this policy is enforced: DNS and HTTPS out, nothing in.
 # HTTPS reaches the testnet REST/matcher APIs, api.github.com, the npm registry and the Kubernetes
-# API server (infra-liveness).
+# API server (infra-liveness, see the second policy below).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -22,3 +22,22 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+
+---
+# The Kubernetes API Service (10.128.0.1:443) is DNAT'd to the LKE control plane on port 6443 before
+# Calico evaluates egress, so the 443 rule above does not cover it. Only infra-liveness talks to the API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: infra-liveness-apiserver-egress
+  namespace: dcc
+spec:
+  podSelector:
+    matchLabels:
+      app: infra-liveness
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 6443
