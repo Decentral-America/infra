@@ -1,0 +1,55 @@
+# Read-only access for the infra-liveness monitor (the only one that talks to the Kubernetes API).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: infra-liveness
+  namespace: dcc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: infra-liveness-nodes
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: infra-liveness-nodes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: infra-liveness-nodes
+subjects:
+  - kind: ServiceAccount
+    name: infra-liveness
+    namespace: dcc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: infra-liveness-flux
+  namespace: flux-system
+rules:
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: infra-liveness-flux
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: infra-liveness-flux
+subjects:
+  - kind: ServiceAccount
+    name: infra-liveness
+    namespace: dcc

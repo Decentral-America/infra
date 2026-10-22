@@ -379,7 +379,7 @@ groups:
           description: "/var/lib/node_exporter/textfile/docker_state.prom has not been rewritten for over 10 min, so ContainerRestartLoop is blind. Check `systemctl status dcc-docker-state.timer` on the VPS."
 
       # Deadman. Always firing by design. Alertmanager routes it to a receiver with no
-      # notifier; infra-liveness.yml (off-box, LKE-triggered) fails if it is missing from
+      # notifier; infra-liveness.yml (off-box, every 3 h) fails if it is missing from
       # Alertmanager, which proves Prometheus -> rules -> Alertmanager end to end.
       - alert: Watchdog
         expr: vector(1)

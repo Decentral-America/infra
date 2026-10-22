@@ -1,15 +1,20 @@
 name: Infra Liveness (Tier 0)
 
-# Pages on a dead testnet regardless of wallet balances. The 2026-09-17 Linode
-# outage went unnoticed for 6+ days: canary-transaction was already red for an
-# unrelated reason (0-balance canary wallet), so its red->red transition carried
-# no signal, drift-detect ignored power state, and healthchecks only tested REST
-# liveness. This probe opens (or comments on) one alert issue per outage.
-# infra is a public repo, so the 30-min schedule costs no Actions minutes.
+# Off-box safety net, every 3 hours. The 30-minute probe itself runs IN-CLUSTER (LKE CronJob
+# `infra-liveness`, clusters/testnet/apps/monitors, runbooks/in-cluster-monitors.md): it used to be
+# dispatched here 48 times a day (2.7 min each), and every Actions minute in any repo counts
+# against the org's free pool. What stays here is what only an off-box observer can see:
+#   - the main node is producing blocks (public REST), the LKE pool is up (Linode API), Flux reconciles;
+#   - the alerting deadman: Alertmanager still holds `Watchdog` and alert-webhook is healthy
+#     (Prometheus/Alertmanager run on the VPS they watch, localhost only);
+#   - the in-cluster monitors themselves still run (nothing else would notice them dying).
+# The 2026-09-17 Linode outage went unnoticed for 6+ days: canary-transaction was already red for
+# an unrelated reason, drift-detect ignored power state and healthchecks only tested REST liveness.
+# This opens (or comments on) one alert issue per outage.
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '17 */3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -25,14 +30,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Main node height advances
+      # One sample against the block timestamp instead of the old 150 s double sample (every second
+      # of this job is billed; the in-cluster probe still does the two-sample height check).
+      - name: Main node producing blocks
         run: |
           set -euo pipefail
-          H1=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
-          sleep 150
-          H2=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/height | jq -r .height)
-          echo "h1=$H1 h2=$H2"
-          test "$H2" -gt "$H1" || { echo "::error::main node height did not advance ($H1 -> $H2)"; exit 1; }
+          TS=$(curl -sf -m 15 https://testnet-node.decentralchain.io/blocks/last | jq -r .timestamp)
+          AGE=$(( $(date +%s) - TS / 1000 ))
+          echo "last block age: ${AGE}s"
+          test "$AGE" -lt 600 || { echo "::error::main node last block is ${AGE}s old"; exit 1; }
 
       - name: LKE pool nodes ready
         # Run even when the main-node probe failed, so one alert reports both halves.
@@ -117,6 +123,19 @@ jobs:
             -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount
           NOTREADY=$(kubectl get pods -n flux-system -o json | jq '[.items[] | select(.status.containerStatuses[0].ready != true)] | length')
           test "$NOTREADY" -eq 0 || { echo "::error::$NOTREADY flux-system controller pod(s) not ready"; exit 1; }
+
+      # The in-cluster monitors replaced the GitHub-dispatched checks, so this is the only thing that
+      # sees them stop (CronJob not scheduled) or fail silently (no alert issue open).
+      - name: In-cluster monitors still running
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KUBECONFIG: ${{ runner.temp }}/kubeconfig
+        run: |
+          set -euo pipefail
+          kubectl get cronjobs -n dcc -o json > "$RUNNER_TEMP/cronjobs.json"
+          gh issue list -R "$GITHUB_REPOSITORY" --state open --limit 100 --json title -q '[.[].title]' > "$RUNNER_TEMP/issue-titles.json"
+          python3 scripts/check-monitor-cronjobs.py "$RUNNER_TEMP/cronjobs.json" "$RUNNER_TEMP/issue-titles.json"
 
       - name: Open or update alert issue on failure
         if: ${{ failure() }}

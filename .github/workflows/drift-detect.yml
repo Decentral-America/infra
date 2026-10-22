@@ -58,6 +58,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    env:
+      # Provider binaries (linode, ~60 MB) are downloaded by every `tofu init`; cached across the weekly runs.
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tofu-plugin-cache
+
     defaults:
       run:
         working-directory: terraform/
@@ -127,6 +131,18 @@ jobs:
           # printed "Plan: 2 to add" (backend Linode and LKE cluster deleted by Linode)
           # yet recorded status=clean and skipped the failure step.
           tofu_wrapper: false
+
+      - name: Cache OpenTofu providers
+        if: steps.provisioned.outputs.exists == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .tofu-plugin-cache
+          key: tofu-providers-${{ hashFiles('terraform/.terraform.lock.hcl') }}
+
+      - name: Create provider cache dir
+        if: steps.provisioned.outputs.exists == 'true'
+        working-directory: ${{ github.workspace }}
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Write backend config
         if: >-

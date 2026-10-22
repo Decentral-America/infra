@@ -1,5 +1,5 @@
 // Pure helpers for matcher-canary.mjs (no network, no signing) so they can be unit-tested
-// with `node --test monitoring/canary/`.
+// with `node --test clusters/testnet/apps/monitors/scripts/`.
 
 // Second canary account: a deterministic sibling of DCC_CANARY_SEED, funded once by
 // matcher-canary-setup.mjs. A self-trade (same sender on both sides) is not used, so the

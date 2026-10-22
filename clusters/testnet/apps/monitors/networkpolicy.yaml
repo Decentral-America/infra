@@ -1,0 +1,24 @@
+# default-deny-all (nodes.yaml) covers the dcc namespace. The monitors are ordinary pods (not
+# hostNetwork), so unlike the node pods this policy is enforced: DNS and HTTPS out, nothing in.
+# HTTPS reaches the testnet REST/matcher APIs, api.github.com, the npm registry and the Kubernetes
+# API server (infra-liveness).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitors-egress
+  namespace: dcc
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: monitors
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443

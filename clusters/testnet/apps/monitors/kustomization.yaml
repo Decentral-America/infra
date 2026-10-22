@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# In-cluster synthetic monitors. They replace the GitHub `workflow_dispatch` CronJob (liveness-trigger)
+# and the `schedule:` backups of canary-transaction / infra-liveness / matcher-canary, which cost
+# about 170 to 200 Actions runs a day. Design and operations: runbooks/in-cluster-monitors.md.
+resources:
+  - monitors.secret.yaml
+  - rbac.yaml
+  - cronjobs.yaml
+  - networkpolicy.yaml
+# The scripts are generated into one ConfigMap (hash-suffixed, so a script change rolls the next
+# CronJob run onto the new content). Only files under this directory can be referenced.
+configMapGenerator:
+  - name: monitor-scripts
+    namespace: dcc
+    files:
+      - scripts/run-canary.sh
+      - scripts/alert-issue.mjs
+      - scripts/canary-transaction.mjs
+      - scripts/matcher-canary.mjs
+      - scripts/matcher-canary-lib.mjs
+      - scripts/infra-liveness.py

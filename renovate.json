@@ -8,8 +8,9 @@
   "osvVulnerabilityAlerts": true,
   "schedule": ["* * * * 1"],
   "timezone": "America/Costa_Rica",
-  "prConcurrentLimit": 10,
-  "prHourlyLimit": 5,
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "conflicted",
   "prCreation": "not-pending",
   "platformAutomerge": true,
   "docker-compose": {
@@ -38,6 +39,34 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "One weekly PR for all GitHub Actions minor/patch/digest/pin updates (each PR costs a full CI run plus a manual merge)",
+      "groupName": "github-actions (non-major)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"]
+    },
+    {
+      "description": "One weekly PR for container image patch/digest/pin updates in compose, Dockerfiles and cluster manifests",
+      "groupName": "container images (patch and digest)",
+      "matchManagers": ["docker-compose", "dockerfile", "kubernetes"],
+      "matchUpdateTypes": ["patch", "digest", "pin", "pinDigest"]
+    },
+    {
+      "description": "One PR for Flux controller updates (regenerated gotk-components.yaml)",
+      "groupName": "flux",
+      "matchManagers": ["flux"]
+    },
+    {
+      "description": "One weekly PR for Terraform/OpenTofu provider patch updates",
+      "groupName": "terraform providers (patch)",
+      "matchManagers": ["terraform"],
+      "matchUpdateTypes": ["patch"]
+    },
+    {
+      "description": "Tool versions pinned in workflow shell variables (sops) ride one PR",
+      "groupName": "workflow tool versions",
+      "matchPackageNames": ["getsops/sops"]
+    },
     {
       "description": "node-scala image pins are release pins written by pin-node-image-digest.yml / the release process, not dependency updates",
       "matchPackageNames": ["ghcr.io/decentral-america/node-scala"],

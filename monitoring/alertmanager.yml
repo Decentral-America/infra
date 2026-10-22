@@ -10,7 +10,7 @@ route:
 
   routes:
     # Deadman heartbeat (alerts.yml `Watchdog`): always firing, never notified. infra-liveness.yml
-    # checks off-box that Alertmanager holds it, proving Prometheus -> rules -> Alertmanager works.
+    # (off-box, every 3 h) checks that Alertmanager holds it, proving Prometheus -> rules -> Alertmanager works.
     - matchers:
         - alertname = Watchdog
       receiver: blackhole
