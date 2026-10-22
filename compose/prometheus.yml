@@ -61,7 +61,7 @@ services:
         max-file: "3"
 
   exporter:
-    image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    image: python:3.14-slim@sha256:0b566a9f30a60730df33c26ac62dedb55393d8814645cd03543b67bf8987f3a1
     container_name: "exporter-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -224,7 +224,7 @@ services:
         max-file: "3"
 
   alert-webhook:
-    image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    image: python:3.14-slim@sha256:0b566a9f30a60730df33c26ac62dedb55393d8814645cd03543b67bf8987f3a1
     container_name: "alert-webhook-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
