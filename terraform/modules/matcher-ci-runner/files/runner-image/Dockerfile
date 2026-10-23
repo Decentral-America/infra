@@ -14,7 +14,7 @@ RUN echo "build ${BUILD_DATE}" \
  && apt-get -y -q upgrade \
  && apt-get install -y -q --no-install-recommends \
       ca-certificates curl gnupg git git-lfs jq zstd unzip zip xz-utils sudo python3 python3-yaml \
-      iptables iproute2 procps lsb-release tzdata locales openssh-client rsync file \
+      iptables iproute2 procps lsb-release tzdata locales openssh-client rsync file fakeroot \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
  && gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -q '^fpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:' \
@@ -26,9 +26,20 @@ RUN echo "build ${BUILD_DATE}" \
 
 ENV LANG=en_US.UTF-8
 
+# Parity with GitHub's ubuntu-24.04 image where matcher's workflows rely on it: Apache Maven on PATH
+# (setup-dcc-jvm-deps builds the crypto package with `mvn`), and a /usr/local/bin the job user can install
+# tools into (the oasdiff installer writes there without sudo).
+ARG MAVEN_VERSION=3.9.11
+ARG MAVEN_SHA512=bcfe4fe305c962ace56ac7b5fc7a08b87d5abd8b7e89027ab251069faebee516b0ded8961445d6d91ec1985dfe30f8153268843c89aa392733d1a3ec956c9978
+RUN curl -fsSL -o /tmp/maven.tgz "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+ && echo "${MAVEN_SHA512}  /tmp/maven.tgz" | sha512sum -c - \
+ && tar -xzf /tmp/maven.tgz -C /opt && rm /tmp/maven.tgz \
+ && ln -s "/opt/apache-maven-${MAVEN_VERSION}/bin/mvn" /usr/bin/mvn
+
 RUN useradd -m -u 1001 -s /bin/bash runner \
  && usermod -aG docker runner \
- && echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner
+ && echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner \
+ && chown runner:runner /usr/local/bin
 
 WORKDIR /home/runner/actions-runner
 RUN curl -fsSL -o /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
