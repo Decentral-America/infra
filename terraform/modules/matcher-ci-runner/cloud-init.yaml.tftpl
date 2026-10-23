@@ -1,0 +1,32 @@
+#cloud-config
+# matcher CI runner host. Rendered by terraform/modules/matcher-ci-runner (gzip + base64 user data).
+# Contains the pinned SSH host key; contains NO GitHub credential.
+ssh_deletekeys: true
+ssh_genkeytypes: [ed25519]  # only the pinned key below (cloud-init generates a type only if it is missing)
+ssh_keys:
+  ed25519_private: |
+    ${indent(4, host_key_private)}
+  ed25519_public: ${host_key_public}
+disable_root: true
+ssh_pwauth: false
+users:
+  - name: ops
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+write_files:
+  - path: /etc/matcher-ci/config.env
+    permissions: '0644'
+    encoding: b64
+    content: ${config_env_b64}
+%{ for dst, f in files ~}
+  - path: ${dst}
+    permissions: '${f.mode}'
+    content: |
+      ${indent(6, f.content)}
+%{ endfor ~}
+runcmd:
+  - [bash, /opt/matcher-ci/install.sh]

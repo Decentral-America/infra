@@ -1,0 +1,19 @@
+[Unit]
+Description=Prometheus node_exporter (scraped by the backend VPS Prometheus, job matcher-ci-runner)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile --no-collector.wifi --no-collector.infiniband
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/var/lib/node_exporter/textfile
+
+[Install]
+WantedBy=multi-user.target

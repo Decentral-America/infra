@@ -1,0 +1,20 @@
+[Unit]
+Description=matcher CI ephemeral runner slot %i (one fresh sysbox container per job)
+Requires=docker.service
+After=docker.service sysbox.service matcher-ci-firewall.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/opt/matcher-ci/mci-slot.sh %i
+# The next runner of this slot starts as soon as the previous one (and its cleanup) finished.
+Restart=always
+RestartSec=5
+# A stop (reboot, unit restart) kills the job container; the next start removes its leftovers first.
+ExecStopPost=-/usr/bin/docker rm -f mci-slot-%i
+TimeoutStopSec=60
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

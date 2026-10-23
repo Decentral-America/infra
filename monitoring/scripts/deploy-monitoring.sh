@@ -21,6 +21,14 @@ elif [ ! -f /opt/dcc/monitoring/file_sd/lke-chain.json ]; then
   echo '[]' | sudo tee /opt/dcc/monitoring/file_sd/lke-chain.json >/dev/null
 fi
 echo "lke-chain file_sd targets: $(cat /opt/dcc/monitoring/file_sd/lke-chain.json)"
+# Same for the matcher CI runner host (job matcher-ci-runner, resolved by Linode label at deploy time).
+if [ -f /tmp/matcher-ci-runner.json ]; then
+  sudo install -m 644 /tmp/matcher-ci-runner.json /opt/dcc/monitoring/file_sd/.matcher-ci-runner.json.tmp
+  sudo mv -f /opt/dcc/monitoring/file_sd/.matcher-ci-runner.json.tmp /opt/dcc/monitoring/file_sd/matcher-ci-runner.json
+elif [ ! -f /opt/dcc/monitoring/file_sd/matcher-ci-runner.json ]; then
+  echo '[]' | sudo tee /opt/dcc/monitoring/file_sd/matcher-ci-runner.json >/dev/null
+fi
+echo "matcher-ci-runner file_sd targets: $(cat /opt/dcc/monitoring/file_sd/matcher-ci-runner.json)"
 sudo mkdir -p /opt/dcc/monitoring/datasources
 sudo cp /tmp/loki.yaml /opt/dcc/monitoring/datasources/loki.yaml
 sudo cp /tmp/prometheus.yaml /opt/dcc/monitoring/datasources/prometheus.yaml
@@ -51,7 +59,7 @@ rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/config.alloy /tmp/alertmanager.yml /tmp/alert-webhook.py \
       /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml \
       /tmp/grafana.ini /tmp/grafana-compose.yml /tmp/dashboards.yaml /tmp/testnet.json \
-      /tmp/lke-chain.json
+      /tmp/lke-chain.json /tmp/matcher-ci-runner.json
 
 # Every compose file in /opt/dcc/compose otherwise shares the same default
 # Compose project name (the directory basename), so --remove-orphans on one

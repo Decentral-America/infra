@@ -89,6 +89,11 @@ jobs:
           set -euo pipefail
           sudo apt-get install -y nftables >/dev/null
           for f in host/nftables/*.nft; do sudo nft -c -f "$f" && echo "ok $f"; done
+          # matcher CI runner host ruleset, rendered the way the host renders it.
+          printf 'MCI_SSH_ALLOWED_V4=203.0.113.5/32,198.51.100.0/24\nMCI_METRICS_ALLOWED_V4=192.0.2.10/32\n' > /tmp/mci.env
+          MCI_CONFIG=/tmp/mci.env MCI_NFT_TMPL=terraform/modules/matcher-ci-runner/files/matcher-ci.nft.tmpl \
+            bash terraform/modules/matcher-ci-runner/files/mci-lib.sh render-nft > /tmp/matcher-ci.nft
+          sudo nft -c -f /tmp/matcher-ci.nft && echo "ok runner-host ruleset"
 
       # ── Secrets (public repo) ─────────────────────────────────────────────────
       - name: Secret scan (gitleaks)
@@ -168,6 +173,7 @@ jobs:
           mkdir -p "$T/file_sd"
           cp monitoring/prometheus.yml monitoring/alerts.yml "$T/"
           echo '[]' > "$T/file_sd/lke-chain.json"
+          echo '[]' > "$T/file_sd/matcher-ci-runner.json"
           # mktemp -d is 0700; the prometheus image runs as `nobody`, which could
           # not stat the bind-mounted config ("permission denied"). World-readable only.
           chmod -R a+rX "$T"

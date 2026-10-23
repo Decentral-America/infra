@@ -1,0 +1,8 @@
+# a comment that mentions matcher-ci and self-hosted is fine
+name: ok
+on: push
+jobs:
+  a: { runs-on: ubuntu-24.04, steps: [{ run: echo hi }] }
+  b:
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    steps: [{ run: "echo self-hosted runners are documented elsewhere" }]

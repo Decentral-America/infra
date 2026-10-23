@@ -1,0 +1,8 @@
+[Unit]
+Description=matcher CI runner heartbeat (repository variable, stale registrations, metrics)
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/matcher-ci/mci-heartbeat.sh
+TimeoutStartSec=90

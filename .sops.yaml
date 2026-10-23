@@ -1,6 +1,9 @@
 creation_rules:
   - path_regex: secrets/testnet\.env
     age: age1gpe6clrwzvfjlkwm2ww4a00f0ktk49raaslgs2zr3r0vzkcez9fsd97vzs
+  # matcher CI runner host: ops SSH key + GitHub App / PAT credential (runbooks/matcher-ci-runner.md)
+  - path_regex: secrets/matcher-ci-runner\.env
+    age: age1gpe6clrwzvfjlkwm2ww4a00f0ktk49raaslgs2zr3r0vzkcez9fsd97vzs
   - path_regex: secrets/stagenet\.env
     age: age13ecynhepttnz6f5ksg7hcsukl47ks5sdttcl8zrq5kxrvrxflfsqkd6q2q
   - path_regex: secrets/mainnet\.env

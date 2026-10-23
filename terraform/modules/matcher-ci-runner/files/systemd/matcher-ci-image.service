@@ -1,0 +1,9 @@
+[Unit]
+Description=Rebuild the matcher CI runner image (latest actions/runner, patched Ubuntu)
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/matcher-ci/mci-image-build.sh
+TimeoutStartSec=30min

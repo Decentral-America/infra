@@ -202,3 +202,41 @@ variable "lke_ssh_allowed_ips" {
     error_message = "lke_ssh_allowed_ips must contain at least one CIDR. Never use 0.0.0.0/0."
   }
 }
+
+# ── matcher CI runner host (terraform/matcher-ci-runner.tf) ──────────────────
+
+variable "matcher_ci_runner_enabled" {
+  description = "Provision the dedicated self-hosted runner host for the private matcher repository."
+  type        = bool
+  default     = false
+}
+
+variable "matcher_ci_runner_type" {
+  description = "Linode plan of the matcher CI runner host (dedicated CPU)."
+  type        = string
+  default     = "g6-dedicated-8"
+}
+
+variable "matcher_ci_runner_slots" {
+  description = "Ephemeral runners kept ready on the host."
+  type        = number
+  default     = 2
+}
+
+variable "matcher_ci_runner_slot_memory" {
+  description = "Memory limit of one runner container."
+  type        = string
+  default     = "7g"
+}
+
+variable "matcher_ci_runner_ssh_public_key" {
+  description = "ed25519 public key of the runner host's `ops` user (private half: secrets/matcher-ci-runner.env)."
+  type        = string
+  default     = "ssh-ed25519 AAAA matcher-ci-runner-placeholder"
+}
+
+variable "matcher_ci_runner_ssh_allowed_ips" {
+  description = "IPv4 CIDRs allowed to SSH to the runner host."
+  type        = list(string)
+  default     = ["192.0.2.1/32"]
+}

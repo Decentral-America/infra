@@ -29,3 +29,13 @@ output "lke_kubeconfig" {
   sensitive   = true
   value       = var.lke_enabled ? linode_lke_cluster.peer_nodes[0].kubeconfig : null
 }
+
+output "matcher_ci_runner_ipv4" {
+  description = "Public IPv4 of the matcher CI runner host (null when disabled)"
+  value       = var.matcher_ci_runner_enabled ? module.matcher_ci_runner[0].ipv4 : null
+}
+
+output "matcher_ci_runner_known_hosts" {
+  description = "Pinned known_hosts line of the matcher CI runner host (copy into ssh/known_hosts)"
+  value       = var.matcher_ci_runner_enabled ? module.matcher_ci_runner[0].known_hosts : null
+}

@@ -59,6 +59,29 @@ jobs:
           fi
           cat lke-chain.json
 
+      # The matcher CI runner host (terraform/modules/matcher-ci-runner) is scraped on :9100 (job
+      # matcher-ci-runner). Its IP is resolved from the Linode label, like the LKE target above; no
+      # runner (disabled, or not resolvable) ships an empty list and MatcherCiRunnerDown fires.
+      - name: Resolve matcher CI runner target
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          RUNNER_LABEL: dcc-matcher-ci-runner
+        run: |
+          set -euo pipefail
+          ip=""
+          if [[ -n "${LINODE_TOKEN:-}" ]]; then
+            ip=$(curl -fsS --max-time 20 -H "Authorization: Bearer ${LINODE_TOKEN}" -H "X-Filter: {\"label\": \"${RUNNER_LABEL}\"}" \
+                   https://api.linode.com/v4/linode/instances \
+                 | jq -r '[.data[0].ipv4[]? | select(startswith("192.168.") | not)] | .[0] // empty' || true)
+          fi
+          if [[ -n "$ip" ]]; then
+            jq -n --arg t "${ip}:9100" '[{targets: [$t], labels: {host: "dcc-matcher-ci-runner"}}]' > matcher-ci-runner.json
+          else
+            echo "::warning::matcher CI runner '${RUNNER_LABEL}' not found; shipping an empty target list (MatcherCiRunnerDown will fire)."
+            echo '[]' > matcher-ci-runner.json
+          fi
+          cat matcher-ci-runner.json
+
       - name: Deploy monitoring config to VPS
         env:
           DEPLOY_KEY:  ${{ secrets.TESTNET_DEPLOY_SSH_KEY }}
@@ -71,7 +94,7 @@ jobs:
             monitoring/prometheus.yml monitoring/alerts.yml \
             monitoring/loki-config.yaml monitoring/config.alloy \
             monitoring/alertmanager.yml monitoring/alert-webhook.py monitoring/exporter.py \
-            monitoring/scripts/deploy-monitoring.sh lke-chain.json \
+            monitoring/scripts/deploy-monitoring.sh lke-chain.json matcher-ci-runner.json \
             scripts/docker-state-textfile.sh \
             monitoring/systemd/dcc-docker-state.service monitoring/systemd/dcc-docker-state.timer \
             "${SSH_USER}@${SSH_HOST}:/tmp/"

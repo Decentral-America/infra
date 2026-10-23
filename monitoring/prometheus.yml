@@ -105,6 +105,24 @@ scrape_configs:
       - target_label: network
         replacement: testnet
 
+  # ── matcher CI runner host (terraform/modules/matcher-ci-runner) ──────────
+  # node_exporter on the dedicated runner Linode; its textfile collector carries
+  # the runner supervisor metrics (matcher_ci_runner_*). Target resolved by
+  # deploy-monitoring-stack.yml from the Linode label dcc-matcher-ci-runner
+  # (file_sd/matcher-ci-runner.json). Network path: runner firewall
+  # allow-node-exporter-vps (from this VPS only) + main.tf
+  # allow-matcher-ci-metrics-out. Alerts: group matcher-ci in alerts.yml.
+  - job_name: matcher-ci-runner
+    scrape_interval: 60s
+    scrape_timeout: 20s
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/file_sd/matcher-ci-runner.json
+        refresh_interval: 5m
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
   # Self-monitoring (AUD-049): without these, TargetDown and AlertmanagerNotificationsFailing
   # have nothing to evaluate. Both listen on localhost only (compose/prometheus.yml).
   - job_name: prometheus

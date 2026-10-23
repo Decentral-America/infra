@@ -389,3 +389,66 @@ groups:
         annotations:
           summary: "Deadman heartbeat (always firing)"
           description: "Checked off-box by infra-liveness.yml. If this alert is ever absent from Alertmanager, the alerting pipeline is broken."
+
+  # ── matcher CI runner host (terraform/modules/matcher-ci-runner, runbooks/matcher-ci-runner.md) ──
+  # While it is down, matcher CI fails fast in its precheck (stale MATCHER_CI_RUNNER_HEARTBEAT) unless the
+  # repository variable MATCHER_CI_RUNNER is set to github-hosted or auto. Every rule has a promtool test.
+  - name: matcher-ci
+    interval: 60s
+    rules:
+      - alert: MatcherCiRunnerDown
+        expr: |
+          (up{job="matcher-ci-runner"} == 0) or absent(up{job="matcher-ci-runner"})
+        for: 10m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "matcher CI runner host unreachable (or no scrape target)"
+          description: "Prometheus cannot scrape node_exporter on the matcher CI runner (dcc-matcher-ci-runner :9100), or deploy-monitoring-stack.yml shipped an empty target list. matcher CI cannot start heavy jobs. Runbook: runbooks/matcher-ci-runner.md (fallback: set the matcher repository variable MATCHER_CI_RUNNER=github-hosted)."
+
+      - alert: MatcherCiRunnerHeartbeatStale
+        expr: |
+          time() - matcher_ci_runner_heartbeat_success_timestamp_seconds{job="matcher-ci-runner"} > 900
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "matcher CI runners have not checked in with GitHub for over 15 min"
+          description: "The host is up but MATCHER_CI_RUNNER_HEARTBEAT is not being updated: no registered runner, an expired or missing GitHub credential (matcher_ci_runner_credential_mode), or GitHub API errors. matcher CI precheck fails fast while this fires. See `journalctl -u 'matcher-ci-*'` on the host."
+
+      - alert: MatcherCiRunnerSlotsDegraded
+        expr: |
+          matcher_ci_runner_slots_registered{job="matcher-ci-runner"} < matcher_ci_runner_slots_desired{job="matcher-ci-runner"}
+        for: 20m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "matcher CI runner has fewer ready slots than configured"
+          description: "Fewer slots have a registered runner (idle or busy) than matcher_ci_runner_slots_desired for 20 min. CI still runs, slower. Check matcher_ci_runner_slot_registration_failures_total and the matcher-ci-slot@N units."
+
+      - alert: MatcherCiRunnerCleanupFailed
+        expr: |
+          increase(matcher_ci_runner_slot_cleanup_failures_total{job="matcher-ci-runner"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "a matcher CI job left state behind on the runner host (slot {{ $labels.slot }})"
+          description: "mci-verify-clean.sh found a leftover container or volume after a job. Jobs must not share state. Inspect `docker ps -a --filter label=matcher-ci.slot` and `docker volume ls` on the host, then remove them."
+
+      - alert: MatcherCiRunnerDiskLow
+        expr: |
+          (node_filesystem_avail_bytes{job="matcher-ci-runner", mountpoint="/"}
+            / node_filesystem_size_bytes{job="matcher-ci-runner", mountpoint="/"}) < 0.15
+        for: 15m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "matcher CI runner root filesystem below 15% free"
+          description: "Per-job volumes are deleted after every job, so this is the image cache or a cleanup failure. `docker system df` on the host; `docker image prune -af` is safe between jobs."
+

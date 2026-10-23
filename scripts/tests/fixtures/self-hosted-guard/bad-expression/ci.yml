@@ -1,0 +1,5 @@
+on: push
+jobs:
+  a:
+    runs-on: ${{ github.event_name == 'push' && 'matcher-ci' || 'ubuntu-24.04' }}
+    steps: [{ run: echo }]

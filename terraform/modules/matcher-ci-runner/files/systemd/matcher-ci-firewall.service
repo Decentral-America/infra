@@ -1,0 +1,14 @@
+[Unit]
+Description=matcher CI runner host firewall (nft table inet matcher_ci)
+Wants=network-pre.target
+After=network-pre.target
+Before=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/matcher-ci/matcher-ci.nft
+ExecStop=/usr/sbin/nft delete table inet matcher_ci
+
+[Install]
+WantedBy=multi-user.target

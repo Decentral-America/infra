@@ -1,0 +1,5 @@
+on: push
+jobs:
+  a:
+    uses: ./.github/workflows/build.yml
+    with: { runner: '["self-hosted","matcher-ci"]' }

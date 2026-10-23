@@ -1,0 +1,3 @@
+on: push
+jobs:
+  a: { runs-on: [self-hosted, linux, x64, matcher-ci], steps: [{ run: echo }] }

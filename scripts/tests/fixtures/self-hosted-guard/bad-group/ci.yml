@@ -1,0 +1,5 @@
+on: push
+jobs:
+  a:
+    runs-on: { group: Default, labels: [matcher-ci] }
+    steps: [{ run: echo }]

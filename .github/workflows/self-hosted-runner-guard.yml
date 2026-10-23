@@ -1,0 +1,40 @@
+name: Self-hosted runner guard
+
+# The matcher CI runner host (terraform/modules/matcher-ci-runner) runs pull-request code on our own
+# hardware, so it is registered to the PRIVATE matcher repository only. This guard fails when any PUBLIC
+# repository of the org has a workflow that targets it (the reserved runner label, or `self-hosted` in
+# runs-on). Daily, on every infra change, and on demand. Logic and unit test:
+# scripts/check-self-hosted-labels.py, scripts/tests/check-self-hosted-labels.test.sh.
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-runner-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: No public repository targets the matcher self-hosted runners
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit test the guard
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet 'pyyaml==6.0.3'
+          bash scripts/tests/check-self-hosted-labels.test.sh
+      - name: Scan every public repository's workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-self-hosted-labels.py --org "${{ github.repository_owner }}"

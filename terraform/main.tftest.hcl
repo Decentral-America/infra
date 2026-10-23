@@ -15,6 +15,10 @@ mock_provider "linode" {
   mock_resource "linode_stackscript" {
     defaults = { id = "1002" }
   }
+  # The matcher CI runner reads the backend's IP through a data source (matcher-ci-runner.tf).
+  mock_data "linode_instances" {
+    defaults = { instances = [] }
+  }
 }
 
 variables {
@@ -61,4 +65,124 @@ run "accept_unencrypted_localhost_grpc" {
     condition     = var.blockchain_updates_url == "grpc://localhost:6881"
     error_message = "Localhost grpc:// should be accepted"
   }
+}
+
+# ── matcher CI runner host (matcher-ci-runner.tf, modules/matcher-ci-runner) ──
+
+run "matcher_ci_runner_disabled_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(module.matcher_ci_runner) == 0
+    error_message = "The runner host must be opt-in (matcher_ci_runner_enabled)"
+  }
+}
+
+run "matcher_ci_runner_enabled" {
+  command = plan
+
+  variables {
+    matcher_ci_runner_enabled         = true
+    matcher_ci_runner_ssh_public_key  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDoNotUse ops@test"
+    matcher_ci_runner_ssh_allowed_ips = ["192.0.2.1/32"]
+  }
+
+  assert {
+    condition     = module.matcher_ci_runner[0].ipv4 == "192.0.2.10"
+    error_message = "the runner's public IPv4 must come from its ipv4 set"
+  }
+}
+
+run "matcher_ci_runner_module_firewall_and_host_key" {
+  command = apply
+
+  module {
+    source = "./modules/matcher-ci-runner"
+  }
+
+  variables {
+    region               = "us-central"
+    ssh_public_key       = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDoNotUse ops@test"
+    ssh_allowed_ipv4     = ["192.0.2.1/32"]
+    metrics_allowed_ipv4 = ["192.0.2.10/32"]
+  }
+
+  assert {
+    condition     = linode_firewall.runner.inbound_policy == "DROP" && linode_firewall.runner.outbound_policy == "DROP"
+    error_message = "both firewall policies must be DROP"
+  }
+
+  assert {
+    condition = toset([for r in linode_firewall.runner.inbound : "${r.protocol}/${r.ports}/${join(",", r.ipv4)}"]) == toset([
+      "TCP/22/192.0.2.1/32", "TCP/9100/192.0.2.10/32",
+    ])
+    error_message = "inbound must be exactly SSH from the operators and node_exporter from the VPS"
+  }
+
+  assert {
+    condition     = toset([for r in linode_firewall.runner.outbound : "${r.protocol}/${r.ports}"]) == toset(["UDP/53", "TCP/53", "UDP/123", "TCP/80", "TCP/443"])
+    error_message = "outbound must be exactly DNS, NTP, HTTP and HTTPS"
+  }
+
+  assert {
+    condition     = startswith(split(" ", output.known_hosts)[1], "ssh-ed25519") && output.host_key_fingerprint != ""
+    error_message = "the host key must be generated here and pinned (ed25519)"
+  }
+
+  assert {
+    condition     = linode_instance.runner.backups_enabled == false && length(linode_instance.runner.authorized_keys) == 1
+    error_message = "the runner is stateless (no backups) and has exactly one admin key"
+  }
+}
+
+run "matcher_ci_runner_module_no_metrics_ingress_without_vps" {
+  command = plan
+
+  module {
+    source = "./modules/matcher-ci-runner"
+  }
+
+  variables {
+    region           = "us-central"
+    ssh_public_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDoNotUse ops@test"
+    ssh_allowed_ipv4 = ["192.0.2.1/32"]
+  }
+
+  assert {
+    condition     = length(linode_firewall.runner.inbound) == 1
+    error_message = "without a VPS address only SSH may be open"
+  }
+}
+
+run "matcher_ci_runner_rejects_open_ssh" {
+  command = plan
+
+  module {
+    source = "./modules/matcher-ci-runner"
+  }
+
+  variables {
+    region           = "us-central"
+    ssh_public_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDoNotUse ops@test"
+    ssh_allowed_ipv4 = ["0.0.0.0/0"]
+  }
+
+  expect_failures = [var.ssh_allowed_ipv4]
+}
+
+run "matcher_ci_runner_rejects_shared_cpu" {
+  command = plan
+
+  module {
+    source = "./modules/matcher-ci-runner"
+  }
+
+  variables {
+    region           = "us-central"
+    type             = "g6-standard-8"
+    ssh_public_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDoNotUse ops@test"
+    ssh_allowed_ipv4 = ["192.0.2.1/32"]
+  }
+
+  expect_failures = [var.type]
 }

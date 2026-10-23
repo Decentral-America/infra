@@ -1,0 +1,62 @@
+# Host firewall of the matcher CI runner (rendered to /etc/matcher-ci/matcher-ci.nft by mci-lib.sh render-nft).
+# Layered under the Linode cloud firewall (terraform/modules/matcher-ci-runner). Docker keeps its own
+# iptables-nft chains; these base chains run after them (priority filter + 10) and only ever DROP more.
+table inet matcher_ci
+delete table inet matcher_ci
+table inet matcher_ci {
+  set ssh_v4 {
+    type ipv4_addr; flags interval
+    elements = { @SSH_ALLOWED_V4@ }
+  }
+  set metrics_v4 {
+    type ipv4_addr; flags interval
+    elements = { @METRICS_ALLOWED_V4@ }
+  }
+  # Never reachable from a job: link-local (Linode metadata service holds the host's user data),
+  # private and carrier-grade NAT ranges, loopback.
+  set job_denied_v4 {
+    type ipv4_addr; flags interval
+    elements = { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }
+  }
+
+  chain input {
+    type filter hook input priority filter + 10; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid drop
+    meta l4proto { icmp, ipv6-icmp } limit rate 20/second accept
+    ip saddr @ssh_v4 tcp dport 22 accept
+    ip saddr @metrics_v4 tcp dport 9100 accept
+    limit rate 10/minute burst 20 packets log prefix "matcher-ci-in-drop: " level info
+    counter drop
+  }
+
+  # Job containers (docker0 and any user bridge) may only reach the public internet on DNS, NTP, HTTP(S).
+  chain forward {
+    type filter hook forward priority filter + 10; policy accept;
+    ct state established,related accept
+    iifname { "docker0", "br-*" } jump job_egress
+  }
+
+  chain job_egress {
+    ip daddr @job_denied_v4 counter drop
+    meta nfproto ipv6 counter drop
+    udp dport { 53, 123 } accept
+    tcp dport { 53, 80, 443 } accept
+    limit rate 10/minute burst 20 packets log prefix "matcher-ci-job-drop: " level info
+    counter drop
+  }
+
+  # The host itself: the same egress set, plus the Linode metadata service (cloud-init) for root only.
+  chain output {
+    type filter hook output priority filter + 10; policy drop;
+    oif "lo" accept
+    ct state established,related accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    ip daddr 169.254.169.254 tcp dport 80 meta skuid 0 accept
+    udp dport { 53, 123 } accept
+    tcp dport { 53, 80, 443 } accept
+    limit rate 10/minute burst 20 packets log prefix "matcher-ci-out-drop: " level info
+    counter drop
+  }
+}

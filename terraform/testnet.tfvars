@@ -60,3 +60,16 @@ lke_ssh_allowed_ips = ["201.182.55.117/32"]
 # The chain metrics-exporter NodePort is opened to the backend VPS's own public
 # IP, read from linode_instance.backend in lke.tf. No IP literal lives here, so a
 # restored VPS with a new address needs only `tofu apply`, not a tfvars edit.
+
+# ── matcher CI runner host (matcher-ci-runner.tf, runbooks/matcher-ci-runner.md) ──
+# ONE dedicated Linode in the VPS region running ephemeral runners for the private
+# matcher repository only. Plan sizing: see the runbook (measured per-job memory).
+matcher_ci_runner_enabled     = true
+matcher_ci_runner_type        = "g6-dedicated-8" # 8 dedicated vCPU / 16 GB / 320 GB, $144/mo
+matcher_ci_runner_slots       = 2
+matcher_ci_runner_slot_memory = "7g"
+# Public key of the ops user (private half in secrets/matcher-ci-runner.env, SOPS).
+matcher_ci_runner_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILwFdzj1zU88TGS4cFi+vEwKJKIeTNrOEJoRCktU1Z8N ops@dcc-matcher-ci-runner"
+# Operator egress IPs only (no GitHub-hosted runner ever SSHes in: the host configures itself
+# from user data, and the credential is pushed from an operator machine).
+matcher_ci_runner_ssh_allowed_ips = ["201.182.55.117/32", "201.182.227.53/32"]

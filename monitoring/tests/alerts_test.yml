@@ -397,3 +397,97 @@ tests:
             exp_annotations:
               summary: "Deadman heartbeat (always firing)"
               description: "Checked off-box by infra-liveness.yml. If this alert is ever absent from Alertmanager, the alerting pipeline is broken."
+
+  # ── matcher CI runner host ──────────────────────────────────────────────────
+  # Healthy host: scraped, heartbeat fresh, both slots registered, clean.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="matcher-ci-runner", instance="r:9100"}'
+        values: '1x30'
+      - series: 'matcher_ci_runner_heartbeat_success_timestamp_seconds{job="matcher-ci-runner", instance="r:9100"}'
+        values: '0+60x30'
+      - series: 'matcher_ci_runner_slots_registered{job="matcher-ci-runner", instance="r:9100"}'
+        values: '2x30'
+      - series: 'matcher_ci_runner_slots_desired{job="matcher-ci-runner", instance="r:9100"}'
+        values: '2x30'
+      - series: 'matcher_ci_runner_slot_cleanup_failures_total{job="matcher-ci-runner", instance="r:9100", slot="1"}'
+        values: '0x30'
+    alert_rule_test:
+      - { eval_time: 25m, alertname: MatcherCiRunnerDown, exp_alerts: [] }
+      - { eval_time: 25m, alertname: MatcherCiRunnerHeartbeatStale, exp_alerts: [] }
+      - { eval_time: 25m, alertname: MatcherCiRunnerSlotsDegraded, exp_alerts: [] }
+      - { eval_time: 25m, alertname: MatcherCiRunnerCleanupFailed, exp_alerts: [] }
+
+  # No target at all (empty file_sd list): MatcherCiRunnerDown after 10 min, not before.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: '1x20'
+    alert_rule_test:
+      - { eval_time: 9m, alertname: MatcherCiRunnerDown, exp_alerts: [] }
+      - eval_time: 11m
+        alertname: MatcherCiRunnerDown
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: matcher-ci-runner
+            exp_annotations:
+              summary: "matcher CI runner host unreachable (or no scrape target)"
+              description: "Prometheus cannot scrape node_exporter on the matcher CI runner (dcc-matcher-ci-runner :9100), or deploy-monitoring-stack.yml shipped an empty target list. matcher CI cannot start heavy jobs. Runbook: runbooks/matcher-ci-runner.md (fallback: set the matcher repository variable MATCHER_CI_RUNNER=github-hosted)."
+
+  # Host up, heartbeat frozen at t=0: stale after 15 min, alert 5 min later.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="matcher-ci-runner", instance="r:9100"}'
+        values: '1x30'
+      - series: 'matcher_ci_runner_heartbeat_success_timestamp_seconds{job="matcher-ci-runner", instance="r:9100"}'
+        values: '0x30'
+    alert_rule_test:
+      - { eval_time: 19m, alertname: MatcherCiRunnerHeartbeatStale, exp_alerts: [] }
+      - eval_time: 22m
+        alertname: MatcherCiRunnerHeartbeatStale
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: matcher-ci-runner
+              instance: "r:9100"
+            exp_annotations:
+              summary: "matcher CI runners have not checked in with GitHub for over 15 min"
+              description: "The host is up but MATCHER_CI_RUNNER_HEARTBEAT is not being updated: no registered runner, an expired or missing GitHub credential (matcher_ci_runner_credential_mode), or GitHub API errors. matcher CI precheck fails fast while this fires. See `journalctl -u 'matcher-ci-*'` on the host."
+
+  # One slot short for 20 min: degraded. A cleanup failure alerts at once.
+  - interval: 1m
+    input_series:
+      - series: 'matcher_ci_runner_slots_registered{job="matcher-ci-runner", instance="r:9100"}'
+        values: '1x30'
+      - series: 'matcher_ci_runner_slots_desired{job="matcher-ci-runner", instance="r:9100"}'
+        values: '2x30'
+      - series: 'matcher_ci_runner_slot_cleanup_failures_total{job="matcher-ci-runner", instance="r:9100", slot="2"}'
+        values: '0 0 0 0 0 1 1 1 1 1'
+    alert_rule_test:
+      - { eval_time: 19m, alertname: MatcherCiRunnerSlotsDegraded, exp_alerts: [] }
+      - eval_time: 21m
+        alertname: MatcherCiRunnerSlotsDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              network: testnet
+              job: matcher-ci-runner
+              instance: "r:9100"
+            exp_annotations:
+              summary: "matcher CI runner has fewer ready slots than configured"
+              description: "Fewer slots have a registered runner (idle or busy) than matcher_ci_runner_slots_desired for 20 min. CI still runs, slower. Check matcher_ci_runner_slot_registration_failures_total and the matcher-ci-slot@N units."
+      - eval_time: 6m
+        alertname: MatcherCiRunnerCleanupFailed
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: matcher-ci-runner
+              instance: "r:9100"
+              slot: "2"
+            exp_annotations:
+              summary: "a matcher CI job left state behind on the runner host (slot 2)"
+              description: "mci-verify-clean.sh found a leftover container or volume after a job. Jobs must not share state. Inspect `docker ps -a --filter label=matcher-ci.slot` and `docker volume ls` on the host, then remove them."

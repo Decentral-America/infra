@@ -10,6 +10,10 @@ terraform {
   required_version = ">= 1.12.0" # floor: 1.11.4 (SECURITY: malicious .zip in tofu init)
 
   required_providers {
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.1" # host key of the matcher CI runner (modules/matcher-ci-runner)
+    }
     linode = {
       source  = "linode/linode"
       version = "~> 4.5" # v4.0.0 (2026-06-30): removed deprecated `group` (linode_instance)
@@ -251,6 +255,19 @@ resource "linode_firewall" "backend" {
       protocol = "TCP"
       ports    = tostring(local.lke_chain_exporter_nodeport)
       ipv4     = local.lke_node_public_ipv4_cidrs
+    }
+  }
+
+  # VPS Prometheus -> matcher CI runner host node_exporter (job matcher-ci-runner in
+  # monitoring/prometheus.yml). The runner firewall admits :9100 from this VPS only.
+  dynamic "outbound" {
+    for_each = var.matcher_ci_runner_enabled ? [1] : []
+    content {
+      label    = "allow-matcher-ci-metrics-out"
+      action   = "ACCEPT"
+      protocol = "TCP"
+      ports    = "9100"
+      ipv4     = ["${module.matcher_ci_runner[0].ipv4}/32"]
     }
   }
 
