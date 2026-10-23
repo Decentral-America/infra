@@ -34,9 +34,12 @@ matcher_ci_runner_slot_cleanup_failures_total{slot="${SLOT}"} $(value cleanup_fa
 # HELP matcher_ci_runner_slot_registration_failures_total Registration-token or container start failures.
 # TYPE matcher_ci_runner_slot_registration_failures_total counter
 matcher_ci_runner_slot_registration_failures_total{slot="${SLOT}"} $(value registration_failures)
-# HELP matcher_ci_runner_slot_last_job_memory_peak_bytes cgroup memory.peak of the last finished runner container.
+# HELP matcher_ci_runner_slot_last_job_memory_peak_bytes Peak anonymous memory (page cache excluded) of the last finished runner container.
 # TYPE matcher_ci_runner_slot_last_job_memory_peak_bytes gauge
 matcher_ci_runner_slot_last_job_memory_peak_bytes{slot="${SLOT}"} $(value last_peak)
+# HELP matcher_ci_runner_slot_oom_kills_total Processes the kernel OOM-killed inside this slot's containers (memory cap hit).
+# TYPE matcher_ci_runner_slot_oom_kills_total counter
+matcher_ci_runner_slot_oom_kills_total{slot="${SLOT}"} $(value oom_kills)
 # HELP matcher_ci_runner_slot_last_job_seconds Lifetime of the last finished runner container.
 # TYPE matcher_ci_runner_slot_last_job_seconds gauge
 matcher_ci_runner_slot_last_job_seconds{slot="${SLOT}"} $(value last_seconds)
@@ -84,13 +87,15 @@ cleanup_env
 echo "$NAME" > "$MCI_RUN/slot-${SLOT}.name"
 mci_log "slot ${SLOT}: started ${NAME} (container ${CID:0:12}, volume ${VOL})"
 
-# Stream the runner's log to the journal; record readiness and the cgroup memory peak while it lives.
+# Stream the runner's log to the journal; record readiness, the peak anonymous memory (memory.peak would count page
+# cache, which always fills up to the cap) and OOM kills while it lives.
 docker logs -f "$CID" 2>&1 | sed -u "s/^/[${NAME}] /" &
 LOGPID=$!
 cg="/sys/fs/cgroup/system.slice/docker-${CID}.scope"
-peak=0; ready=0
+peak=0; ready=0; ooms=0
 while [ "$(docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null || echo false)" = true ]; do
-  [ -r "$cg/memory.peak" ] && peak=$(cat "$cg/memory.peak" 2>/dev/null || echo "$peak")
+  a=$(awk '$1 == "anon" {print $2}' "$cg/memory.stat" 2>/dev/null || echo 0); [ "${a:-0}" -gt "$peak" ] && peak=$a
+  ooms=$(awk '$1 == "oom_kill" {print $2}' "$cg/memory.events" 2>/dev/null || echo "$ooms")
   if [ "$ready" = 0 ] && docker logs "$CID" 2>&1 | grep -q "Listening for Jobs"; then
     ready=1; date +%s > "$STATE/slot-${SLOT}.ready_ts"; touch "$MCI_RUN/slot-${SLOT}.ready"
     write_metrics 1
@@ -100,8 +105,9 @@ done
 rc=$(docker inspect -f '{{.State.ExitCode}}' "$CID" 2>/dev/null || echo unknown)
 kill "$LOGPID" 2>/dev/null || true
 echo "$peak" > "$STATE/slot-${SLOT}.last_peak"
+[ "${ooms:-0}" -gt 0 ] && counter oom_kills "$ooms"
 echo $(( $(date +%s) - started )) > "$STATE/slot-${SLOT}.last_seconds"
-mci_log "slot ${SLOT}: ${NAME} exited ${rc} after $(value last_seconds)s, memory.peak $((peak / 1048576)) MiB"
+mci_log "slot ${SLOT}: ${NAME} exited ${rc} after $(value last_seconds)s, peak anon memory $((peak / 1048576)) MiB, OOM kills ${ooms:-0}"
 
 # Nothing of this job may survive: the container (workspace, tool cache, credentials), and the volume
 # that held its Docker daemon (images, containers, networks of the job).
@@ -114,3 +120,5 @@ else
   counter jobs; counter cleanup_failures
 fi
 write_metrics 0
+# A runner that dies within a minute (registration or startup failure) must not turn into a tight restart loop.
+if [ "$(value last_seconds)" -lt 60 ]; then counter registration_failures; write_metrics 0; sleep 30; fi

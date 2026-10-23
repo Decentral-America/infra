@@ -470,6 +470,8 @@ All sensitive secrets are SOPS-encrypted with age keys before committing to git.
 | `AGE_KEY_stagenet` | infra/stagenet env | SOPS decryption key for `secrets/stagenet.env` |
 | `AGE_KEY_mainnet` | infra/mainnet env | SOPS decryption key for `secrets/mainnet.env` |
 
+`secrets/matcher-ci-runner.env` (the matcher CI runner host's `ops` SSH key and its GitHub App credential) is encrypted to the testnet age recipient. No workflow decrypts it: the operator scripts in `scripts/matcher-ci-runner/` do, locally, and push the credential over the pinned SSH session (`runbooks/matcher-ci-runner.md`).
+
 **Post-quantum upgrade (recommended, one-time, free):**
 age v1.3.1 supports hybrid ML-KEM-768 + X25519 keys (`age1pq1...` format, NIST FIPS 203). The existing X25519 keys are vulnerable to harvest-now-decrypt-later quantum attacks. To migrate:
 
@@ -829,6 +831,17 @@ Cubensis build-time injections exposed through Vite defines:
 | `node_wallet_seed` | yes | yes | none | Base58 seed for node-scala wallet → env file |
 | `node_wallet_password` | yes | yes | none | Wallet password → env file |
 
+**matcher CI runner host** (`terraform/matcher-ci-runner.tf`, module `terraform/modules/matcher-ci-runner`, enabled in `testnet.tfvars` only; runbook `runbooks/matcher-ci-runner.md`):
+
+| Variable | Sensitive | Default | Purpose |
+|---|---|---|---|
+| `matcher_ci_runner_enabled` | no | `false` | Provision the self-hosted runner Linode for the private matcher repo |
+| `matcher_ci_runner_type` | no | `g6-dedicated-8` | Dedicated-CPU plan (the module rejects shared CPU) |
+| `matcher_ci_runner_slots` | no | `2` | Ephemeral runners kept ready |
+| `matcher_ci_runner_slot_memory` | no | `7g` | Memory cap of one runner container |
+| `matcher_ci_runner_ssh_public_key` | no | placeholder | Public key of the host's `ops` user (private key: `secrets/matcher-ci-runner.env`) |
+| `matcher_ci_runner_ssh_allowed_ips` | no | `192.0.2.1/32` | Operator CIDRs allowed to SSH (cloud firewall + host nftables) |
+
 ### Outputs
 
 | Output | Purpose |
@@ -837,6 +850,8 @@ Cubensis build-time injections exposed through Vite defines:
 | `backend_ipv6` | Public IPv6 |
 | `network` | Active Tofu workspace |
 | `chain_id` | Network chain ID |
+| `matcher_ci_runner_ipv4` | Public IPv4 of the matcher CI runner host |
+| `matcher_ci_runner_known_hosts` | Pinned `known_hosts` line of the runner host (copied into `ssh/known_hosts`) |
 
 ### State backend
 

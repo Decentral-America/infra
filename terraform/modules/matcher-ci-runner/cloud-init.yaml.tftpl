@@ -1,6 +1,9 @@
 #cloud-config
 # matcher CI runner host. Rendered by terraform/modules/matcher-ci-runner (gzip + base64 user data).
 # Contains the pinned SSH host key; contains NO GitHub credential.
+hostname: dcc-matcher-ci-runner
+fqdn: dcc-matcher-ci-runner
+prefer_fqdn_over_hostname: false
 ssh_deletekeys: true
 ssh_genkeytypes: [ed25519]  # only the pinned key below (cloud-init generates a type only if it is missing)
 ssh_keys:

@@ -491,3 +491,23 @@ tests:
             exp_annotations:
               summary: "a matcher CI job left state behind on the runner host (slot 2)"
               description: "mci-verify-clean.sh found a leftover container or volume after a job. Jobs must not share state. Inspect `docker ps -a --filter label=matcher-ci.slot` and `docker volume ls` on the host, then remove them."
+
+  # An OOM kill inside a runner container alerts at once.
+  - interval: 1m
+    input_series:
+      - series: 'matcher_ci_runner_slot_oom_kills_total{job="matcher-ci-runner", instance="r:9100", slot="1"}'
+        values: '0 0 0 2 2 2 2'
+    alert_rule_test:
+      - { eval_time: 2m, alertname: MatcherCiRunnerJobOomKilled, exp_alerts: [] }
+      - eval_time: 5m
+        alertname: MatcherCiRunnerJobOomKilled
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              network: testnet
+              job: matcher-ci-runner
+              instance: "r:9100"
+              slot: "1"
+            exp_annotations:
+              summary: "a matcher CI job hit its memory cap on the runner host (slot 1)"
+              description: "The kernel OOM-killed a process inside a runner container (matcher_ci_runner_slot_oom_kills_total). Its job most likely failed for that reason, not for a code defect. Compare matcher_ci_runner_slot_last_job_memory_peak_bytes with matcher_ci_runner_slot_memory and lower the slot count or raise the cap (runbooks/matcher-ci-runner.md)."

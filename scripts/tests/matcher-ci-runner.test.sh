@@ -14,6 +14,9 @@ mapfile -t shipped < <(sed -n 's/.*src = "\([^"]*\)".*/\1/p' "${M}/main.tf" | so
 mapfile -t present < <(cd "$F" && find . -type f | sed 's|^\./||' | sort)
 [[ "${shipped[*]}" == "${present[*]}" ]] || fail "files/ and main.tf host_files differ: shipped=[${shipped[*]}] present=[${present[*]}]"
 
+# Every shell script is shipped executable (install.sh and the units run them directly).
+if grep -E 'src = "[^"]*\.sh"' "${M}/main.tf" | grep -v 'mode = "0755"'; then fail "a shipped .sh is not mode 0755"; fi
+
 # Secret hygiene: no xtrace in anything that handles a token.
 for f in "$F"/mci-*.sh "$F"/runner-image/entrypoint.sh; do
   if grep -nE '^[^#]*set -[a-z]*x' "$f"; then fail "$f enables xtrace (would print tokens)"; fi

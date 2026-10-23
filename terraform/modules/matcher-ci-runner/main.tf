@@ -39,7 +39,7 @@ locals {
   # path on the host => { mode, file under files/ }
   host_files = {
     "/opt/matcher-ci/install.sh"                           = { mode = "0755", src = "install.sh" }
-    "/opt/matcher-ci/mci-lib.sh"                           = { mode = "0644", src = "mci-lib.sh" }
+    "/opt/matcher-ci/mci-lib.sh"                           = { mode = "0755", src = "mci-lib.sh" }
     "/opt/matcher-ci/mci-slot.sh"                          = { mode = "0755", src = "mci-slot.sh" }
     "/opt/matcher-ci/mci-heartbeat.sh"                     = { mode = "0755", src = "mci-heartbeat.sh" }
     "/opt/matcher-ci/mci-image-build.sh"                   = { mode = "0755", src = "mci-image-build.sh" }

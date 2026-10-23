@@ -12,13 +12,13 @@ push_token() {
   local json
   json=$(gh api -X POST "repos/${REPO}/actions/runners/registration-token")
   printf 'REGISTRATION_TOKEN=%s\nEXPIRES_AT=%s\n' "$(jq -r .token <<<"$json")" \
-    "$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "$(jq -r .expires_at <<<"$json" | cut -c1-19)" +%s 2>/dev/null || date -u -d "$(jq -r .expires_at <<<"$json")" +%s)" \
+    "$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1]).timestamp()))' "$(jq -r .expires_at <<<"$json")")" \
     | mci_ssh 'sudo install -m 0600 -o root -g root /dev/stdin /etc/matcher-ci/registration-token'
   echo "$(date -u +%TZ) registration token refreshed on $(mci_host)"
 }
 heartbeat() {
   local ready
-  ready=$(mci_ssh 'ls /run/matcher-ci/ 2>/dev/null | grep -c "\.ready$" || true')
+  ready=$(mci_ssh 'sudo ls /run/matcher-ci/ 2>/dev/null | grep -c "\.ready$" || true')
   if [ "${ready:-0}" -gt 0 ]; then gh variable set MATCHER_CI_RUNNER_HEARTBEAT -R "$REPO" --body "$(date +%s)" >/dev/null; fi
 }
 push_token

@@ -13,4 +13,4 @@ runuser -u runner -- env HOME=/home/runner ./config.sh --unattended --ephemeral 
   --url "$MCI_REPO_URL" --token "$token" --name "$MCI_RUNNER_NAME" --labels "$MCI_LABELS" --work _work
 unset token
 # run.sh exits after the one job (ephemeral); the container then stops and the slot deletes it.
-exec runuser -u runner -- env HOME=/home/runner -u MCI_RUNNER_NAME -u MCI_REPO_URL -u MCI_LABELS ./run.sh
+exec runuser -u runner -- env -u MCI_RUNNER_NAME -u MCI_REPO_URL -u MCI_LABELS HOME=/home/runner ./run.sh
