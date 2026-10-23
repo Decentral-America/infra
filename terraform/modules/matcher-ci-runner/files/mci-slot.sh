@@ -120,5 +120,6 @@ else
   counter jobs; counter cleanup_failures
 fi
 write_metrics 0
-# A runner that dies within a minute (registration or startup failure) must not turn into a tight restart loop.
-if [ "$(value last_seconds)" -lt 60 ]; then counter registration_failures; write_metrics 0; sleep 30; fi
+# A runner that died before it ever listened for jobs (registration or startup failure) must not turn into a tight
+# restart loop. A short job is fine: it reached "Listening for Jobs" first.
+if [ "$ready" = 0 ]; then counter registration_failures; write_metrics 0; sleep 30; fi
