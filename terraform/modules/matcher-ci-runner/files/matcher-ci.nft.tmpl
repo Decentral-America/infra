@@ -25,6 +25,8 @@ table inet matcher_ci {
     ct state established,related accept
     ct state invalid drop
     meta l4proto { icmp, ipv6-icmp } limit rate 20/second accept
+    udp sport 67 udp dport 68 accept
+    udp sport 547 udp dport 546 accept
     ip saddr @ssh_v4 tcp dport 22 accept
     ip saddr @metrics_v4 tcp dport 9100 accept
     limit rate 10/minute burst 20 packets log prefix "matcher-ci-in-drop: " level info
@@ -54,6 +56,7 @@ table inet matcher_ci {
     ct state established,related accept
     meta l4proto { icmp, ipv6-icmp } accept
     ip daddr 169.254.169.254 tcp dport 80 meta skuid 0 accept
+    udp dport { 67, 547 } accept
     udp dport { 53, 123 } accept
     tcp dport { 53, 80, 443 } accept
     limit rate 10/minute burst 20 packets log prefix "matcher-ci-out-drop: " level info

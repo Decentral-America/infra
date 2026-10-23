@@ -70,6 +70,7 @@ matcher_ci_runner_slots       = 2
 matcher_ci_runner_slot_memory = "7g"
 # Public key of the ops user (private half in secrets/matcher-ci-runner.env, SOPS).
 matcher_ci_runner_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILwFdzj1zU88TGS4cFi+vEwKJKIeTNrOEJoRCktU1Z8N ops@dcc-matcher-ci-runner"
-# Operator egress IPs only (no GitHub-hosted runner ever SSHes in: the host configures itself
-# from user data, and the credential is pushed from an operator machine).
-matcher_ci_runner_ssh_allowed_ips = ["201.182.55.117/32", "201.182.227.53/32"]
+# Operator egress only (no GitHub-hosted runner ever SSHes in: the host configures itself from
+# user data, and the credential is pushed from an operator machine). The operator ISP NATs each
+# connection through a pool (201.182.227.50/.53/.55 seen in one minute), hence the /24.
+matcher_ci_runner_ssh_allowed_ips = ["201.182.55.117/32", "201.182.227.0/24"]
