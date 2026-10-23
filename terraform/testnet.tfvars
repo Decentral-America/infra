@@ -64,7 +64,7 @@ lke_ssh_allowed_ips = ["201.182.55.117/32"]
 # ── matcher CI runner host (matcher-ci-runner.tf, runbooks/matcher-ci-runner.md) ──
 # ONE dedicated Linode in the VPS region running ephemeral runners for the private
 # matcher repository only. Plan sizing: see the runbook (measured per-job memory).
-matcher_ci_runner_enabled     = true
+matcher_ci_runner_enabled     = false
 matcher_ci_runner_type        = "g6-dedicated-8" # 8 dedicated vCPU / 16 GB / 320 GB, $144/mo
 matcher_ci_runner_slots       = 2
 matcher_ci_runner_slot_memory = "7g"
