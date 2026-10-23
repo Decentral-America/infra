@@ -4,4 +4,4 @@
 #   ssh deploy@<host> 'cat /etc/ssh/ssh_host_ed25519_key.pub'
 # A rebuilt host gets a new key: update this file in a PR before deploying to it.
 50.116.30.244 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPm4rg6GbJfduCdaTe5WY7rwhCpHdbiGw0IpQSv5ZpWt
-173.255.199.140 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAbivyV5ElOrlkB1bOZcpmSASJ9aIRwvlBZ9fOHGi2GF
+69.164.192.53 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAbivyV5ElOrlkB1bOZcpmSASJ9aIRwvlBZ9fOHGi2GF
