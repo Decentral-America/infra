@@ -152,6 +152,10 @@ if [ -f /opt/dcc/compose/grafana.yml ]; then
   BOOT_API=http://127.0.0.1:3003/api
   docker stop grafana-testnet >/dev/null 2>&1 || true
   docker rm -f grafana-bootstrap >/dev/null 2>&1 || true
+  # GF_SECURITY_ADMIN_PASSWORD only applies when Grafana first creates the admin user, so the volume's
+  # password can differ from the env file (observed 2026-10-25: 401). Sync it; stdin keeps it off argv.
+  printf '%s' "$PW" | NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml run --rm -T --no-deps \
+    --entrypoint grafana grafana cli admin reset-admin-password --password-from-stdin >/dev/null 2>&1 || echo "WARN: admin password sync failed"
   if NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml run -d --no-deps --name grafana-bootstrap \
        -e GF_AUTH_BASIC_ENABLED=true -e GF_SERVER_HTTP_PORT=3003 grafana >/dev/null; then
     ok=0
