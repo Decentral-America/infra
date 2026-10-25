@@ -141,7 +141,45 @@ if [ -f /opt/dcc/compose/grafana.yml ]; then
   # --force-recreate so a changed mounted grafana.ini (e.g. auth lockdown) is actually
   # reloaded — grafana reads its config only at startup, and plain `up -d` won't restart
   # a running container when only a bind-mounted file's contents changed.
+  # Public (shared) dashboard for the admin embed (anonymous access is off). The Grafana API needs
+  # basic auth, which the real instance disables, so a throwaway instance on the same data volume
+  # (basic auth on, port 3003) creates it while the real one is stopped. Idempotent; the token is a
+  # public constant that must equal the one in compose/admin-dashboard.yml.
+  PUBLIC_DASHBOARD_TOKEN="1255a802508eddc1e9e74080cf7b68c8"
+  BOOT_FAIL=0
+  PW=$(sudo grep '^GF_SECURITY_ADMIN_PASSWORD=' /opt/dcc/secrets/grafana-testnet.env | cut -d= -f2-)
+  gcurl() { printf 'user = "admin:%s"\n' "$PW" | curl -sS -m 20 -K - "$@"; }
+  BOOT_API=http://127.0.0.1:3003/api
+  docker stop grafana-testnet >/dev/null 2>&1 || true
+  docker rm -f grafana-bootstrap >/dev/null 2>&1 || true
+  if NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml run -d --no-deps --name grafana-bootstrap \
+       -e GF_AUTH_BASIC_ENABLED=true -e GF_SERVER_HTTP_PORT=3003 grafana >/dev/null; then
+    ok=0
+    for _ in $(seq 1 30); do curl -sf ${BOOT_API}/health >/dev/null 2>&1 && { ok=1; break; }; sleep 2; done
+    if [ "$ok" = 1 ]; then
+      cur=$(gcurl ${BOOT_API}/dashboards/uid/testnet/public-dashboards || true)
+      if echo "$cur" | grep -q "$PUBLIC_DASHBOARD_TOKEN"; then
+        echo "  public dashboard already present"
+      else
+        old_uid=$(echo "$cur" | grep -o '"uid":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+        [ -z "$old_uid" ] || gcurl -X DELETE "${BOOT_API}/dashboards/uid/testnet/public-dashboards/${old_uid}" >/dev/null || true
+        gcurl -X POST -H 'Content-Type: application/json' ${BOOT_API}/dashboards/uid/testnet/public-dashboards \
+          -d "{\"isEnabled\":true,\"share\":\"public\",\"accessToken\":\"${PUBLIC_DASHBOARD_TOKEN}\",\"timeSelectionEnabled\":false,\"annotationsEnabled\":false}" \
+          | grep -q "$PUBLIC_DASHBOARD_TOKEN" && echo "  public dashboard created" || { echo "ERROR: public dashboard creation failed"; BOOT_FAIL=1; }
+      fi
+    else
+      echo "ERROR: bootstrap grafana never became healthy"; BOOT_FAIL=1
+    fi
+  else
+    echo "ERROR: could not start bootstrap grafana"; BOOT_FAIL=1
+  fi
+  unset PW
+  docker rm -f grafana-bootstrap >/dev/null 2>&1 || true
   NETWORK=testnet docker compose -p "$GRAFANA_PROJECT" -f /opt/dcc/compose/grafana.yml up -d --force-recreate
   sleep 5
   curl -s http://127.0.0.1:3002/api/health 2>/dev/null && echo "  (grafana healthy)" || echo "  (grafana not ready yet — check logs)"
+  # Anonymous access must now be refused and the public dashboard must serve without login.
+  [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3002/api/org)" = 401 ] || { echo "ERROR: grafana still allows anonymous /api/org"; BOOT_FAIL=1; }
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3002/api/public/dashboards/$PUBLIC_DASHBOARD_TOKEN")" = 200 ] || { echo "ERROR: public dashboard not served"; BOOT_FAIL=1; }
+  [ "$BOOT_FAIL" = 0 ] || exit 1
 fi

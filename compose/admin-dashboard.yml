@@ -20,6 +20,11 @@ services:
     env_file:
       - /opt/dcc/secrets/admin-dashboard-${NETWORK:-mainnet}.env
     environment:
+      # Grafana anonymous access is off; the Operations page embeds the public (shared) dashboard.
+      # The page appends "/d/testnet?orgId=1&refresh=30s&kiosk" to this value, so the trailing
+      # "_=" swallows that suffix into a harmless query param. The token must equal
+      # PUBLIC_DASHBOARD_TOKEN in monitoring/scripts/deploy-monitoring.sh (not a secret).
+      GRAFANA_URL: "https://grafana.${NETWORK:-mainnet}.decentralchain.io/public-dashboards/1255a802508eddc1e9e74080cf7b68c8?theme=dark&_="
       # Treasury "fund" refuses every nodeUrl in production unless its origin is listed
       # (api.treasury.fund.ts isAllowedNodeUrl). Comma-separated origins.
       ADMIN_DASHBOARD_ALLOWED_NODE_URLS: "https://${NETWORK:-mainnet}-node.decentralchain.io"
