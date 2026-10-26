@@ -52,7 +52,7 @@ jobs:
         with:
           persist-credentials: true
 
-      - uses: regclient/actions/regctl-installer@1b705e32d40851370799ea5814e83d0a5f6a70dc  # v0.1.0
+      - uses: regclient/actions/regctl-installer@dd58ad94f76adb73d8ac1bf75ed25f01545d5b32  # v0.2.0
 
       # The package is public, so reads need no credential; the testnet-pinned-* tag push below
       # writes to it. That uses this run's GITHUB_TOKEN (packages: write above), which works once
