@@ -17,7 +17,7 @@ services:
     # by default, --log.level deprecated (still works; not passed here) — none
     # affect this config. Verified: `promtool check config` (incl. alerts.yml)
     # passes with the v3.15.0 image.
-    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
     container_name: "prometheus-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -61,7 +61,7 @@ services:
         max-file: "3"
 
   exporter:
-    image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    image: python:3.14-slim@sha256:82abc9f53600280b0757126f83c5a7d47088592d2acb6b4c0b9e97f76865508c
     container_name: "exporter-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -224,7 +224,7 @@ services:
         max-file: "3"
 
   alert-webhook:
-    image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    image: python:3.14-slim@sha256:82abc9f53600280b0757126f83c5a7d47088592d2acb6b4c0b9e97f76865508c
     container_name: "alert-webhook-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

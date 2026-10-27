@@ -27,7 +27,7 @@ services:
     # migration notes don't apply since we don't use bloom filters.
     # Bumped 3.7.3 -> 3.7.8 (2026-09-29): patch releases only; `-verify-config`
     # passes and the `-health` flag used below is still present.
-    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     container_name: "loki-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

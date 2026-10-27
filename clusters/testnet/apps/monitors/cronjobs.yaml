@@ -214,7 +214,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: monitor
-              image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+              image: python:3.14-slim@sha256:82abc9f53600280b0757126f83c5a7d47088592d2acb6b4c0b9e97f76865508c
               command: ["python3", "/app/infra-liveness.py"]
               env:
                 - name: GITHUB_TOKEN
