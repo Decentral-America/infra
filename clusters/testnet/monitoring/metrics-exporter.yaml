@@ -197,6 +197,10 @@ metadata:
     app: metrics-exporter
 spec:
   replicas: 1
+  # Recreate: the pod binds hostPort 9200, so a RollingUpdate surge pod can never schedule while the
+  # old one runs (it sat Pending after the 2026-10-28 rollout until the old pod was deleted by hand).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: metrics-exporter
