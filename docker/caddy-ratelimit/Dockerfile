@@ -14,8 +14,12 @@ FROM caddy:2.11.7-builder-alpine@sha256:ef9b65adf9a224770c6d5f6d1ae1bf99bc3caaa7
 # Bump this SHA deliberately; check github.com/mholt/caddy-ratelimit/commits
 # before doing so, since there's no changelog to diff against.
 RUN xcaddy build \
-    --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
+    --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+    --with golang.org/x/net@v0.60.0 \
+    --with github.com/go-jose/go-jose/v4@v4.1.6
 
 # renovate: image=caddy tag=2.11.7-alpine
 FROM caddy:2.11.7-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+# Alpine packages (brotli, curl) are fixed in the repos before the Caddy image is rebuilt.
+RUN apk upgrade --no-cache
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
