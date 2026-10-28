@@ -1,0 +1,80 @@
+# Trivy waivers for THIRD-PARTY images only (the G2 soak gate and any scan of these images).
+#
+# Separate from .trivyignore on purpose: that file also gates our OWN images in deploy-container.yml,
+# and these IDs must not weaken it. Every image below is on the latest upstream tag/digest that exists
+# (checked 2026-10-28): the HIGH findings are Go standard library / vendored module versions or
+# packages inside the image that upstream has not re-released with fixes yet, or that our scripts never load.
+# Our images (node, matcher, caddy-ratelimit, scanner, admin, data-service, bps, websocket) take NO entries.
+# Each bump PR re-scans; an ID is removed as soon as a fixed image exists. Review no later than 2026-11-11.
+# Usage: trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --ignorefile .trivyignore.thirdparty <ref>
+
+# grafana/grafana 13.2.5
+CVE-2026-111943
+CVE-2026-116587
+CVE-2026-21728
+CVE-2026-28377
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
+
+# python:3.14-slim (pip packages, unused by our scripts)
+CVE-2025-47273
+CVE-2026-114613
+CVE-2026-97687
+CVE-2026-97689
+GHSA-6v7p-g79w-8964
+
+# prom/alertmanager v0.34.1 (latest upstream)
+CVE-2026-111943
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-84445
+CVE-2026-97031
+
+# prom/node-exporter v1.12.1 (latest upstream)
+CVE-2026-111943
+CVE-2026-33818
+CVE-2026-39821
+CVE-2026-46600
+CVE-2026-56851
+CVE-2026-56853
+CVE-2026-56854
+CVE-2026-56858
+CVE-2026-56859
+CVE-2026-56860
+CVE-2026-56862
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
+
+# quay.io/prometheuscommunity/postgres-exporter v0.20.1 (latest upstream)
+CVE-2026-111943
+CVE-2026-33818
+CVE-2026-39821
+CVE-2026-39822
+CVE-2026-46600
+CVE-2026-56851
+CVE-2026-56852
+CVE-2026-56853
+CVE-2026-56854
+CVE-2026-56858
+CVE-2026-56859
+CVE-2026-56860
+CVE-2026-56862
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
+
+# node:24-alpine (npm-bundled packages, monitors CronJobs)
+CVE-2026-102276
+CVE-2026-102278
+CVE-2026-109383
+CVE-2026-109869
+CVE-2026-19534
+CVE-2026-87018
+
+# oliver006/redis_exporter v1.92.1 (not in the monitoring deploy)
+CVE-2026-111943
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
