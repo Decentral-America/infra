@@ -180,7 +180,7 @@ groups:
           network: testnet
         annotations:
           summary: "Grafana datasource {{ $labels.datasource }} is not healthy"
-          description: "GET /api/datasources/uid/{{ $labels.datasource }}/health has not returned status OK for 10 min, so dashboards using it are empty. Check grafana-testnet logs for plugin errors (\"Plugin not registered\", plugin.backgroundinstaller)."
+          description: "The public-dashboard panel query through datasource {{ $labels.datasource }} has not returned status 200 for 10 min, so dashboards using it are empty. Check grafana-testnet logs for plugin errors (\"Plugin not registered\", plugin.backgroundinstaller)."
 
       - alert: MainNodeUnreachable
         expr: |
@@ -338,6 +338,46 @@ groups:
         annotations:
           summary: "Cannot read the TLS certificate of {{ $labels.host }}"
           description: "exporter.py could not complete a TLS handshake with {{ $labels.host }}:443 for 30 min, so its expiry is unknown."
+
+      # InvalidStateHash is the consensus-divergence signature (heights 2640, 3325). The LKE node pods'
+      # logs rotate within hours, so clusters/testnet/monitoring/metrics-exporter.yaml polls them and
+      # keeps this counter; the main node's log is kept by Loki (alloy, 30 d).
+      - alert: InvalidStateHashDetected
+        expr: |
+          increase(dcc_invalid_state_hash_lines_total[30m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "InvalidStateHash in the log of {{ $labels.node }}"
+          description: "dcc_invalid_state_hash_lines_total increased on {{ $labels.node }}. State-hash divergence: do not roll or restart; capture `kubectl -n dcc logs <pod> -c node` and compare the block id and state hash at the first diverging height on all 4 nodes."
+
+      - alert: LkeLogPollStale
+        expr: |
+          (time() - dcc_log_poll_last_success_timestamp_seconds) > 600
+        for: 10m
+        labels:
+          severity: warning
+          network: testnet
+        annotations:
+          summary: "The InvalidStateHash log poll of {{ $labels.node }} has not succeeded for 10 min"
+          description: "metrics-exporter (LKE) cannot read the pod log through the API (RBAC, apiserver reachability or pod missing), so InvalidStateHashDetected is blind for this node. Check `kubectl -n dcc logs deploy/metrics-exporter` and the metrics-exporter-pod-logs Role."
+
+      # A container at >85% of its memory limit for 15 min is on its way to a kernel OOM kill and a
+      # restart (Grafana was killed at 515 MB of 512 MiB on 2026-10-27, which failed the G2 soak).
+      # dcc_container_memory_* come from scripts/docker-state-textfile.sh (docker stats, cache excluded).
+      # Containers without a limit report the host total, so they never reach 85%.
+      - alert: ContainerMemoryNearLimit
+        expr: |
+          (dcc_container_memory_usage_bytes / dcc_container_memory_limit_bytes) > 0.85
+        for: 15m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "{{ $labels.name }} is using {{ $value | humanizePercentage }} of its memory limit"
+          description: "dcc_container_memory_usage_bytes is above 85% of the limit for 15 min. Raise the limit in compose/ or fix the cause before the kernel OOM-kills it (HostOomKill)."
 
       # Kernel OOM kills (memcg included): Grafana was OOM-killed 4 times at its 256 MiB limit
       # before anyone noticed (2026-10-11..16).

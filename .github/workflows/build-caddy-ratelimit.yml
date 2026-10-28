@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Build & Publish: Caddy + caddy-ratelimit
 #
-# Builds docker/caddy-ratelimit/Dockerfile (stock Caddy 2.11.4 + the
+# Builds docker/caddy-ratelimit/Dockerfile (stock Caddy 2.11.7 + the
 # caddy-ratelimit module, which the official image doesn't ship) and pushes it
 # to ghcr.io/decentral-america/caddy-ratelimit. Run manually whenever the
 # Dockerfile changes (base image bump, module SHA bump) — this image changes
@@ -67,7 +67,7 @@ jobs:
             type=sha,format=short
           labels: |
             org.opencontainers.image.title=Caddy (with caddy-ratelimit)
-            org.opencontainers.image.description=Stock Caddy 2.11.4 plus github.com/mholt/caddy-ratelimit, for node/matcher REST rate limiting
+            org.opencontainers.image.description=Stock Caddy 2.11.7 plus github.com/mholt/caddy-ratelimit, for node/matcher REST rate limiting
 
       - name: Build and push
         id: push

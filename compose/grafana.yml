@@ -14,7 +14,7 @@ services:
     # "breaking change" is removal of the alertingSaveStateCompressed feature
     # flag (not set in monitoring/grafana.ini); scripted dashboards are now
     # disabled by default (none used — dashboards are file-provisioned JSON).
-    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    image: grafana/grafana:13.2.5@sha256:9f7aa1e1e3246aade5792d35a738049f7f32f89cd51d1956cf426a4e86268a84
     container_name: "grafana-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -47,6 +47,8 @@ services:
       GF_PATHS_LOGS: /var/log/grafana
       GF_PATHS_PLUGINS: /var/lib/grafana/plugins
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      # Soft Go memory limit (~64% of the 1g cgroup, leaving room for mmapped plugin/binary pages).
+      GOMEMLIMIT: 640MiB
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/api/health || exit 1"]
       interval: 30s
@@ -56,9 +58,12 @@ services:
     deploy:
       resources:
         limits:
-          # 256m OOM-killed Grafana 4 times (2026-10-11..16) and sat at 99.9% after a fresh
-          # start. 512m leaves headroom; HostOomKill pages if it is ever hit again.
-          memory: 512m
+          # 256m OOM-killed Grafana 4 times (2026-10-11..16); 512m once more on 2026-10-27 (515 MB
+          # anon-rss, G2 soak). Go had no GOMEMLIMIT, so GC let the heap overshoot to ~1.2 GB in
+          # bursts while the live set is ~100 MB. GOMEMLIMIT below makes GC collect before the cgroup
+          # limit; 1g adds measured headroom (VPS: 7.9 GB, ~3.6 GB available). ContainerMemoryNearLimit
+          # alerts at 85%.
+          memory: 1g
         reservations:
           memory: 128m
     logging:
