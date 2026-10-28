@@ -180,7 +180,62 @@ tests:
               datasource: loki
             exp_annotations:
               summary: "Grafana datasource loki is not healthy"
-              description: "GET /api/datasources/uid/loki/health has not returned status OK for 10 min, so dashboards using it are empty. Check grafana-testnet logs for plugin errors (\"Plugin not registered\", plugin.backgroundinstaller)."
+              description: "The public-dashboard panel query through datasource loki has not returned status 200 for 10 min, so dashboards using it are empty. Check grafana-testnet logs for plugin errors (\"Plugin not registered\", plugin.backgroundinstaller)."
+
+  # InvalidStateHash counter: flat stays quiet; a new line fires at once; a stale poll fires after 10m.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_invalid_state_hash_lines_total{node="gen-0"}'
+        values: '0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'dcc_invalid_state_hash_lines_total{node="gen-1"}'
+        values: '0x37'
+      - series: 'dcc_log_poll_last_success_timestamp_seconds{node="gen-0"}'
+        values: '1000000000x37'
+      - series: 'dcc_log_poll_last_success_timestamp_seconds{node="gen-1"}'
+        values: '1000000000x37'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: InvalidStateHashDetected
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: InvalidStateHashDetected
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              network: testnet
+              node: gen-0
+            exp_annotations:
+              summary: "InvalidStateHash in the log of gen-0"
+              description: "dcc_invalid_state_hash_lines_total increased on gen-0. State-hash divergence: do not roll or restart; capture `kubectl -n dcc logs <pod> -c node` and compare the block id and state hash at the first diverging height on all 4 nodes."
+      - eval_time: 36m
+        alertname: InvalidStateHashDetected
+        exp_alerts: []
+
+  # Container memory: 90% of the limit for 15m fires; 60% stays quiet.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_container_memory_usage_bytes{name="grafana-testnet"}'
+        values: '966367641x30'
+      - series: 'dcc_container_memory_limit_bytes{name="grafana-testnet"}'
+        values: '1073741824x30'
+      - series: 'dcc_container_memory_usage_bytes{name="loki-testnet"}'
+        values: '161061273x30'
+      - series: 'dcc_container_memory_limit_bytes{name="loki-testnet"}'
+        values: '268435456x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              name: grafana-testnet
+            exp_annotations:
+              summary: "grafana-testnet is using 90% of its memory limit"
+              description: "dcc_container_memory_usage_bytes is above 85% of the limit for 15 min. Raise the limit in compose/ or fix the cause before the kernel OOM-kills it (HostOomKill)."
 
   # ── dcc-testnet-platform (AUD-049) ─────────────────────────────────────────────────────
   # BpsDown: scrape fails -> fires after 5m, not before.

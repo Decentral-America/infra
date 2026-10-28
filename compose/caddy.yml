@@ -24,13 +24,13 @@
 
 services:
   caddy:
-    # Custom build: stock Caddy 2.11.4 + github.com/mholt/caddy-ratelimit
+    # Custom build: stock Caddy 2.11.7 + github.com/mholt/caddy-ratelimit
     # (docker/caddy-ratelimit/Dockerfile, built by build-caddy-ratelimit.yml —
-    # run 28766968674, 2026-07-06). Required for update-caddy.yml's
+    # run 40761184781, 2026-10-28). Required for update-caddy.yml's
     # `rate_limit` directives; the stock upstream image lacks that module.
     # Rebuild + re-pin whenever the Dockerfile changes (base image bump,
     # module SHA bump) — see build-caddy-ratelimit.yml's own header comment.
-    image: ghcr.io/decentral-america/caddy-ratelimit@sha256:4d7fa373b5557b238b807c7e0317f53c92edd138a88df2fc48d9429ed5b25b1e
+    image: ghcr.io/decentral-america/caddy-ratelimit@sha256:362b38d8ff59cc6519f30f612f7915bcdb44656587aab8c2118673148b588c7b
     container_name: "caddy-${NETWORK:-mainnet}"
     # host network mode: Caddy binds directly to the host's port 80 and 443.
     # This lets it forward to scanner (127.0.0.1:3000) and data-service

@@ -49,13 +49,16 @@ def fetch(url):
     except Exception:
         return None
 
-def fetch_with_status(url):
+def fetch_with_status(url, data=None):
     """Like fetch(), but also returns the HTTP status code (or None on connection
     failure). Needed for /generators/at/{height}: it returns HTTP 404 with body
     "[]" when the height is out of range, which must NOT be confused with a
     genuine HTTP-200 empty committee -- see CommitteeGapUpcoming in alerts.yml."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "dcc-exporter/1.0"})
+        headers = {"User-Agent": "dcc-exporter/1.0"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=data, headers=headers)
         with urllib.request.urlopen(req, timeout=5, context=ctx) as r:
             return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
@@ -89,6 +92,12 @@ _svc_raw = os.getenv(
 # unregistered and every dashboard was empty. The anonymous Viewer may call the health endpoint.
 GRAFANA_URL = os.getenv("GRAFANA_URL", "https://grafana.testnet.decentralchain.io")
 GRAFANA_DATASOURCES = [d.strip() for d in os.getenv("GRAFANA_DATASOURCES", "prometheus").split(",") if d.strip()]
+# Anonymous access is off (mainnet bar A7), so /api/datasources/<uid>/health returns 401. The probe
+# instead runs one panel query of the PUBLIC (shared) dashboard, which needs no login and goes
+# through the datasource. The token is a public constant, the same one as in deploy-monitoring.sh
+# and compose/admin-dashboard.yml. Panel 1 is a Prometheus stat panel.
+GRAFANA_PUBLIC_TOKEN = os.getenv("GRAFANA_PUBLIC_TOKEN", "1255a802508eddc1e9e74080cf7b68c8")
+GRAFANA_PROBE_PANEL = os.getenv("GRAFANA_PROBE_PANEL", "1")
 
 # Public hosts whose TLS certificate expiry is exported (TlsCertExpiringSoon).
 TLS_HOSTS = [h.strip() for h in os.getenv(
@@ -190,12 +199,18 @@ def metrics():
             lines.append(f'dcc_tls_cert_expiry_timestamp_seconds{{host="{host}"}} {not_after:.0f}')
 
     lines += [
-        "# HELP dcc_grafana_datasource_up 1 if GET /api/datasources/uid/<uid>/health returns HTTP 200 with status OK",
+        "# HELP dcc_grafana_datasource_up 1 if a public-dashboard panel query through the datasource returns HTTP 200 with every result status 200",
         "# TYPE dcc_grafana_datasource_up gauge",
     ]
     for uid in GRAFANA_DATASOURCES:
-        code, body = fetch_with_status(f"{GRAFANA_URL}/api/datasources/uid/{uid}/health")
-        ok = 1 if (code == 200 and isinstance(body, dict) and body.get("status") == "OK") else 0
+        code, body = fetch_with_status(
+            f"{GRAFANA_URL}/api/public/dashboards/{GRAFANA_PUBLIC_TOKEN}/panels/{GRAFANA_PROBE_PANEL}/query",
+            data=b'{"intervalMs":60000,"maxDataPoints":100}',
+        )
+        results = body.get("results") if isinstance(body, dict) else None
+        ok = 1 if (code == 200 and isinstance(results, dict) and results
+                   and all(isinstance(r, dict) and r.get("status") == 200 and not r.get("error")
+                           for r in results.values())) else 0
         lines.append(f'dcc_grafana_datasource_up{{datasource="{uid}"}} {ok}')
 
     for name, base in NODES:

@@ -13,6 +13,38 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metrics-exporter
+  namespace: dcc
+---
+# Read the three node pods' logs only (InvalidStateHash counter). No list/watch, no other resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: metrics-exporter-pod-logs
+  namespace: dcc
+rules:
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    resourceNames: ["dcc-gen-0-0", "dcc-gen-1-0", "dcc-val-0-0"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: metrics-exporter-pod-logs
+  namespace: dcc
+subjects:
+  - kind: ServiceAccount
+    name: metrics-exporter
+    namespace: dcc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: metrics-exporter-pod-logs
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: exporter-script
@@ -25,7 +57,7 @@ data:
     Scrapes /blocks/height and /node/status from each node.
     Exposes on :9200/metrics; the VPS Prometheus scrapes it via NodePort 32092.
     """
-    import http.server, urllib.request, json, time, os
+    import http.server, urllib.request, urllib.parse, json, time, os, ssl, threading
 
     NODES = [
         ("gen-0", "http://127.0.0.1:6869"),
@@ -33,6 +65,75 @@ data:
         ("val-0", "http://127.0.0.1:6871"),
     ]
     PORT = int(os.getenv("EXPORTER_PORT", "9200"))
+
+    # ── InvalidStateHash counter from the pod logs ──────────────────────────────
+    # Kubelet rotates container logs (10Mi x5), so a one-off `kubectl logs` after a 72h soak
+    # cannot prove "0 InvalidStateHash" (the 2026-10-28 G2 check lost everything before 06:04Z).
+    # This polls each node pod's log through the API every POLL_SECONDS and keeps a monotonic
+    # counter, scraped by the VPS Prometheus (alert InvalidStateHashDetected). The main node's
+    # log is kept by Loki (alloy). Needs the Role in this file (pods/log get); no node pod restart.
+    PODS = [("gen-0", "dcc-gen-0-0"), ("gen-1", "dcc-gen-1-0"), ("val-0", "dcc-val-0-0")]
+    K8S_API = os.getenv("K8S_API") or "https://{}:{}".format(
+        os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc"), os.getenv("KUBERNETES_SERVICE_PORT", "443"))
+    SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+    NAMESPACE = os.getenv("POD_NAMESPACE", "dcc")
+    LOG_PATTERN = os.getenv("LOG_PATTERN", "InvalidStateHash")
+    POLL_SECONDS = int(os.getenv("POLL_SECONDS", "30"))
+    FIRST_POLL_SECONDS = 300
+    log_lock = threading.Lock()
+    log_state = {name: {"count": 0, "last_ts": None, "ok_at": 0.0, "polls_failed": 0} for name, _ in PODS}
+
+    def pod_log(pod, since_ts):
+        """Return the pod's log lines (RFC3339Nano timestamp prefix) since `since_ts`, or None on failure."""
+        q = {"container": "node", "timestamps": "true"}
+        if since_ts:
+            q["sinceTime"] = since_ts
+        else:
+            q["sinceSeconds"] = str(FIRST_POLL_SECONDS)
+        url = "{}/api/v1/namespaces/{}/pods/{}/log?{}".format(K8S_API, NAMESPACE, pod, urllib.parse.urlencode(q))
+        headers = {}
+        ctx = None
+        if os.path.exists(SA_DIR + "/token"):
+            headers["Authorization"] = "Bearer " + open(SA_DIR + "/token").read().strip()
+            ctx = ssl.create_default_context(cafile=SA_DIR + "/ca.crt")
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=20, context=ctx) as r:
+                return r.read().decode("utf-8", "replace").splitlines()
+        except Exception:
+            return None
+
+    def poll_logs_once():
+        for name, pod in PODS:
+            st = log_state[name]
+            lines = pod_log(pod, st["last_ts"])
+            with log_lock:
+                if lines is None:
+                    st["polls_failed"] += 1
+                    continue
+                new = 0
+                last = st["last_ts"]
+                for line in lines:
+                    ts, _, rest = line.partition(" ")
+                    # sinceTime is inclusive: skip lines at or before the last one already counted.
+                    # RFC3339Nano with a fixed zone compares correctly as a string when it has the same precision;
+                    # kubelet always emits 9 fractional digits.
+                    if last is not None and ts <= last:
+                        continue
+                    if LOG_PATTERN in rest:
+                        new += 1
+                    if last is None or ts > last:
+                        last = ts
+                st["count"] += new
+                st["last_ts"] = last or st["last_ts"]
+                st["ok_at"] = time.time()
+
+    def poll_logs_forever():
+        while True:
+            try:
+                poll_logs_once()
+            except Exception:
+                pass
+            time.sleep(POLL_SECONDS)
 
     def fetch(url):
         try:
@@ -57,6 +158,16 @@ data:
                 age = max(0, (time.time() * 1000 - s["updatedTimestamp"]) / 1000)
                 lines.append(f'dcc_blockchain_height_age_seconds{{node="{name}"}} {age:.1f}')
 
+        lines.append('# HELP dcc_invalid_state_hash_lines_total Log lines matching InvalidStateHash seen by the exporter (monotonic, resets only on exporter restart)')
+        lines.append('# TYPE dcc_invalid_state_hash_lines_total counter')
+        lines.append('# HELP dcc_log_poll_last_success_timestamp_seconds Unix time of the last successful pod-log poll')
+        lines.append('# TYPE dcc_log_poll_last_success_timestamp_seconds gauge')
+        with log_lock:
+            for name, _ in PODS:
+                st = log_state[name]
+                lines.append(f'dcc_invalid_state_hash_lines_total{{node="{name}"}} {st["count"]}')
+                lines.append(f'dcc_log_poll_last_success_timestamp_seconds{{node="{name}"}} {st["ok_at"]:.0f}')
+
         return '\n'.join(lines) + '\n'
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -72,6 +183,7 @@ data:
                 self.send_response(404); self.end_headers()
         def log_message(self, *_): pass
 
+    threading.Thread(target=poll_logs_forever, daemon=True).start()
     http.server.HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
 
 ---
@@ -97,13 +209,15 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9200"
     spec:
+      serviceAccountName: metrics-exporter
+      automountServiceAccountToken: true
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: exporter
           # python:3.14-slim — digest pinned to match compose/prometheus.yml's
           # exporter/alert-webhook services (same base image, kept in sync).
-          image: python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+          image: python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8
           command: ["python3", "/app/exporter.py"]
           securityContext:
             runAsNonRoot: true

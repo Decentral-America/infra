@@ -19,6 +19,24 @@ trap 'rm -f "${TMP}"' EXIT
   echo '# TYPE dcc_container_running gauge'
   echo '# HELP dcc_container_oom_killed 1 if the container last exited because of an OOM kill.'
   echo '# TYPE dcc_container_oom_killed gauge'
+  echo '# HELP dcc_container_memory_usage_bytes Working-set memory of the container (docker stats MemUsage, cache excluded).'
+  echo '# TYPE dcc_container_memory_usage_bytes gauge'
+  echo '# HELP dcc_container_memory_limit_bytes Memory limit of the container (docker stats); the host total when the container has none.'
+  echo '# TYPE dcc_container_memory_limit_bytes gauge'
+  # One sample per container. Feeds ContainerMemoryNearLimit, so a container is caught before the
+  # kernel OOM-kills it (Grafana, 2026-10-11..27). Best effort: a failure here must not stop the state metrics.
+  { timeout 20 docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null || true; } |
+    awk '
+      function bytes(v,   n, u) {
+        n = v + 0; u = v; gsub(/[0-9.]/, "", u)
+        if (u == "KiB") n *= 1024; else if (u == "MiB") n *= 1048576; else if (u == "GiB") n *= 1073741824
+        else if (u == "kB") n *= 1000; else if (u == "MB") n *= 1000000; else if (u == "GB") n *= 1000000000
+        return n
+      }
+      NF >= 4 && $3 == "/" {
+        printf "dcc_container_memory_usage_bytes{name=\"%s\"} %.0f\n", $1, bytes($2)
+        printf "dcc_container_memory_limit_bytes{name=\"%s\"} %.0f\n", $1, bytes($4)
+      }'
   ids="$(docker ps -aq)"
   if [[ -n "${ids}" ]]; then
     # shellcheck disable=SC2086

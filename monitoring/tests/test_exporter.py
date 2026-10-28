@@ -13,7 +13,7 @@ class MetricsTest(unittest.TestCase):
     def setUp(self):
         # No network: every probe is stubbed.
         exporter.fetch = lambda url: None
-        exporter.fetch_with_status = lambda url: (None, None)
+        exporter.fetch_with_status = lambda url, data=None: (None, None)
         exporter.probe_status = lambda url: 200
         exporter.NODES = []
         exporter.TLS_HOSTS = ["ok.example", "broken.example"]
