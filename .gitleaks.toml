@@ -9,5 +9,9 @@ regexTarget = "line"
 regexes = ['''api-key-hash\s*=\s*"[1-9A-HJ-NP-Za-km-z]{32,64}"''']
 
 [[allowlists]]
+description = "Grafana public (shared) dashboard access token: a public URL constant by design (admin embed iframe), not a credential"
+regexes = ['''1255a802508eddc1e9e74080cf7b68c8''']
+
+[[allowlists]]
 description = "Unit-test fixtures use obviously fake credentials"
 paths = ['''scripts/tests/''']
