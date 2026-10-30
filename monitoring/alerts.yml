@@ -372,6 +372,10 @@ groups:
         expr: |
           (dcc_container_memory_usage_bytes / dcc_container_memory_limit_bytes) > 0.85
         for: 15m
+        # Hysteresis: a container hovering around 85% (loki-testnet, 2026-10-29..30) dipped under the
+        # threshold for a few minutes every hour, and every resolve closed the GitHub issue and every
+        # re-fire opened a new one (#253-#284). Stay firing until it has been below for 3h continuously.
+        keep_firing_for: 3h
         labels:
           severity: high
           network: testnet

@@ -63,7 +63,9 @@ services:
           # bursts while the live set is ~100 MB. GOMEMLIMIT below makes GC collect before the cgroup
           # limit; 1g adds measured headroom (VPS: 7.9 GB, ~3.6 GB available). ContainerMemoryNearLimit
           # alerts at 85%.
-          memory: 1g
+          # 1g -> 1536m (2026-10-30): even with GOMEMLIMIT the working set peaked at 929 MiB (90.7% of
+          # 1g, 24h max) after the fix, because plugin/binary mmaps sit outside the Go limit.
+          memory: 1536m
         reservations:
           memory: 128m
     logging:
