@@ -90,7 +90,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 64m
+          # 64m -> 128m (2026-10-30): working set peaks at 59.5 MiB (93% of 64m, 24h max) although it
+          # idles at ~25 MiB; was one bad scrape from an OOM kill.
+          memory: 128m
         reservations:
           memory: 16m
     logging:
@@ -259,7 +261,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 64m
+          # 64m -> 128m (2026-10-30): 75% of 64m at its 24h peak (48 MiB) for a stdlib HTTP server.
+          memory: 128m
     logging:
       driver: "json-file"
       options:

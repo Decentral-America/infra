@@ -42,6 +42,10 @@ services:
       - /opt/dcc/monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
     command: -config.file=/etc/loki/local-config.yaml
+    environment:
+      # Soft Go memory limit (75% of the 512m cgroup). The remaining quarter is for the mmapped TSDB
+      # index and binary pages (file-rss was ~113 MB at the 2026-10-19 kill), which GOMEMLIMIT does not count.
+      GOMEMLIMIT: 384MiB
     healthcheck:
       # Loki 3.6.0 dropped the shell/wget/busybox from its image entirely
       # (confirmed empirically: the wget-based CMD-SHELL check below started
@@ -57,7 +61,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256m
+          # 256m: OOM-killed once (2026-10-19) and then sat at 85-93% of the limit, opening ~30
+          # ContainerMemoryNearLimit issues (#253-#284, 2026-10-29..30). Measured over 24h on the
+          # 12-stream, ~13 MB/h testnet load: Go heap in use 77 MB now / 144 MB peak, but 149 MB idle
+          # heap retained (GC had no GOMEMLIMIT) and 240 MB obtained from the OS, so the working set
+          # sawtooths at 216-239 MB. Not a leak (flat across 24h, no restart since 2026-10-28T20:41Z) and
+          # not load: Go simply keeps what it took. GOMEMLIMIT above makes GC return it before the cgroup
+          # limit; 512m adds headroom (VPS: 7.9 GB, ~3.6 GB available). Alerts at 85% (435 MB).
+          memory: 512m
         reservations:
           memory: 64m
     logging:

@@ -66,4 +66,26 @@ jobs:
                echo "(no redis-related matcher log lines in last 24h)"
              else
                echo "$MATCHER_REDIS_LINES"
-             fi'
+             fi
+             echo "=== Container memory (docker stats), restarts and OOM kills ==="
+             docker stats --no-stream --format "table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}" 2>/dev/null
+             for c in $(docker ps -aq); do
+               docker inspect -f "{{.Name}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} started={{.State.StartedAt}}" "$c" 2>/dev/null
+             done
+             echo "=== Host memory ==="
+             free -m
+             echo "=== Prometheus: usage ratio, 6h max / 24h max, by container ==="
+             for q in "max_over_time((dcc_container_memory_usage_bytes/dcc_container_memory_limit_bytes)[6h:5m])" "max_over_time((dcc_container_memory_usage_bytes/dcc_container_memory_limit_bytes)[24h:5m])"; do
+               curl -s --max-time 20 http://127.0.0.1:9091/api/v1/query --data-urlencode "query=$q" | python3 -c "import json,sys; [print(r[\"metric\"].get(\"name\"), round(float(r[\"value\"][1]),3)) for r in json.load(sys.stdin)[\"data\"][\"result\"]]" 2>/dev/null
+               echo "--"
+             done
+             echo "=== Prometheus: loki and alloy Go heap vs working set (now / 24h max) ==="
+             for q in "go_memstats_heap_inuse_bytes{job=~\"loki|alloy\"}" "max_over_time(go_memstats_heap_inuse_bytes{job=~\"loki|alloy\"}[24h])" "go_memstats_heap_idle_bytes{job=~\"loki|alloy\"}" "go_memstats_heap_released_bytes{job=~\"loki|alloy\"}" "go_memstats_sys_bytes{job=~\"loki|alloy\"}" "process_resident_memory_bytes{job=~\"loki|alloy\"}" "dcc_container_memory_usage_bytes{name=~\"loki.*|alloy.*\"}" "max_over_time(dcc_container_memory_usage_bytes{name=~\"loki.*|alloy.*\"}[24h])" "min_over_time(dcc_container_memory_usage_bytes{name=~\"loki.*|alloy.*\"}[24h])" "loki_ingester_memory_chunks" "loki_ingester_memory_streams" "rate(loki_distributor_bytes_received_total[1h])*3600" "changes(process_start_time_seconds{job=~\"loki|alloy\"}[2d])"; do
+               echo "# $q"
+               curl -s --max-time 20 http://127.0.0.1:9091/api/v1/query --data-urlencode "query=$q" | python3 -c "import json,sys; [print(r[\"metric\"].get(\"job\") or r[\"metric\"].get(\"name\"), r[\"value\"][1]) for r in json.load(sys.stdin)[\"data\"][\"result\"]]" 2>/dev/null
+             done
+             echo "=== Prometheus: Loki memory profile over 24h (loki working set, 1h steps) ==="
+             curl -s --max-time 20 http://127.0.0.1:9091/api/v1/query_range --data-urlencode "query=dcc_container_memory_usage_bytes{name=\"loki-testnet\"}/1048576" --data-urlencode "start=$(date -d -24hours +%s)" --data-urlencode "end=$(date +%s)" --data-urlencode "step=3600" | python3 -c "import json,sys; [print(\" \".join(\"%.0f\" % float(v[1]) for v in r[\"values\"])) for r in json.load(sys.stdin)[\"data\"][\"result\"]]" 2>/dev/null
+             echo "=== Loki on-disk size / dmesg OOM lines ==="
+             sudo -n du -sh /var/lib/docker/volumes/loki-data-testnet 2>/dev/null
+             sudo -n dmesg -T 2>/dev/null | grep -i "killed process\|out of memory" | tail -5 || true'

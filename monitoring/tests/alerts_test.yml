@@ -237,6 +237,52 @@ tests:
               summary: "grafana-testnet is using 90% of its memory limit"
               description: "dcc_container_memory_usage_bytes is above 85% of the limit for 15 min. Raise the limit in compose/ or fix the cause before the kernel OOM-kills it (HostOomKill)."
 
+  # Hysteresis: a flapping container (above 85%, a 10m dip, above again) keeps one alert firing through
+  # the dip instead of resolving; it resolves only after 3h continuously below the threshold.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_container_memory_usage_bytes{name="loki-testnet"}'
+        values: '240x20 200x10 240x20 200x300'
+      - series: 'dcc_container_memory_limit_bytes{name="loki-testnet"}'
+        values: '256x400'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              name: loki-testnet
+            exp_annotations:
+              summary: "loki-testnet is using 93.75% of its memory limit"
+              description: "dcc_container_memory_usage_bytes is above 85% of the limit for 15 min. Raise the limit in compose/ or fix the cause before the kernel OOM-kills it (HostOomKill)."
+      # In the 10m dip (t=20..29m): still firing, not resolved.
+      - eval_time: 25m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              name: loki-testnet
+            exp_annotations:
+              summary: "loki-testnet is using 93.75% of its memory limit"
+              description: "dcc_container_memory_usage_bytes is above 85% of the limit for 15 min. Raise the limit in compose/ or fix the cause before the kernel OOM-kills it (HostOomKill)."
+      # 2h after the last breach (breach ends t=49m): still firing.
+      - eval_time: 169m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              name: loki-testnet
+            exp_annotations:
+              summary: "loki-testnet is using 93.75% of its memory limit"
+              description: "dcc_container_memory_usage_bytes is above 85% of the limit for 15 min. Raise the limit in compose/ or fix the cause before the kernel OOM-kills it (HostOomKill)."
+      # More than 3h after the last breach: resolved.
+      - eval_time: 235m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts: []
+
   # ── dcc-testnet-platform (AUD-049) ─────────────────────────────────────────────────────
   # BpsDown: scrape fails -> fires after 5m, not before.
   - interval: 1m
