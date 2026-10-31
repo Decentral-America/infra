@@ -1,0 +1,52 @@
+# blackbox_exporter modules (compose/prometheus.yml `blackbox-exporter`, 127.0.0.1:9115).
+# Probes go through public DNS, Caddy and TLS, exactly as a user reaches the service. The VPS's own
+# public IP is exempt from the Caddy edge rate limits (scripts/render-caddyfile.sh SELF_IP).
+# Targets and the module each one uses: monitoring/prometheus.yml jobs blackbox-*.
+modules:
+  # matcher: /matcher/settings must answer 200 with success=true and the matcher public key.
+  http_matcher_settings:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      fail_if_not_ssl: true
+      valid_status_codes: [200]
+      fail_if_body_not_matches_regexp:
+        - '"success"\s*:\s*true'
+        - '"matcherPublicKey"'
+
+  # data-service: a Postgres-backed list endpoint, so a dead database or BPS role fails the probe
+  # (/v0 alone answers from memory).
+  http_data_service_list:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      fail_if_not_ssl: true
+      valid_status_codes: [200]
+      fail_if_body_not_matches_regexp:
+        - '"__type"\s*:\s*"list"'
+
+  # websocket-api /health (200, empty body).
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      fail_if_not_ssl: true
+      valid_status_codes: [200]
+
+  # websocket-api: a real WebSocket upgrade over TLS must get `101 Switching Protocols`. The http
+  # prober cannot do this (it reads the upgraded body until the timeout), so this is a raw TLS
+  # exchange. The Host header must match the probed name; prometheus.yml sets one target per name.
+  tcp_websocket_upgrade_testnet_ws:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      preferred_ip_protocol: ip4
+      tls: true
+      tls_config:
+        server_name: testnet-ws.decentralchain.io
+      query_response:
+        - send: "GET /ws HTTP/1.1\r\nHost: testnet-ws.decentralchain.io\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ZGNjLWJsYWNrYm94LXByb2Jl\r\n\r\n"  # gitleaks:allow (RFC 6455 nonce, base64 of "dcc-blackbox-probe"; not a credential)
+        - expect: "^HTTP/1.1 101 "

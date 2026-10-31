@@ -152,6 +152,11 @@ SENTRY_TOKEN=$(   extract 'SENTRY_AUTH_TOKEN')
 TREASURY_SEED=$(  extract 'TREASURY_SEED')
 DCC_RO_PASS=$(    extract 'DCC_RO_PASSWORD')       # Postgres role dcc_ro (data-service)
 DCC_PAIRS_PASS=$( extract 'DCC_PAIRS_PASSWORD')    # Postgres role dcc_pairs (pairs daemon)
+AM_SMTP_USER=$(   extract 'ALERTMANAGER_SMTP_USERNAME')  # Alertmanager email receiver
+AM_SMTP_PASS=$(   extract 'ALERTMANAGER_SMTP_PASSWORD')
+R2_BACKUP_KEY_ID=$(   extract 'R2_BACKUP_ACCESS_KEY_ID')   # off-account backups (DR.md)
+R2_BACKUP_SECRET=$(   extract 'R2_BACKUP_SECRET_ACCESS_KEY')
+R2_BACKUP_ENDPOINT=$( extract 'R2_BACKUP_ENDPOINT')
 
 MATCHER_SEED_B64=$(extract 'MATCHER_SEED_BASE64')
 # The matcher key comes from SOPS only (never read back from the live matcher: it echoes whatever
@@ -196,6 +201,10 @@ echo "[push-secrets] Uploading secrets patch..."
   # refuses to write those env files without them (fail closed).
   if [[ -n "${DCC_RO_PASS:-}" ]]; then printf 'DCC_RO_PASSWORD=%s\n' "${DCC_RO_PASS}"; fi
   if [[ -n "${DCC_PAIRS_PASS:-}" ]]; then printf 'DCC_PAIRS_PASSWORD=%s\n' "${DCC_PAIRS_PASS}"; fi
+  # Alertmanager SMTP; the renderer fails closed without both (alertmanager-<network>.env).
+  if [[ -n "${AM_SMTP_USER:-}" && -n "${AM_SMTP_PASS:-}" ]]; then
+    printf 'ALERTMANAGER_SMTP_USERNAME=%s\nALERTMANAGER_SMTP_PASSWORD=%s\n' "${AM_SMTP_USER}" "${AM_SMTP_PASS}"
+  fi
 } | $SSH "sudo tee /tmp/secrets-patch.env > /dev/null && \
   sudo touch /opt/dcc/secrets/${NETWORK}.env && \
   sudo bash -c 'cat /tmp/secrets-patch.env /opt/dcc/secrets/${NETWORK}.env \
@@ -225,6 +234,20 @@ SEED_SH='f=$1; [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ] && echo >> "$f"; while I
   fi
 } | $SSH "sudo bash -c '${SEED_SH}' seed /opt/dcc/secrets/${NETWORK}.env"
 echo "[push-secrets] Seeded absent DCC_CHAIN_ID / ADMIN_DASHBOARD_PG_DATABASE / REDIS_URL (existing lines untouched)."
+
+# ── 1c. R2 backup credentials -> root-only env file (same as push-secrets.yml) ──
+if [[ -n "${R2_BACKUP_KEY_ID:-}" && -n "${R2_BACKUP_SECRET:-}" && -n "${R2_BACKUP_ENDPOINT:-}" ]]; then
+  printf 'R2_BACKUP_ACCESS_KEY_ID=%s\nR2_BACKUP_SECRET_ACCESS_KEY=%s\nR2_BACKUP_ENDPOINT=%s\n' \
+    "${R2_BACKUP_KEY_ID}" "${R2_BACKUP_SECRET}" "${R2_BACKUP_ENDPOINT}" \
+    | $SSH "sudo bash -c 'umask 077; cat > /opt/dcc/secrets/backup-${NETWORK}.env.new' && \
+            sudo chown root:root /opt/dcc/secrets/backup-${NETWORK}.env.new && \
+            sudo chmod 600 /opt/dcc/secrets/backup-${NETWORK}.env.new && \
+            sudo mv -f /opt/dcc/secrets/backup-${NETWORK}.env.new /opt/dcc/secrets/backup-${NETWORK}.env"
+  echo "[push-secrets] Backup credentials written (backup-${NETWORK}.env, 600 root)."
+else
+  echo "[push-secrets] WARNING: R2_BACKUP_* not all in SOPS: backup-${NETWORK}.env not written (DR.md)."
+fi
+unset R2_BACKUP_KEY_ID R2_BACKUP_SECRET
 
 # ── 2. Set postgres password ──────────────────────────────────────────────────
 $SSH "sudo -u postgres psql" << PGEOF

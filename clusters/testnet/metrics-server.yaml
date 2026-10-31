@@ -1,0 +1,16 @@
+# Flux Kustomization for clusters/testnet/metrics-server/ (ECO-110): upstream metrics-server so that
+# `kubectl top nodes` works. No secrets, so no decryption block.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 30m
+  path: ./clusters/testnet/metrics-server
+  prune: true
+  wait: true
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

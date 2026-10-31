@@ -382,6 +382,13 @@ ${MATCHER} {
     import redacted_log
 }
 
+# Caddy metrics for the local Prometheus (monitoring/prometheus.yml job caddy). The admin API is a unix
+# socket, so the metrics handler gets its own loopback-only plain-HTTP site. No access log (scraped every 30s).
+http://127.0.0.1:2020 {
+    bind 127.0.0.1
+    metrics
+}
+
 ${ADMIN} {
     reverse_proxy 127.0.0.1:3001 {
         header_up X-Real-IP {remote_host}
@@ -405,6 +412,8 @@ ${GRAFANA} {
     # Grafana runs on this VPS (compose/grafana.yml, port 3002); the
     # cluster has no Grafana. No X-Frame-Options, so the admin
     # dashboard can embed it in an iframe.
+    # Grafana's /metrics is for the local Prometheus only (job grafana, loopback).
+    respond /metrics 404
     reverse_proxy 127.0.0.1:3002 {
         header_up X-Real-IP {remote_host}
     }
