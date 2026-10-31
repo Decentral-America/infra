@@ -23,7 +23,8 @@ grep -q 'not remote_ip 192.0.2.10 127.0.0.1 ::1' <<<"${out}" || fail "self IP no
 # Secrets appear only where intended.
 [[ "$(grep -c 'k-node' <<<"${out}")" == "1" ]] || fail "node key must appear exactly once"
 # Every site block logs through the redacted snippet (no raw access log leaking keys/query strings).
-n_sites=$(grep -cE '^[^[:space:]#(}][^{]*\{$' <<<"${out}")
+# The loopback metrics site (127.0.0.1:2020) is the one site without an access log; it is not public.
+n_sites=$(grep -E '^[^[:space:]#(}][^{]*\{$' <<<"${out}" | grep -cv '^http://127\.0\.0\.1:2020 {$')
 n_redacted=$(grep -cE '^\s*import redacted_log$' <<<"${out}")
 [[ "${n_sites}" -ge 6 ]] || fail "expected >= 6 site blocks, got ${n_sites}"
 [[ "${n_sites}" == "${n_redacted}" ]] || fail "${n_sites} site blocks but ${n_redacted} 'import redacted_log'"
@@ -40,4 +41,9 @@ done
 if NODE_API_KEY=a E2E_BYPASS_KEY=b bash "${SUT}" "${TFVARS}" >/dev/null 2>&1; then fail "missing SELF_IP accepted"; fi
 # AUD-140: Grafana may be framed only by the admin dashboard.
 grep -q 'Content-Security-Policy "frame-ancestors https://testnet-admin.decentralchain.io"' <<<"${out}" || fail "grafana frame-ancestors"
+# Caddy metrics only on loopback; Grafana's /metrics not served publicly.
+grep -qx 'http://127.0.0.1:2020 {' <<<"${out}" || fail "caddy metrics site missing"
+metrics_block=$(awk '/^http:\/\/127\.0\.0\.1:2020 \{$/,/^\}$/' <<<"${out}")
+grep -qE '^\s*bind 127\.0\.0\.1$' <<<"${metrics_block}" || fail "caddy metrics site not bound to loopback"
+grep -qE '^\s*respond /metrics 404$' <<<"${out}" || fail "grafana /metrics exposed publicly"
 echo "PASS render-caddyfile"

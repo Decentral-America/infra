@@ -53,11 +53,13 @@ POSTGRES__USER=dcc
 POSTGRES__DATABASE=bps_testnet
 BPS_BLOCKCHAIN_UPDATES_URL=grpc://localhost:6881
 BPS_CHAIN_ID=33
+ALERTMANAGER_SMTP_USERNAME=ops@example.org
+ALERTMANAGER_SMTP_PASSWORD=smtp=pw#1
 ENV
 
 # 1. Happy path: every service file is written, values are byte-identical.
 bash "${SUT}" testnet "${T}/master.env" "${T}/out" >/dev/null
-for svc in node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
+for svc in node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook alertmanager; do
   [[ -f "${T}/out/${svc}-testnet.env" ]] || fail "${svc}-testnet.env not written"
   while IFS= read -r line; do
     [[ "${line}" == \#* ]] && continue
@@ -76,6 +78,14 @@ done
 [[ "$(grep -v '^#' "${T}/out/node-scala-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "DCC_WALLET_SEED DCC_WALLET_PASSWORD " ]] || fail "node-scala key set"
 [[ "$(grep -v '^#' "${T}/out/websocket-api-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "REPO__PASSWORD " ]] || fail "websocket-api key set"
 grep -q '^TREASURY_SEED=treasury seed$' "${T}/out/admin-dashboard-testnet.env" || fail "admin-dashboard lacks optional TREASURY_SEED"
+[[ "$(grep -v '^#' "${T}/out/alertmanager-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "ALERTMANAGER_SMTP_USERNAME ALERTMANAGER_SMTP_PASSWORD " ]] || fail "alertmanager key set"
+# The SMTP password reaches the alertmanager env file only.
+[[ "$(grep -l '^ALERTMANAGER_SMTP_PASSWORD=' "${T}"/out/*.env | xargs -n1 basename | tr '\n' ' ')" == "alertmanager-testnet.env " ]] || fail "SMTP password rendered outside alertmanager"
+# 3b. Fail closed: no SMTP password -> no alertmanager file, exit 1, other services still written.
+grep -v '^ALERTMANAGER_SMTP_PASSWORD=' "${T}/master.env" > "${T}/no-smtp.env"
+if bash "${SUT}" testnet "${T}/no-smtp.env" "${T}/out9" >/dev/null 2>&1; then fail "expected exit 1 without ALERTMANAGER_SMTP_PASSWORD"; fi
+[[ ! -f "${T}/out9/alertmanager-testnet.env" ]] || fail "alertmanager written without its password"
+[[ -f "${T}/out9/alert-webhook-testnet.env" ]] || fail "alert-webhook blocked by the SMTP password"
 # 4. Mode 640.
 mode="$(stat -c %a "${T}/out/scanner-testnet.env" 2>/dev/null || stat -f %Lp "${T}/out/scanner-testnet.env")"
 [[ "${mode}" == "640" ]] || fail "mode ${mode} != 640"
@@ -89,7 +99,7 @@ if bash "${SUT}" testnet "${T}/broken.env" "${T}/out2" >/dev/null 2>&1; then fai
 grep -v '^DCC_WALLET_PASSWORD=' "${T}/master.env" > "${T}/broken-first.env"
 if bash "${SUT}" testnet "${T}/broken-first.env" "${T}/out3" >/dev/null 2>&1; then fail "expected exit 1 when node-scala key missing"; fi
 [[ ! -f "${T}/out3/node-scala-testnet.env" ]] || fail "node-scala written despite missing key"
-for svc in scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
+for svc in scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook alertmanager; do
   [[ -f "${T}/out3/${svc}-testnet.env" ]] || fail "${svc} not rendered after an earlier service failed"
 done
 # 7. Optional TREASURY_SEED absent -> admin file still written, exit 0.

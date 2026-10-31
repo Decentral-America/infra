@@ -1,4 +1,4 @@
-# DCC Testnet Final Launch Plan — 2026-09-23
+# DCC Testnet Final Launch Plan — 2026-09-23 (restructured 2026-10-31)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Steps marked ⛔ need a fresh, explicit, written go-ahead from the operator (Josué) at that moment; a go-ahead for the plan does not carry into a ⛔ step.
 
@@ -7,6 +7,143 @@
 **Architecture:** Four nodes: main (Linode VPS `50.116.30.244`, Dallas, docker compose via `scripts/node-up.sh`, public REST `https://testnet-node.decentralchain.io`, bootstrap seed `quorum=0`) plus gen-0 / gen-1 / val-0 on Linode LKE cluster `dcc-peer-testnet` (namespace `dcc`, StatefulSets, Flux-managed from `Ecosystem/infra/clusters/testnet/apps/nodes.yaml`). Downstream on the VPS: matcher, blockchain-postgres-sync (BPS), data-service, scanner (hosts the faucet), exchange, admin-dashboard, Caddy edge, Prometheus/Alertmanager/Grafana/Loki. Consensus: Waves-NG PoS + DCC HotStuff finality (T0 authoritative endorsements, T2 committee), BLS endorsements.
 
 **Tech Stack:** Scala 3 / sbt 1.12 (node-scala, matcher), TypeScript pnpm monorepo (DecentralChain), OpenTofu + Flux + kubectl (infra), GitHub Actions, SOPS/age secrets, Linode API.
+
+**How this file is organised (ECO-99, 2026-10-31).** Part 1 lists every OPEN item, one heading per Jira key
+of the "DCC: Testnet sign-off" epic, with what is already in the repo and what still needs a live or
+Operator step. Part 2 ("History") is the original plan and log, kept verbatim except for dated, bracketed
+corrections of lines that would otherwise mislead an operator (old IP, deleted-host instructions, stale
+digest and secrets claims). Nothing in History is an instruction any more; Part 1 is.
+
+# Part 1 — Open items (1:1 with Jira)
+
+## Standard and revoked waivers
+
+- **Standard (operator, 2026-10-23):** testnet is held to the mainnet bar. It is promoted to stagenet and
+  mainnet with the same artifacts and runbooks, so there are no "fine for testnet" acceptances.
+- **Revoked 2026-10-24 under that standard:**
+  - the 2026-10-18 **soak waiver** (Phase 9 sign-off without a fresh soak on the post-soak images) → ECO-22;
+  - **AUD-188** (Bug 2 "accepted as known", Task 6.1 / Phase 9 row 10) → ECO-51;
+  - **AUD-094** (plaintext KeeWeb backup kept as is, Phase 9 row 11) → ECO-73.
+- The 2026-10-07 decision "no testnet backups" (B8) is superseded the same day → ECO-85.
+- `testnet-final-2026-10-22` (infra 52e1d57) is provisional until ECO-22 cuts its successor.
+
+## Main node generation interval and quorum (the one statement; ECO-66)
+
+The main node (`node-config/testnet/dcc.conf`) runs `quorum = 0` and
+`interval-after-last-block-then-generation-is-allowed = 30d`. 30d was a bootstrap measure after the
+2026-10-01 account deletion (last block 16.6 days old on 2026-10-04); it has no effect on a live chain.
+The LKE nodes run `quorum = 1` and 15d. **Decision (ECO-66): main `quorum = 1` and 15d, plus mutual
+known-peers among gen-0/gen-1/val-0** (in the 2026-10-31 partition the LKE nodes had zero peers, because
+main was their only known peer). This is in the repo as its own commit ("config(testnet): ECO-66 …") and is
+deployed only AFTER the long-partition drill (> 100 blocks) has been run and recorded on the current
+settings (⛔ Operator). Until that deploy, the live main node still runs `quorum = 0` and 30d.
+
+## Open items
+
+### ECO-22 — 72h soak and Phase 9 sign-off tag
+Blocked by ECO-42, 49, 51, 63, 66, 73, 76, 97, 99. Freeze, sample with `scripts/soak-sample.sh`, write
+`SOAK-YYYY-MM-DD.md`, cut `testnet-final-YYYY-MM-DD` with a Release (node digest currently
+`sha256:e00bb982…` v1.8.1, `node-config/testnet/vps-image.env`), protect digests from ghcr-cleanup.
+
+### ECO-42 — Close out the HotStuff equivocation drill
+Tick Task 6.5 Steps 1-5 with Step 4 rewritten to the real evidence path (`finalizationVoting.hotstuffConflicts`
+in block 56354, `/generators/at` conflictHeight, `/node/status` hotStuffEquivocationsTotal, `EQUIVOCATION
+DETECTED` logs); node-scala docs PR; #208 closure evidence; `scripts/check-digest-parity.sh` output;
+`DRILL_OFFENDER_SEED` kept only until the ECO-49 re-drill.
+
+### ECO-49 — Forfeit the deposit of HotStuff equivocators
+Lock-release spec (RocksDBWriter), `genesis-replay-check.yml` past heights 56354 and 60000, re-drill
+outside any soak window (⛔), red-before/green-after evidence.
+
+### ECO-51 — Close Bug 2 (finalization rollback)
+`FinalizationRollbackSpec` on node-scala main, run against `d5b614ee`/current digest; consumer list for
+committedGenerators/nextCommittedGenerators; docs PR; then tick Task 6.1 and Phase 9 row 10 here.
+
+### ECO-63 — Second alert channel (email) and monitoring blind spots
+In repo (infra PR feat/eco-sprint1-infra): SiteGround SMTP `gtxm1040.siteground.biz:465` (implicit TLS) email
+receiver; critical + high (and the 21-day TLS tier) route to GitHub AND email; SOPS
+`ALERTMANAGER_SMTP_USERNAME/PASSWORD` rendered only into `alertmanager-<network>.env`; grafana, caddy and
+blackbox scrape jobs in TargetDown; blackbox probes for matcher, data-service and websocket
+(`EndpointProbeFailed`); `CommitteeSizeUnknown`; promtool tests. **Live:** push-secrets, then
+deploy-monitoring-stack + update-caddy; test-fire with amtool and record both arrival times under Task 5.1
+Step 4; /targets shows the new jobs UP.
+
+### ECO-64 — Certificate and domain expiry monitoring
+In repo: TLS expiry series for every public host (exporter `TLS_HOSTS`, 18 hosts), tiers
+`TlsCertExpiresWithin21Days` (warning, routed to email too) and `TlsCertExpiresWithin7Days` (critical);
+weekly RDAP workflow `domain-expiry.yml` (< 60 days opens an issue); registrar/expiry in DNS-INVENTORY.md.
+**Live/Owner:** one green RDAP run; Owner confirms auto-renew per domain (3 Namecheap, 1 GoDaddy).
+
+### ECO-66 — Main node quorum, peering and generation interval
+See the statement above. Config commit is the last commit of the ECO-sprint-1 infra PR. **Live:** ⛔
+long-partition drill on the CURRENT settings first, then deploy-node-config + Flux, then main stopped 10 min
+→ each LKE node ≥ 2 peers.
+
+### ECO-70 — Account-independent external uptime monitor
+UptimeRobot (Owner's shared ops email), keyword monitors, alerts to the ECO-63 email;
+`monitoring/EXTERNAL-UPTIME.md`. Blocked by ECO-63.
+
+### ECO-73 — Plaintext KeeWeb backup into the encrypted vault
+Import, reviewer check, delete all copies, custody in SECURITY.md, AUD-094 revoked (above).
+
+### ECO-76 — Credential rotation and service secret scoping
+In repo: SECURITY.md key→service table (CI-checked against `render-service-env.sh`), AGE key custody
+table for testnet/stagenet/mainnet (Owner confirmation pending), corrected rotation status. **Live/Owner:**
+rotate OAuth client secret, Sentry token, admin PAT, `TF_VAR_ROOT_PASSWORD`; dedicated monitors PAT;
+`docker inspect` env check per service against the table.
+
+### ECO-81 — Preserve Linode recovery images before 2026-12-30
+DR.md "Linode private images": keep 41601991, drop the two LKE boot disks, three non-DCC images pending
+their owner. **Live:** export to R2 `dcc-recovery-images` with SHA-256, restore test, temp-Linode cleanup.
+
+### ECO-83 — Linode billing safeguards
+DR.md "Account continuity" (structure; owner fields pending). **Owner:** 2 payment methods per account,
+ops billing email, ≥ 2 months prepaid, monthly review, account behind each IP. Then tick Task 0.1 Step 1.
+
+### ECO-85 — Backup and disaster-recovery policy
+In repo: DR.md (RPO/RTO proposed, Operator approval pending), `scripts/pg-backup.sh` + systemd timer from
+`bootstrap.sh`, chain-snapshot script (schedule pending an Operator decision, DR.md), `BackupStale` /
+`BackupNeverSucceeded` alerts. **Live:** R2 bucket + token into SOPS, push-secrets, install the timer on the
+existing VPS, remove the old cron, 7 daily objects, restore drill timed against the RTO.
+
+### ECO-97 — admin-e2e stability
+In repo: `admin-e2e.yml` alert-on-failure fires on any failed run of main (it was gated on `schedule`,
+which the workflow does not have); job timeout 120 min for the finality waits. **Live:** a deliberate
+failure on main opens/updates the issue; 10 green dispatches on the final images.
+
+### ECO-98 — node-it finalization flakiness
+node-scala work (RCA, retry audit, PR trigger, 20 green runs). Recommended before ECO-22.
+
+### ECO-99 — Deduplicate this plan; reconcile stale docs
+This restructure; waivers marked revoked; stale lines corrected in History (RELAUNCH-20260904.md:47 IP,
+REDIS_PASSWORD, digest, whole-env, mainnet-node). **Remaining:** clean trees in all 6 repos, recorded.
+
+### ECO-109 — DNS inventory and dead references
+`DNS-INVENTORY.md` from public DNS (registrar console export still PENDING, Owner); mainnet-node and
+mainnet-matcher KEEP. `compose/admin-dashboard.yml` comment reworded; the old DNS line is History.
+
+### ECO-110 — Harden the VPS and LKE hosts
+In repo: `bootstrap.sh` installs the nftables host firewall; metrics-server via Flux; compose bind audit
+(admin-dashboard and scanner now loopback-only) and `terraform/lke.tf` firewall check recorded in the PR;
+`ghcr-pull-secret` procedure (`clusters/testnet/RUNBOOK.md` Scenario G; no credential exists in the repo).
+**Live:** install the firewall on the existing VPS and record `nft list ruleset`; external nmap; `ss -ltnp`
+on the VPS; `kubectl top nodes`; create the pull secret (Owner token).
+
+### ECO-206 — Publish SDK packages to npm
+DecentralChain release workflow (`NPM_TOKEN` / trusted publishing, publish in layer order, post-publish check).
+
+### ECO-412 — Committee weight-share monitoring (added 2026-10-31; title in Jira)
+In repo: exporter `dcc_committee_member_weight_share` / `dcc_committee_max_weight_share` (current period,
+`/generators/at`), alert `CommitteeMemberShareTooHigh` (≥ 1/3 for 15m, critical) with promtool tests.
+Live 2026-10-31: main holds 73.4% of committee weight, so the alert fires on deploy until stake is
+rebalanced (Operator decision).
+
+### Done
+ECO-407, ECO-408, ECO-409, ECO-410, ECO-411: closed in Jira (details there).
+
+---
+
+# Part 2 — History (verbatim log, with dated corrections; not instructions)
 
 ## Ground truth verified 2026-09-23 (do not re-derive)
 
@@ -485,7 +622,7 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 
 - [ ] **Step 1:** `REDIS_PASSWORD` absent from SOPS while `push-secrets.yml` expects it (memory `testnet-complete-chain:64`). Add the current value (from the running container env or the one-shot `inject-redis-secret.yml`) to SOPS so the next push does not break the faucet rate-limiter.
 - [ ] **Step 2:** `DCC_CANARY_SEED` requires two provisioning steps (`canary-transaction.yml:5-17`): SOPS push AND `gh secret set DCC_CANARY_SEED --env testnet`. Confirm the env secret exists: `gh secret list -e testnet -R Decentral-America/infra | grep CANARY`.
-- [ ] **Step 3:** Grafana admin password: wire `GF_SECURITY_ADMIN_PASSWORD` from KeeWeb `GRAFANA_ADMIN_PASSWORD` in `compose/grafana.yml` (currently default admin/admin per memory). Alertmanager SMTP: confirm `smtp_auth_password` in the LKE `alertmanager-config` Secret equals KeeWeb `SMTP_PASSWORD`.
+- [ ] **Step 3:** Grafana admin password: wire `GF_SECURITY_ADMIN_PASSWORD` from KeeWeb `GRAFANA_ADMIN_PASSWORD` in `compose/grafana.yml` (currently default admin/admin per memory). Alertmanager SMTP: confirm `smtp_auth_password` in the LKE `alertmanager-config` Secret equals KeeWeb `SMTP_PASSWORD`. [Superseded 2026-10-31: the LKE Alertmanager is gone; the VPS Alertmanager reads SOPS `ALERTMANAGER_SMTP_*` (ECO-63).]
 - [ ] **Step 4:** KeeWeb backup hygiene (`Ecosystem/KEEWEB_BACKUP.md`): remove the inline OpenSSH private key block (lines 119-130) — reference the KeeWeb entry instead; fix the duplicate entry number 27; execute the 4 pending deletions at lines 254-259; add the four undocumented names (`ADMIN_DASHBOARD_GITHUB_PAT`, `SENTRY_AUTH_TOKEN`, `GRAFANA_URL`, `REDIS_PASSWORD`). Commit: `docs(secrets): remove inline key material, fix numbering, add missing entry names`.
 
 ---
@@ -525,6 +662,8 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 ### Task 6.1: Bug 2 ("how far is the chain locked in") — determine whether Task D already closed it
 
 > **Closure (2026-10-18):** WAIVED: Bug 2 has no closing evidence; accepted as known (register AUD-188) under the 2026-10-18 waiver
+>
+> **REVOKED 2026-10-24** (mainnet-grade standard): AUD-188 no longer counts; Bug 2 is open as ECO-51 (Part 1).
 
 **Files:** `$BC/CONSENSUS-BUG-INVESTIGATION-REFERENCE.md:147-157`; `$NODE/node/src/main/scala/com/decentralchain/state/FinalizationState.scala`; node-scala commits from the 2026-08-30 relaunch (memory `testnet-final-relaunch-20260830:21` — "Task D finalization-rollback bug was real", DeterministicFinality cluster).
 
@@ -650,6 +789,8 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 
 ## Phase 9 — Sign-off under the operator's waiver (evidence recorded 2026-10-18; closes with the `testnet-final-*` tag)
 
+> **WAIVER REVOKED 2026-10-24** under the mainnet-grade standard (operator, 2026-10-23: testnet is promoted to stagenet and mainnet with the same artifacts and runbooks). The 2026-10-18 soak waiver, AUD-188 (row 10) and AUD-094 (row 11) no longer count; `testnet-final-2026-10-22` is provisional. Sign-off now requires ECO-22 (a fresh ≥72h soak on the final digests). See Part 1.
+
 **Decision (operator, 2026-10-18):** sign-off by WAIVER, no re-soak. The 72h soak (SOAK-2026-10-12.md, PASS)
 ran image `9283525c`. The images rolled out after it (node-scala fb4e980 #77 and the 2026-10-18 audit fixes)
 were not re-soaked; the evidence below plus a multi-node node-it run per rollout (register AUD-036) stand in
@@ -669,8 +810,8 @@ Evidence collected 2026-10-18 at height 74871:
 | 7 | Alerts loaded, delivery proven, MainNodeUnreachable/LkeGeneratorsDown present | DONE | 26 rules; True True True (count, MainNodeUnreachable, LkeGeneratorsDown, Watchdog); delivery #186/#189/#208/#211 |
 | 8 | Downstream: BPS ≈ chain, matcher round-trip, DS 200, faucet, balances, URLs, admin-e2e green | DONE except the matcher canary: PENDING (`matcher-canary.yml` ships in the wave-4 PR; needs its one-time asset setup) | BPS lag 0; matcher-canary last 24: matcher-canary.yml not on main yet; DS 200; faucet claim PASS (2026-10-18 live E2E row 1); balances in TOPOLOGY.md; admin-e2e green run 38152087859 2026-10-11T15:38:01Z |
 | 9 | Drills: crash, partition, epoch transition, equivocation + fleet decision | DONE | Soak Log 2026-10-10 / 2026-10-12 / 2026-10-15; fleet decision: slashing stays off (SOAK-2026-10-12.md) |
-| 10 | Bug 2 resolved (Task 6.1) | WAIVED | register AUD-188 |
-| 11 | Security: API keys + SSH key rotated, KeeWeb cleaned, REDIS_PASSWORD in SOPS, canary env secret | DONE except KeeWeb (WAIVED: operator keeps KEEWEB_BACKUP.md as is, AUD-094) | #193; SSH 2026-10-10; REDIS_PASSWORD in SOPS: 1; canary env secret present: true |
+| 10 | Bug 2 resolved (Task 6.1) | WAIVED → **REVOKED 2026-10-24** (ECO-51) | register AUD-188 |
+| 11 | Security: API keys + SSH key rotated, KeeWeb cleaned, REDIS_PASSWORD in SOPS, canary env secret | DONE except KeeWeb (WAIVED: operator keeps KEEWEB_BACKUP.md as is, AUD-094 → **REVOKED 2026-10-24**, ECO-73) | #193; SSH 2026-10-10; REDIS_PASSWORD in SOPS: 1; canary env secret present: true |
 | 12 | Docs reconciled; public docs 200 | DONE | wave-4 PR (AUD-030/084/089/090/091); docs.decentralchain.io 200 |
 | 13 | Working trees clean (DecentralChain, matcher, infra, docs) | PENDING while any count below is non-zero (matcher has local uncommitted changes) | porcelain line counts: DecentralChain=0 matcher=6 infra=0 docs=0 |
 
@@ -749,9 +890,9 @@ Superseded by the 2026-10-18 audit register and the Phase 9 closure above. Open 
 - [x] ⛔ operator: merge infra #171 (cleanup, import-backend action, drift-detect fix). Also merged: #172 (firewall_id ignore, backups off) and #173 (new LKE IP).
 - [x] (run 37190225545 imported it; run 37191817182 planned 1 add / 3 change / 0 destroy) `provision.yml action=import-backend import_linode_id=<new id>`, then `plan`. Review it: new LKE cluster plus firewall updates, **0 to destroy**.
 - [x] (run 37192329030: 1 added, 3 changed, 0 destroyed. LKE **663401**, worker **139.162.144.243**. Flux run 37193711144 installed only 2 controllers) ⛔ operator: `provision.yml action=apply`. Then bootstrap Flux and push secrets.
-- [ ] (SiteGround names DONE and serving HTTPS 2026-10-04. PENDING: `testnet.decentralscan.com` at Namecheap (a friend is doing it) and deleting `mainnet-node`) ⛔ operator: DNS. Point every `testnet-*` name, `grafana.testnet` and `testnet.decentralscan.com` at the new IP. Delete the stale `mainnet-node.decentralchain.io` record (its IP has probably been reassigned).
+- [ ] (SiteGround names DONE and serving HTTPS 2026-10-04. PENDING: `testnet.decentralscan.com` at Namecheap (a friend is doing it)) ⛔ operator: DNS. Point every `testnet-*` name, `grafana.testnet` and `testnet.decentralscan.com` at the new IP. [Corrected 2026-10-31, ECO-99: the original text said to delete the `mainnet-node` record. **DO NOT DELETE `mainnet-node.decentralchain.io`: it serves live legacy mainnet v1.3.5 at 173.255.238.171** (ECO-109, DNS-INVENTORY.md).]
 - [ ] Verify: main node height advancing; gen-0, gen-1 and val-0 resynced; finality advancing; record capacity (allocatable, per-node usage) from cluster-diagnostics.
-- [x] 2026-10-04 main forging again: the live `dcc.conf` changed 15d → 30d (`generation-is-allowed`; the last block was 16.6 days old). The repo matches. `deploy-node-config` run 37194464782 put main on `0346f624` with the new config.
+- [x] (interval: see the single statement in Part 1, "Main node generation interval and quorum") 2026-10-04 main forging again: the live `dcc.conf` changed 15d → 30d (`generation-is-allowed`; the last block was 16.6 days old). The repo matches. `deploy-node-config` run 37194464782 put main on `0346f624` with the new config.
 - [x] 2026-10-04 secrets: org secret `TESTNET_DEPLOY_HOST` (used by about 10 deploy workflows) and env secret `DEPLOY_HOST` (unused) now point to 50.116.30.244. The fingerprint is unchanged, since the restored disk kept its host keys.
 - [x] 2026-10-04 `infra-liveness` run 37194820699 green: height advanced, 0 LKE nodes not ready.
 - [x] 2026-10-04 capacity (run 37194981169): the 8 GB worker has **6004Mi allocatable** (LKE reserves ~1.9 GB). Requests are 3942Mi, leaving **2062Mi free**: a 4th node (1280Mi) fits with ~780Mi to spare, and a 5th does not.
@@ -773,7 +914,7 @@ Already done but unticked above: #174 merged via #175; `GRAFANA_ADMIN_PASSWORD` 
 - [x] B5 (accepted: testnet seeds are public by operator decision 2026-10-06 (register AUD-197)) **SECURITY: the treasury seed is public.** `infra/RELAUNCH-20260904.md:126` (public repo, since `2f2c5b9`) contains the literal seed, and its address holds 10M DCC (about 10% of stake). Move the funds to a new KeeWeb-only seed (⛔ operator signs). Also redact lines 122-125 and 549 (the main base64 value plus mnemonic prefixes for gen-0, gen-1 and the matcher) and treat those seeds as weakened.
 - [x] B6 (closed: infra #184 (2026-10-10), matcher key BEtB5b2k… / 31VMNV…) **SECURITY: the matcher runs on `KeyPair(empty)`.** Pubkey `2eEUvy…`, address `31HrVN…`, balance 0, so the DEX can't settle (0 exchange txs on the chain). `DEFAULT_MATCHER` in data-service/scanner is the empty key too. Fix: `seed-in-base-64` = Base64(Keccak256(Blake2b256(00000000‖utf8(mnemonic)))) (= `dcc-dex-cli generate-account-seed --account-nonce 0`), verify it derives `31VMNV…`, re-run push-secrets so `DEFAULT_MATCHER` refreshes, restart data-service. **First** delete or update matcher repo-level `TESTNET_DEPLOY_*` secrets (2026-06-19, old host), which override the org secret.
 - [x] B7 (closed: #185/#187/#188, alerts delivered and auto-closed) **No alert has ever been delivered.** `alertmanager.yml` reads `/etc/alertmanager/github_token`, which compose never mounts, and `alert-webhook` has no `GITHUB_TOKEN` (unhealthy, 503). The only receiver is GitHub; there is no email. Fix both, then test-fire (5.1).
-- [x] ~~B8 No backups~~ (operator: not wanted for testnet). The `pg-backup.sh` cron dumps the nonexistent `dcc_testnet` to an unwritable log; `BACKUP_OBJ_BUCKET=""`; Linode backups are off; nothing off-account. 10-01 proved that peer sync alone doesn't survive an account-level loss.
+- [ ] ~~B8 No backups~~ (operator: not wanted for testnet) [REVOKED 2026-10-24 under the mainnet-grade standard: backups and DR are ECO-85, DR.md]. The `pg-backup.sh` cron dumps the nonexistent `dcc_testnet` to an unwritable log; `BACKUP_OBJ_BUCKET=""`; Linode backups are off; nothing off-account. 10-01 proved that peer sync alone doesn't survive an account-level loss.
 - [x] B9 (closed: testnet.decentralscan.com → 50.116.30.244, Let's Encrypt cert valid to 2027-01-06 (2026-10-18 audit)) **Explorer + faucet down publicly:** `testnet.decentralscan.com` still points at 66.228.55.154 (Namecheap). The cert renewal window opens about 10-06 and the cert expires 11-05. The faucet was likely never funded on this chain; the canary is at 0 (#148, #177).
 - [x] B10 (closed; superseded 2026-10-22: the checks themselves now run as LKE CronJobs, `runbooks/in-cluster-monitors.md`, instead of being dispatched as Actions runs) **Off-box liveness unreliable:** GitHub dropped the crons. `infra-liveness` (*/30) ran on schedule once in 7.5h, and the canary (*/15) runs about every 4-6h. Needs an external uptime checker.
 
@@ -826,7 +967,7 @@ Already done but unticked above: #174 merged via #175; `GRAFANA_ADMIN_PASSWORD` 
 
 - [x] 2026-10-07 boundaries 42301/42401 crossed with full committees (42201–42501 all {main,gen0,gen1}), fin lag 3 throughout, 0 watchdog/QC-rejected/own/ish. RC2 proven live (member order changed at each boundary).
 - [x] Keys verified: KeeWeb FAUCET_SEED/TREASURY_SEED == SOPS DCC_FAUCET_SEED/TREASURY_SEED, each derives its documented address; DCC_CANARY_SEED → 31LAqg…. All 3 had **0 txs on this chain**: the 09-04 genesis funded only 5 addresses and RELAUNCH §10.1 re-fund was never run. Funded from genesis treasury 31LQd8: faucet 1,000,000 (36adAY…), admin treasury 50,000 (7Chm8K…), canary 100 (84m1ew…). Canary green (run 37666136007), #148/#177 closed. Faucet POST → 200 + tx, second → 429 (Redis rate limit OK).
-- [x] Operator 2026-10-07: testnet backups NOT wanted (drop B8).
+- [x] Operator 2026-10-07: testnet backups NOT wanted (drop B8). [Superseded 2026-10-24: ECO-85, DR.md.]
 - [ ] Renovate: reproducing the hosted job locally (`renovate --platform=github --dry-run=full`) for DecentralChain + matcher to get the real errors (Mend log needs login).
 
 **2026-10-10 (bypass mode, full ownership):**
@@ -837,7 +978,7 @@ Already done but unticked above: #174 merged via #175; `GRAFANA_ADMIN_PASSWORD` 
 - [x] **B4 val-0:** wallet holds 31XTtK… (its seed's address; #153's "no private key" was the deleted external workflow). Funded 20,000,000 DCC from main (8PtkwjHU…) → 4×~20M generators (1-failure tolerance). Close #153 when val-0 appears in /generators/at (~1000 blocks).
 - [x] **Crash drill PASSED:** gen-1 pod deleted → Ready 166s, finality continuous (lag 3), 0 InvalidStateHash, restored lastVotedView 600953 and voted (pacemaker fix proven again).
 - [x] **Partition drill PASSED** (2026-10-10 02:01–02:12Z, iptables on main blocking the LKE node IP both ways, auto-heal). Per-pod partition impossible: pods are hostNetwork=true (NetworkPolicy no-op), share one node IP, and enable-blacklisting=no makes the blacklist API a no-op. During: main forged alone 49032→49039; gen-0+gen-1 forged their own fork to 49035/49036 (they reach each other on the shared node); val-0 held 49030; **finality frozen at 49027** (no side ≥2/3: no conflicting finality). After heal: all 4 nodes on 49043 within ~60s, fin lag 3; gen-0/gen-1 `rollback to H2EQFTvk… succeeded`; 0 InvalidStateHash, 0 restarts; main's 4 WATCHDOG resets all during the partition; HotStuff resumed (22 commits). Finding: main `quorum=0` + gen-0/gen-1 able to peer each other = a two-sided fork during any main↔cluster split (benign here because neither side can finalize).
-- [x] main `interval-after-last-block-then-generation-is-allowed = 30d` KEPT (bootstrap after >15d outage; no effect on a live chain); fix stale "Genesis 2026-06-24" comment in next infra batch.
+- [x] (superseded: Part 1, "Main node generation interval and quorum") main `interval-after-last-block-then-generation-is-allowed = 30d` KEPT (bootstrap after >15d outage; no effect on a live chain); fix stale "Genesis 2026-06-24" comment in next infra batch.
 
 **2026-10-10 (cont.):**
 - [x] matcher #33 merged (sbt-2 Dockerfile + temurin base bump); dev = main.
@@ -852,26 +993,26 @@ Already done but unticked above: #174 merged via #175; `GRAFANA_ADMIN_PASSWORD` 
 - [x] Admin JWT secret rotated (#197), container recreated, verified.
 - [x] drift-detect: "No changes. Your infrastructure matches the configuration." Admin E2E smoke 53/53.
 - [x] Old empty-key matcher state removed.
-- [ ] Accepted / deferred: BPS exits on node gRPC loss and relies on restart (113 restarts = node deploys; always catches up) — reconnect-in-place is a DecentralChain code improvement; env-file sprawl (every service gets testnet.env) → per-service env files for mainnet (testnet seeds are public by decision); main compose healthcheck not applicable (main runs via docker run, not compose; stall alerts cover it); matcher `database = dcc_testnet` unused (order-history off).
-- [ ] Operator: Cloudflare token Workers Scripts:Edit (B10); Mend log for hosted Renovate; Namecheap testnet.decentralscan.com (cert expires 11-05); delete mainnet-node record; SiteGround apex + mail records; equivocation drill decision; KeeWeb sync; OAuth client secret / Sentry token / admin PAT rotation (provider consoles); production decision before 2026-12-30.
+- [ ] Accepted / deferred: BPS exits on node gRPC loss and relies on restart (113 restarts = node deploys; always catches up) — reconnect-in-place is a DecentralChain code improvement; env-file sprawl (every service gets testnet.env) → per-service env files for mainnet (testnet seeds are public by decision) [SUPERSEDED: per-service env files landed on testnet too, `scripts/render-service-env.sh` (#222, #229); no container gets the whole env; table in SECURITY.md "Per-service secrets"]; main compose healthcheck not applicable (main runs via docker run, not compose; stall alerts cover it); matcher `database = dcc_testnet` unused (order-history off).
+- [ ] Operator: Cloudflare token Workers Scripts:Edit (B10); Mend log for hosted Renovate; Namecheap testnet.decentralscan.com (cert expires 11-05); [corrected 2026-10-31: **DO NOT DELETE `mainnet-node.decentralchain.io`: it serves live legacy mainnet v1.3.5 at 173.255.238.171** (ECO-109, DNS-INVENTORY.md)]; SiteGround apex + mail records; equivocation drill decision; KeeWeb sync; OAuth client secret / Sentry token / admin PAT rotation (provider consoles); production decision before 2026-12-30.
 - [ ] Deferred by operator: 72h soak report + sign-off tag.
 
 **Should-fix before sign-off:**
-- [ ] Revert the main `interval-after-last-block-then-generation-is-allowed = 30d` → 15d (LKE is on 15d). Review main `quorum = 0`: an isolated main forges its own fork. Fix the stale "Genesis 2026-06-24" comment.
+- [ ] (tracked as ECO-66: Part 1, "Main node generation interval and quorum") Revert the main `interval-after-last-block-then-generation-is-allowed = 30d` → 15d (LKE is on 15d). Review main `quorum = 0`: an isolated main forges its own fork. Fix the stale "Genesis 2026-06-24" comment.
 - [ ] Main is the only hub: LKE nodes have no LKE↔LKE links, only 3 sockets to main. If main dies, the gens halt.
 - [ ] Alert logic: the exporter emits -1 on 404, so `CommitteeGapUpcoming` (`== 0`) misses gaps. Add a rule for committee size ≤ 1. The exporter (healthcheck 5s, `/metrics` 6-9s) is unhealthy. Prometheus has no self-scrape for prometheus/alertmanager/grafana/caddy. Retention must survive container recreation (data only from 15:38). Stale alert text: deleted workflows, "observational".
 - [ ] Rotate credentials: REST API keys (7.1; branch `1141c3a` is gone, regenerate), the deploy SSH key (7.2), stale `TF_VAR_ROOT_PASSWORD`. Delete the plaintext admin kubeconfig left in an old session's scratchpad (`…/11f8c55c-…/scratchpad/kubeconfig-testnet`).
-- [ ] Least-privilege secrets: every compose service gets the whole `testnet.env`, including `DCC_WALLET_SEED`. `REDIS_PASSWORD` is not in SOPS (live Redis was set by hand, and push-secrets writes the matcher Redis URL without a password). `local.conf` is chmod 644.
+- [x] (closed; corrected 2026-10-31, ECO-99: per-service env files since #222/#229, so no service gets the whole env; `REDIS_PASSWORD` has been in SOPS since 2026-10-07 (Rollout 2026-10-07 entry above, live value proven with PING→PONG); `local.conf` is 640 root:113 since #184) Least-privilege secrets: every compose service gets the whole `testnet.env`, including `DCC_WALLET_SEED`. `REDIS_PASSWORD` is not in SOPS (live Redis was set by hand, and push-secrets writes the matcher Redis URL without a password). `local.conf` is chmod 644.
 - [ ] Host: no host firewall; everything is bound to 0.0.0.0, and only the Linode cloud firewall protects it. fail2ban has been failed since boot. Leftovers: `test-wallets.csv`, `*.bak`. Linode kernel 7.1.9 instead of the distro kernel (decide). Compose drift: node-scala healthcheck (2.6 not rolled out), redis image versions.
 - [ ] DB naming: no `dcc_testnet` and no `bps` role. Matcher config + `bootstrap.sh` + `pg-backup.sh` + the BPS runbook (`OWNER bps`) are all wrong. BPS has 52 restarts (start-height race).
 - [ ] Matcher blockchain-updates stream: 461× "No data for 1 minute, restarting!".
 - [ ] LKE: `ghcr-pull-secret` is missing (works only because the package is public); metrics-server absent; one-off `Wrong BLS signature` QC rejections at 14:17; `Miner can't endorse its own block` (node-side).
-- [ ] DNS: delete `mainnet-node` (172.233.108.19). `mainnet-matcher` → a third-party nginx, still linked from the docs. Apex `decentralchain.io`/`decentralscan.com` empty. Admin-dashboard default scanner URL `testnet-scanner.decentralchain.io` doesn't resolve; exchange `origin` is `testnet.decentralchain.io` (no record).
+- [x] (SUPERSEDED 2026-10-31 by ECO-109 / DNS-INVENTORY.md; kept as history. **DO NOT DELETE `mainnet-node.decentralchain.io`: it serves live legacy mainnet v1.3.5 at 173.255.238.171** (ECO-109, DNS-INVENTORY.md); the 172.233.108.19 value below was stale, and the dead hosts named here are recorded there as "no record, keep absent") DNS: ~~delete `mainnet-node` (172.233.108.19)~~. `mainnet-matcher` → a third-party nginx, still linked from the docs. Apex `decentralchain.io`/`decentralscan.com` empty. Admin-dashboard default scanner URL `testnet-scanner.decentralchain.io` doesn't resolve; exchange `origin` is `testnet.decentralchain.io` (no record).
 - [ ] Public docs: chain IDs are wrong (`024_Chain-ID.csv`, `09_protocol.rst:115` say T/84, W/87; the real values are `!`/33, `S`/83, `?`/63). No "join the testnet" guide (genesis, peer `50.116.30.244:6868`, chain byte).
 - [ ] Stale docs: RELAUNCH:47 (old IP), §5.1 (`b0d559cf`), link to the plan outside the repo; reference doc :50, :109, :390; TOPOLOGY balances; "Newark" naming (it's Dallas now); HotStuff `round-timeout` tuned for Frankfurt→Newark RTT; nodes.yaml "crons kept as safety net".
 - [ ] Root repo: commit Task 1.1 Step 1. The only remote is `upstream-waves`, so this plan has no off-machine copy and a stray push goes to Waves. KEEWEB_BACKUP.md: inline private key (119-133), duplicate entry 27, pending deletions, missing entries (new Linode root pw/IP/instance, `DCC_CANARY_SEED`, etc.).
 - [ ] CI: drift-detect hasn't run since its exit-code fix (cron 10-05 06:00Z); admin-e2e last ran 09-21 during the outage (#142); matcher #26 failing suite never re-run since the sbt-2 path fix; DecentralChain Renovate stalled since 07-19 (config warnings); matcher Renovate blind to Scala deps; DecentralChain service images predate the 09-30 bump; private-minute headroom 87% in September.
-- [ ] Sign-off tag: infra has 0 tags. Tag `testnet-final-YYYYMMDD` in infra on the commit pinning `0346f624` (with a Release listing all digests + genesis + SOAK), and exclude it from `ghcr-cleanup` (keeps 10).
+- [ ] Sign-off tag: infra has 0 tags. Tag `testnet-final-YYYYMMDD` in infra on the commit pinning the current node digest (corrected 2026-10-31: was `0346f624`; now node-scala v1.8.1 `sha256:e00bb9824dfb6c9c2aed368cf2d9cc67ceeb3183d8d84cf24ea31fdbe5332276` in `node-config/testnet/vps-image.env` and 3x `clusters/testnet/apps/nodes.yaml`) (with a Release listing all digests + genesis + SOAK), and exclude it from `ghcr-cleanup` (keeps 10).
 - [ ] gen-2 scaffolding missing everywhere: `lke.tf` ports 6863-6865, `host-endpoints.yaml`, ConfigMap/STS/PDB/secret, exporter list, `LkeGeneratorsDown` hard-codes 3, diagnostics loops. It fits (2062Mi free, needs 1280Mi).
 - [ ] Not gating: crypto 2.0.8 release, 5 `CHROME_*` secrets, status page, SBOM/version manifest, production decision before the 2026-12-30 image expiry.
 
@@ -922,8 +1063,8 @@ Validated locally: pyhocon, `tofu validate`, kubeconform, promtool `check rules`
 ### Findings 2026-10-01 (new, from preparing #171)
 
 - [ ] **SECURITY ⛔ operator: the matcher signs with an empty-seed key.** `push-secrets.yml` extracts `MATCHER_SEED` but never writes it. `local.conf` sets `account-storage.type = in-mem` with no seed, so matcher's default `in-mem.seed-in-base-64 = ""` applies and `AccountStorage.load` builds `KeyPair(ByteStr.empty)`, a key anyone can derive. This has been true since infra `2bf4fec` (2026-07-01). The workflow's warning "matcher will start with a random key" is wrong. It may explain the old 0-balance matcher incident. The fix: write the real seed (or switch to `encrypted-file` with `MATCHER_PASS`), then verify that the derived address equals `DEFAULT_MATCHER`. That needs the KeeWeb seed. Mainnet must not ship with this flow.
-- [ ] **DB name mismatch.** `bootstrap.sh` creates `dcc_testnet`, while terraform defaults to `bps_testnet`. The matcher uses `dcc_testnet`; BPS and data-service use `bps_testnet`. Confirm on the VPS after Phase 0.
-- [ ] **`REDIS_PASSWORD` still absent from SOPS** (Task 4.4 Step 1).
+- [x] (resolved; corrected 2026-10-31: `bootstrap.sh` creates `bps_<network>` and `admin_<network>`, verified live as bps_testnet/admin_testnet in `runbooks/reset-bps-testnet.md`) **DB name mismatch.** `bootstrap.sh` creates `dcc_testnet`, while terraform defaults to `bps_testnet`. The matcher uses `dcc_testnet`; BPS and data-service use `bps_testnet`. Confirm on the VPS after Phase 0.
+- [x] (closed 2026-10-07: in SOPS, see Rollout 2026-10-07; stale line corrected 2026-10-31, ECO-99) **`REDIS_PASSWORD` still absent from SOPS** (Task 4.4 Step 1).
 - [ ] **Stale alert text.** The `CommitteeGapUpcoming` description still tells on-call to run the deleted commit-generator workflows.
 - [ ] **Same-box monitoring.** The VPS's own Prometheus can't page about a whole-VPS outage. The off-box `infra-liveness.yml` (Task 0.2) covers that.
 

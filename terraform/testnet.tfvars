@@ -20,7 +20,7 @@ linode_type   = "g6-standard-4" # 4 vCPU / 8 GB — sufficient for testnet full 
 # postgres_host     = "localhost"    # default
 # postgres_port     = "5432"         # default
 # postgres_user     = "dcc"          # default
-# postgres_database = "dcc_testnet"  # default (auto from workspace name)
+# postgres_database = "bps_testnet"  # default: bps_<network> (terraform/main.tf)
 
 # ── Blockchain updates gRPC (co-located node) ─────────────────────────────────
 blockchain_updates_url = "grpc://localhost:6881"

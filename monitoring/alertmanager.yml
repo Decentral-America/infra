@@ -1,5 +1,19 @@
 global:
   resolve_timeout: 5m
+  # Second alert channel, independent of GitHub (ECO-63). SiteGround's SMTP host for the
+  # decentralchain.io mailbox; `mail.decentralchain.io` has no DNS record, so it is not used.
+  # Port 465 = implicit TLS (Alertmanager notify/email: useImplicitTLS when the port is 465);
+  # the server certificate is verified against this host name.
+  smtp_smarthost: 'gtxm1040.siteground.biz:465'
+  smtp_from: 'info@decentralchain.io'
+  # Credentials come from SOPS (ALERTMANAGER_SMTP_USERNAME / ALERTMANAGER_SMTP_PASSWORD) through
+  # alertmanager-<network>.env (scripts/render-service-env.sh). Alertmanager has no env expansion and
+  # no username file, so the compose entrypoint (compose/prometheus.yml) substitutes the placeholder
+  # below into a tmpfs copy of this file and writes the password to the tmpfs file read here.
+  # No credential value is ever in git.
+  smtp_auth_username: '__ALERTMANAGER_SMTP_USERNAME__'
+  smtp_auth_password_file: '/run/alertmanager/smtp_password'
+  smtp_require_tls: true
 
 route:
   group_by: ['alertname', 'network']
@@ -14,12 +28,22 @@ route:
     - matchers:
         - alertname = Watchdog
       receiver: blackhole
-    # Critical alerts fire immediately with no grouping wait
+    # Critical alerts fire immediately with no grouping wait, to GitHub AND email.
     - matchers:
         - severity = critical
       group_wait: 0s
       repeat_interval: 1h
-      receiver: github-issues
+      receiver: github-and-email
+    # Certificate expiry reaches email from the 21-day warning tier on (ECO-64): the warning is the
+    # whole point of the 21-day lead time, so it must not sit in GitHub only.
+    - matchers:
+        - alertname =~ "TlsCertExpires.*"
+      receiver: github-and-email
+    # High alerts also reach a human by email (ECO-63): a GitHub outage or a broken webhook token
+    # must not silence them. Warnings stay GitHub-only.
+    - matchers:
+        - severity = high
+      receiver: github-and-email
 
 receivers:
   - name: blackhole
@@ -29,6 +53,13 @@ receivers:
       # A former `http_config.bearer_token_file: /etc/alertmanager/github_token` was never mounted, so
       # every notification failed with "unable to read file" and no alert was ever delivered.
       - url: 'http://localhost:9099/alert'
+        send_resolved: true
+  - name: github-and-email
+    webhook_configs:
+      - url: 'http://localhost:9099/alert'
+        send_resolved: true
+    email_configs:
+      - to: 'info@decentralchain.io'
         send_resolved: true
 
 inhibit_rules:
@@ -40,3 +71,9 @@ inhibit_rules:
       # Watchdog is the deadman heartbeat; it must still reach the blackhole receiver during an ExporterDown.
       - alertname != Watchdog
     equal: ['network']
+  # The 7-day tier supersedes the 21-day one for the same host (one notification, not two).
+  - source_matchers:
+      - alertname = TlsCertExpiresWithin7Days
+    target_matchers:
+      - alertname = TlsCertExpiresWithin21Days
+    equal: ['host']
