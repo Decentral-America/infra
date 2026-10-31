@@ -32,9 +32,11 @@ digest and secrets claims). Nothing in History is an instruction any more; Part 
 The main node (`node-config/testnet/dcc.conf`) runs `quorum = 0` and
 `interval-after-last-block-then-generation-is-allowed = 30d`. 30d was a bootstrap measure after the
 2026-10-01 account deletion (last block 16.6 days old on 2026-10-04); it has no effect on a live chain.
-The LKE nodes run `quorum = 1` and 15d. **Target: main `quorum = 1` and 15d, plus mutual known-peers
-among gen-0/gen-1/val-0**, shipped as its own commit, deployed only after the long-partition drill
-(> 100 blocks) has been run and recorded on the current settings (ECO-66).
+The LKE nodes run `quorum = 1` and 15d. **Decision (ECO-66): main `quorum = 1` and 15d, plus mutual
+known-peers among gen-0/gen-1/val-0** (in the 2026-10-31 partition the LKE nodes had zero peers, because
+main was their only known peer). This is in the repo as its own commit ("config(testnet): ECO-66 …") and is
+deployed only AFTER the long-partition drill (> 100 blocks) has been run and recorded on the current
+settings (⛔ Operator). Until that deploy, the live main node still runs `quorum = 0` and 30d.
 
 ## Open items
 

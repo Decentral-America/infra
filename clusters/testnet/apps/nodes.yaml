@@ -101,8 +101,11 @@ data:
         bind-address = "0.0.0.0"
         port = 6863
         declared-address = "139.162.144.243:6863"
-        # Only main node in known-peers — prevents loopback mini-fork with gen-1
-        known-peers = ["50.116.30.244:6868"]
+        # main plus the other two LKE nodes (ECO-66). Main-only made main a single hub: in the
+        # 2026-10-31 partition the LKE nodes had ZERO peers. The old "loopback mini-fork" reason
+        # applied to quorum = 0 generators; all four nodes now run quorum = 1. The LKE peers are
+        # their declared addresses (shared worker IP; scripts/set-lke-node-ip.sh rewrites them).
+        known-peers = ["50.116.30.244:6868", "139.162.144.243:6864", "139.162.144.243:6865"]
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["50.116.30.244", "139.162.144.243"]
@@ -113,9 +116,8 @@ data:
         # reconnect transients from that shared IP). Mirrored here 2026-08-04 during the gen-0/gen-1
         # churn investigation: this node's own config never got the same override, so any inbound
         # connection this node ever sees from 139.162.144.243 (another LKE node, e.g. if peer-exchange
-        # is ever re-enabled) would hit the tighter default first. No active bug found — known-peers
-        # + main's enable-peers-exchange=no mean gen-0 and gen-1 don't actually dial each other today
-        # — but this closes the latent asymmetry preemptively, same fix class as RC#2.
+        # is ever re-enabled) would hit the tighter default first. Since ECO-66 the LKE nodes DO dial each
+        # other (mutual known-peers above), from that one shared IP, so this headroom is now required.
         max-single-host-connections = 8
         # In-process peer-reconnection stall detection (node-scala PR #61), replacing
         # peer-watchdog.yml. Soak on gen-0/gen-1/val-0 with the external watchdog kept running as
@@ -144,7 +146,7 @@ data:
         # reconnect has a fork to reconcile -> the sync channel breaks -> repeat (~30s self-fork loop,
         # confirmed 2026-07-16: gen-0/gen-1 logged 56-60 Channel-closed/30min vs val-0's 10). quorum=1
         # makes a partitioned generator go QUIET instead of forking; on reconnect it sees main's higher
-        # chain score and simply syncs. Only the bootstrap seed (main VPS) keeps quorum=0.
+        # chain score and simply syncs. The main VPS runs quorum = 1 too since ECO-66.
         quorum = 1
         micro-block-interval = 2s
         interval-after-last-block-then-generation-is-allowed = 15d
@@ -277,8 +279,11 @@ data:
         bind-address = "0.0.0.0"
         port = 6864
         declared-address = "139.162.144.243:6864"
-        # Only main node in known-peers — prevents loopback mini-fork with gen-0
-        known-peers = ["50.116.30.244:6868"]
+        # main plus the other two LKE nodes (ECO-66). Main-only made main a single hub: in the
+        # 2026-10-31 partition the LKE nodes had ZERO peers. The old "loopback mini-fork" reason
+        # applied to quorum = 0 generators; all four nodes now run quorum = 1. The LKE peers are
+        # their declared addresses (shared worker IP; scripts/set-lke-node-ip.sh rewrites them).
+        known-peers = ["50.116.30.244:6868", "139.162.144.243:6863", "139.162.144.243:6865"]
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["50.116.30.244", "139.162.144.243"]
@@ -301,7 +306,7 @@ data:
         enable = yes
         # quorum=1 (was 0): see gen-0 note above -- a funded generator with quorum=0 self-forks on every
         # link drop, breaking the sync channel in a ~30s loop. quorum=1 makes it go quiet when isolated
-        # and sync cleanly on reconnect. Only the bootstrap seed (main VPS) keeps quorum=0.
+        # and sync cleanly on reconnect. The main VPS runs quorum = 1 too since ECO-66.
         quorum = 1
         micro-block-interval = 2s
         interval-after-last-block-then-generation-is-allowed = 15d
@@ -427,8 +432,11 @@ data:
         bind-address = "0.0.0.0"
         port = 6865
         declared-address = "139.162.144.243:6865"
-        # Only main node in known-peers — single sync source
-        known-peers = ["50.116.30.244:6868"]
+        # main plus the other two LKE nodes (ECO-66). Main-only made main a single hub: in the
+        # 2026-10-31 partition the LKE nodes had ZERO peers. The old "loopback mini-fork" reason
+        # applied to quorum = 0 generators; all four nodes now run quorum = 1. The LKE peers are
+        # their declared addresses (shared worker IP; scripts/set-lke-node-ip.sh rewrites them).
+        known-peers = ["50.116.30.244:6868", "139.162.144.243:6863", "139.162.144.243:6864"]
         # RC#2-safe: exempt the whole committee (main VPS + shared LKE egress IP) from bans so a
         # transient validation failure can never lock a generator out (see infra/MAINNET-LAUNCH.md P4).
         blacklist-exempt = ["50.116.30.244", "139.162.144.243"]
@@ -452,8 +460,8 @@ data:
         # quorum=1 (was 0, 2026-10-01): see gen-0 note above. #80 (78efa95) moved only the FUNDED
         # gen-0/gen-1 to 1 because val-0 is unfunded at genesis and never forges, so quorum=0 was
         # moot for it, not deliberate. 1 changes nothing while val-0 does not forge, and stops the
-        # quorum=0 self-fork loop if val-0 is ever funded/promoted. Only the bootstrap seed (main
-        # VPS) keeps quorum=0.
+        # quorum=0 self-fork loop if val-0 is ever funded/promoted. The main VPS runs quorum = 1 too
+        # since ECO-66.
         quorum = 1
         interval-after-last-block-then-generation-is-allowed = 15d
         # In-process self-commit-to-generation (node-scala PR #60) — see gen-0's note above.
@@ -523,7 +531,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "7ec6e84d54b7ef39878ad11a4a96bdc6c4b5149098420490fe77e72efc51ef07"
+        checksum/config: "8b6ebe11c94290fcd2b66edabc55cfd74b2275694891ee038356afc71f72dd32"
       labels:
         app: dcc-gen-0
         role: generator
@@ -675,7 +683,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "641d1dd05a7d5510519cd3d193ec3a786e7a3ecaff2d69b5b1daedaf8e7be17f"
+        checksum/config: "78da3a6f48b3e9f36ffb73c0b2c850fd9cb878de9951c4f2d5bc60b834e578aa"
       labels:
         app: dcc-gen-1
         role: generator
@@ -819,7 +827,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: "af89faf4e2305df4cc4eae648abbb2f783575f3aa7ff8787f42afebce34b4509"
+        checksum/config: "4ac791aa0ed5b9874c310f623d39179c8b178ffce18ee8c71da2d9aadb9eeb48"
       labels:
         app: dcc-val-0
         role: validator
