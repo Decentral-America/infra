@@ -1,0 +1,97 @@
+name: Domain Expiry (RDAP)
+# Weekly registration-expiry check for the DCC domains (ECO-64). Inventory and registrars: DNS-INVENTORY.md.
+# Opens (or comments on) one "[ALERT] DomainExpiry: <domain> ..." issue per domain when its registration
+# expires in fewer than THRESHOLD_DAYS days, and one when the RDAP lookup itself fails: a lookup that
+# cannot be read is an alert, never a silent pass. alert-issues.yml labels [ALERT] issues from the
+# "**Severity:**" line in the body.
+#
+# RDAP base per TLD: the IANA bootstrap (data.iana.org/rdap/dns.json). .io is a ccTLD and is NOT in the
+# bootstrap (rdap.org returns 404 for it), so its registry endpoint (Identity Digital) is set explicitly.
+# The weekly cron may run hours late (GitHub scheduler); a 60-day threshold makes that irrelevant.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: domain-expiry
+  cancel-in-progress: false
+
+jobs:
+  rdap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DOMAINS: 'decentralchain.io decentralscan.com decentral.exchange decentralchain.com'
+      THRESHOLD_DAYS: '60'
+      # TLDs missing from the IANA RDAP bootstrap: "tld=base-url" pairs.
+      RDAP_OVERRIDES: 'io=https://rdap.identitydigital.services/rdap/'
+    steps:
+      - name: Query RDAP and alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          BOOT=$(curl -fsSL --retry 3 --max-time 30 https://data.iana.org/rdap/dns.json || true)
+
+          rdap_base() {  # $1 = tld
+            local tld=$1 pair base=""
+            for pair in $RDAP_OVERRIDES; do
+              [ "${pair%%=*}" = "$tld" ] && base=${pair#*=}
+            done
+            if [ -z "$base" ] && [ -n "$BOOT" ]; then
+              base=$(printf '%s' "$BOOT" | jq -r --arg t "$tld" \
+                '[.services[] | select(.[0] | index($t)) | .[1][0]] | .[0] // empty')
+            fi
+            printf '%s' "${base:-https://rdap.org/}"
+          }
+
+          alert() {  # $1 = title, $2 = body
+            local n
+            n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$1\"" \
+              --json number,title --jq "[.[] | select(.title == \"$1\")][0].number // empty")
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --repo "$GITHUB_REPOSITORY" --body "Still open: $2"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$1" --body "$2"
+            fi
+          }
+
+          now=$(date -u +%s)
+          failed=0
+          {
+            echo "| Domain | Registrar | Expires (UTC) | Days left | RDAP source |"
+            echo "|---|---|---|---|---|"
+          } > table.md
+          for d in $DOMAINS; do
+            base=$(rdap_base "${d##*.}")
+            url="${base%/}/domain/$d"
+            json=$(curl -fsSL --retry 3 --max-time 30 -H 'Accept: application/rdap+json' "$url" || true)
+            exp=$(printf '%s' "$json" | jq -r '[.events[]? | select(.eventAction == "expiration") | .eventDate][0] // empty' 2>/dev/null || true)
+            reg=$(printf '%s' "$json" | jq -r '[.entities[]? | select(.roles | index("registrar")) | .vcardArray[1][]? | select(.[0] == "fn") | .[3]][0] // "unknown"' 2>/dev/null || echo unknown)
+            reg=${reg:-unknown}
+            if [ -z "$exp" ] || ! exp_s=$(date -u -d "$exp" +%s 2>/dev/null); then
+              echo "| $d | $reg | LOOKUP FAILED | - | $url |" >> table.md
+              echo "::error::RDAP lookup failed for $d ($url)"
+              alert "[ALERT] DomainExpiry: RDAP lookup failed for $d" \
+                "$(printf '**Severity:** high\n\nThe weekly RDAP query for %s returned no expiration event (%s). Expiry of this domain is unmonitored until fixed.\n\nRun: %s' "$d" "$url" "$RUN_URL")"
+              failed=1
+              continue
+            fi
+            days=$(( (exp_s - now) / 86400 ))
+            echo "| $d | $reg | $exp | $days | $url |" >> table.md
+            if [ "$days" -lt "$THRESHOLD_DAYS" ]; then
+              echo "::error::$d registration expires in $days days ($exp)"
+              alert "[ALERT] DomainExpiry: $d registration expires within $THRESHOLD_DAYS days" \
+                "$(printf '**Severity:** high\n\n%s (registrar %s) expires %s: %s days left. Renew it now and confirm auto-renew in the registrar console (DNS-INVENTORY.md).\n\nRun: %s' "$d" "$reg" "$exp" "$days" "$RUN_URL")"
+              failed=1
+            fi
+          done
+          cat table.md
+          cat table.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
