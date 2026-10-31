@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# metrics-server (ECO-110): `kubectl top` and the resource-metrics API. Plain manifests, because this
+# cluster runs only source-controller + kustomize-controller (no helm-controller).
+resources:
+  - components.yaml
+images:
+  # Pinned by digest (registry.k8s.io index digest of v0.9.0, 2026-10-31).
+  - name: registry.k8s.io/metrics-server/metrics-server
+    newTag: v0.9.0@sha256:d9862115e7c7881280d3d75ca26bda8ffc0fc213315979575bf23ce9826205c0
+patches:
+  # LKE kubelets serve a self-signed certificate that names the node, not its IP, and LKE offers no
+  # way to add the IP as a SAN or to obtain a CA for it (Linode's own LKE metrics-server guide,
+  # linode.com/docs/guides/lke-continuous-deployment-part-10, and Linode community answer 19756).
+  # So metrics-server cannot verify the kubelet: --kubelet-insecure-tls is the documented LKE setting.
+  # Scope of the exception: only metrics-server -> kubelet :10250 over the Linode private network
+  # (terraform/lke.tf allow-kubelet admits 192.168.128.0/17 only), and metrics-server only reads
+  # /metrics/resource. InternalIP first, so that traffic stays on the private network.
+  - target:
+      kind: Deployment
+      name: metrics-server
+      namespace: kube-system
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/args
+        value:
+          - --cert-dir=/tmp
+          - --secure-port=10250
+          - --kubelet-preferred-address-types=InternalIP
+          - --kubelet-use-node-status-port
+          - --metric-resolution=15s
+          - --kubelet-insecure-tls
