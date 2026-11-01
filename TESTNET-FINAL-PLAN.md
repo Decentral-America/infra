@@ -180,6 +180,7 @@ ECO-407, ECO-408, ECO-409, ECO-410, ECO-411: closed in Jira (details there).
 
 - **Every node on a chain runs the same binary.** Four digests (VPS pulled imageID + 3 pod imageIDs) must be byte-identical before any chain step is called verified (`RELAUNCH-20260904.md` §5.3, decision D6).
 - **Never auto-clear blacklist; suspension only.** `peer-stall-threshold` heals suspensions only (`PeerDatabaseImpl.scala:66-74` rationale).
+- **Committee weight concentration (D5, ECO-412, 2026-11-01).** No committee member may hold ≥ 1/3 of committee weight (weight = generating balance, so rewards concentrate it). Testnet: main had drifted to 73.4% and finalized alone; rebalanced 2026-11-01 (13.15M DCC to each of gen-0, gen-1, val-0) to max 25.4%; alert `CommitteeMemberShareTooHigh` (≥ 1/3 for 15 min, critical) is live. Proposed for mainnet, pending Operator confirmation: ≥ 4 independent operators each < 1/3 of committed stake at genesis, re-checked each period, rebalancing by transfer (matures over 1000 blocks); a protocol weight cap is a consensus change, not implemented. Same text: node-scala `docs/hotstuff-audit-readiness.md` §3.
 - **`slashing-enabled` stays `no` fleet-wide** until one node has exercised a live equivocation drill (audit F-1, D4).
 - **No re-genesis unless Phase 3 proves the current chain unrecoverable.** PVCs are `Bound` and `linode-block-storage-retain`; the chain is expected to resume.
 - **Evidence before assertions.** Every "verified" checkbox names the command and pastes the decisive output line into the Soak Log (§ at end of this file).
