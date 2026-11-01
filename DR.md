@@ -200,3 +200,13 @@ payment-method screenshots live in the team drive.
 
 Evidence still owed (ECO-83): an invoice or test notification received at the ops address (date),
 the prepaid amount, and the owner names above.
+
+## 9. Alert relay and external monitor (ECO-63, ECO-70)
+
+The email alert channel and the external uptime monitor are one Cloudflare Worker, `dcc-ops-monitor`
+(`monitoring/external-monitor/`, account `f20fd999d41a1f79ff152e6e585c8c08`). It lives outside the Linode
+account, so it survives a Linode wipe, but it is **not** deployed by CI: it is deployed from a workstation
+with `npx wrangler@4 deploy`. Rebuild after an account loss: create the KV namespace, put its id in
+`wrangler.toml`, `wrangler secret put SMTP_PASSWORD` and `ALERT_RELAY_TOKEN` (the token is the SOPS key
+`ALERT_RELAY_TOKEN`), deploy, and update the `/alert` URL in `monitoring/alertmanager.yml` if the
+workers.dev subdomain changed. Details: `monitoring/EXTERNAL-UPTIME.md`.

@@ -154,6 +154,7 @@ DCC_RO_PASS=$(    extract 'DCC_RO_PASSWORD')       # Postgres role dcc_ro (data-
 DCC_PAIRS_PASS=$( extract 'DCC_PAIRS_PASSWORD')    # Postgres role dcc_pairs (pairs daemon)
 AM_SMTP_USER=$(   extract 'ALERTMANAGER_SMTP_USERNAME')  # Alertmanager email receiver
 AM_SMTP_PASS=$(   extract 'ALERTMANAGER_SMTP_PASSWORD')
+AM_RELAY_TOKEN=$( extract 'ALERT_RELAY_TOKEN')            # bearer for the Cloudflare alert-relay Worker
 R2_BACKUP_KEY_ID=$(   extract 'R2_BACKUP_ACCESS_KEY_ID')   # off-account backups (DR.md)
 R2_BACKUP_SECRET=$(   extract 'R2_BACKUP_SECRET_ACCESS_KEY')
 R2_BACKUP_ENDPOINT=$( extract 'R2_BACKUP_ENDPOINT')
@@ -205,6 +206,7 @@ echo "[push-secrets] Uploading secrets patch..."
   if [[ -n "${AM_SMTP_USER:-}" && -n "${AM_SMTP_PASS:-}" ]]; then
     printf 'ALERTMANAGER_SMTP_USERNAME=%s\nALERTMANAGER_SMTP_PASSWORD=%s\n' "${AM_SMTP_USER}" "${AM_SMTP_PASS}"
   fi
+  if [[ -n "${AM_RELAY_TOKEN:-}" ]]; then printf 'ALERT_RELAY_TOKEN=%s\n' "${AM_RELAY_TOKEN}"; fi
 } | $SSH "sudo tee /tmp/secrets-patch.env > /dev/null && \
   sudo touch /opt/dcc/secrets/${NETWORK}.env && \
   sudo bash -c 'cat /tmp/secrets-patch.env /opt/dcc/secrets/${NETWORK}.env \

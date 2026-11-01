@@ -345,7 +345,7 @@ groups:
           network: testnet
         annotations:
           summary: "Alertmanager failed to deliver notifications via {{ $labels.integration }}"
-          description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching one channel (integration webhook = GitHub issues: check alert-webhook-testnet /healthz and its GitHub token; integration email = SiteGround SMTP: check `docker logs alertmanager-testnet | grep -i smtp` and the ALERTMANAGER_SMTP_* SOPS keys)."
+          description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching one channel (integration webhook = GitHub issues: check alert-webhook-testnet /healthz and its GitHub token; integration email = the Cloudflare Worker relay (second webhook of github-and-email): check `docker logs alertmanager-testnet | grep -i webhook`, `wrangler tail dcc-ops-monitor` and the ALERT_RELAY_TOKEN SOPS key)."
 
       # TLS expiry, two tiers (ECO-64), for every public host the project serves, testnet or not
       # (exporter.py TLS_HOSTS; owners in DNS-INVENTORY.md). ServiceDown only fires after a certificate
