@@ -151,6 +151,13 @@ Listed by the lead with `linode-cli images list --is_public false` on 2026-10-31
 | `private/41602001` | turbo-team | 21111 MB | **PENDING — owner of that project** (not a DCC image) |
 | `private/41602005` | crypto-core | 18864 MB | **PENDING — owner of that project** (not a DCC image) |
 
+**Restore-test finding (2026-10-31).** The image carries static networking for `66.228.55.154` (the former
+main IP), so a Linode restored from it comes up with that address configured and is not reachable on its new
+IP. Re-point `/etc/network/interfaces` (or the cloud-init network config) before the first boot, for example by
+mounting the restored disk on a helper Linode, and keep the node's services masked until the node identity is
+deliberately restored. A restored disk also carries the main node's wallet and API keys: never boot it with
+outbound access unless it is meant to replace the node.
+
 Owner sign-off of the decisions above (must be dated before 2026-12-15): `PENDING — Owner`.
 
 **Export procedure (per kept image).** Boot a temporary Linode from the image in rescue mode (or
@@ -169,7 +176,7 @@ log, delete the test Linode. Delete every temporary Linode and record `linode-cl
 
 | Image | R2 object key | SHA-256 (at export) | SHA-256 (re-download) | Restore-test boot log | Temp Linodes deleted |
 |---|---|---|---|---|---|
-| `private/41601991` | PENDING | PENDING | PENDING | PENDING | PENDING |
+| `private/41601991` | `dcc-recovery-images/41601991/dcc-backend-testnet-debian12.img.zst.part-000` … `part-049` (50 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `d5224473e32c62716bc3f37a486fae6ce981c46a9ed942e4b31393319b8000d5`; compressed `661cb5e6bbf93b7ad89cb63678de64b03339623b81b9cf2dc267d444437dfa34` (export 2026-10-31 14:38Z–15:00Z) | identical for both (all 50 parts re-downloaded 2026-10-31 15:06Z–15:19Z and restored onto a blank 22,108 MB disk) | booted 2026-10-31 15:22Z from the restored disk with docker/containerd/postgresql/cron masked and a Cloud Firewall dropping all outbound traffic: kernel 6.1.0-53, `multi-user.target` reached, sshd listening, startup 2min 14.8s | yes: worker Linode and firewall deleted, `linode-cli linodes list` shows no `eco81-*` |
 
 ## 8. Account continuity (ECO-83)
 
