@@ -35,7 +35,7 @@ services:
     # We pin the compose healthcheck explicitly so `docker compose up --wait`
     # blocks until the DB connection is verified, not just until the process starts.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:${BPS_METRICS_PORT:-9090}/readiness"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${BPS_METRICS_PORT:-9090}/readiness"]
       interval: 30s
       timeout: 10s
       retries: 5
