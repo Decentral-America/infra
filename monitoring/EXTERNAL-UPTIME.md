@@ -47,6 +47,18 @@ quoted string with nothing stable to match.
 * State per target (status, consecutive failures, since, last alert) is in the KV namespace `STATE`.
 * `GET /status` with the same bearer token returns the JSON of all targets (evidence, and a manual health check).
 
+## Backup upload (`PUT /backup/<name>`, `GET /backups`) (ECO-85)
+
+The Worker also receives the daily Postgres dumps from the VPS (`scripts/pg-backup.sh`, DR.md) into the R2
+bucket `dcc-testnet-backups` (binding `BACKUPS`). Both routes use the separate bearer secret
+`BACKUP_UPLOAD_TOKEN` (the alert relay token does not work here and vice versa).
+
+- `PUT /backup/<name>`: name `^[A-Za-z0-9._-]{1,120}$`, convention `<db>-<YYYYmmddTHHMMSSZ>.dump`. Needs
+  `Content-Length`; empty body 400, over 95 MB 413. Optional `X-Content-SHA256`: verified by R2 (422 on mismatch,
+  nothing stored) and kept as object metadata. Stored at `pg/<name>`; reply `{"key","size","sha256"}`.
+- `GET /backups`: objects under `pg/`, newest first, with `size`, `uploaded`, `sha256`.
+- Retention: daily at 03:00-03:04 UTC the cron keeps the newest 7 `pg/<db>-<stamp>.dump` per database.
+
 ## Deploy (workstation, not CI)
 
 ```
@@ -56,6 +68,8 @@ npx wrangler@4 deploy
 npx wrangler@4 kv namespace create STATE        # put the id in wrangler.toml
 npx wrangler@4 secret put SMTP_PASSWORD
 npx wrangler@4 secret put ALERT_RELAY_TOKEN     # same value as the SOPS key ALERT_RELAY_TOKEN
+npx wrangler@4 r2 bucket create dcc-testnet-backups
+npx wrangler@4 secret put BACKUP_UPLOAD_TOKEN   # same value as the SOPS key BACKUP_UPLOAD_TOKEN
 ```
 
 To add or change a monitor, edit `TARGETS` in `src/index.js` and redeploy. To rotate the relay token, change the SOPS key,

@@ -1,6 +1,7 @@
 // dcc-ops-monitor: (A) POST /alert, Alertmanager webhook -> SMTP over implicit TLS (Linode blocks
 // outbound SMTP, so the VPS relays through this Worker); (B) cron uptime monitor of public endpoints.
-// No dependencies. Secrets: SMTP_PASSWORD, ALERT_RELAY_TOKEN. State: KV binding STATE.
+// (C) PUT /backup/<name> + GET /backups: off-account Postgres backups into R2 (binding BACKUPS, ECO-85).
+// No dependencies. Secrets: SMTP_PASSWORD, ALERT_RELAY_TOKEN, BACKUP_UPLOAD_TOKEN. State: KV binding STATE.
 import { connect } from 'cloudflare:sockets';
 
 const TARGETS = [
@@ -191,15 +192,107 @@ async function handleStatus(env) {
   return Response.json({ now: new Date().toISOString(), targets: out });
 }
 
+// ---------- (C) Postgres backups into R2 (ECO-85) ----------
+const BACKUP_PREFIX = 'pg/';
+const BACKUP_NAME_RE = /^[A-Za-z0-9._-]{1,120}$/;
+const BACKUP_DUMP_RE = /^(.+)-\d{8}T\d{6}Z\.dump$/;
+const BACKUP_MAX_BYTES = 95 * 1024 * 1024; // free-plan request body limit is 100 MB
+const BACKUP_KEEP = 7;
+
+function backupAuthorized(request, env) {
+  const m = /^Bearer (.+)$/.exec(request.headers.get('Authorization') || '');
+  return !!(m && env.BACKUP_UPLOAD_TOKEN && timingSafeEqual(m[1], env.BACKUP_UPLOAD_TOKEN));
+}
+
+const text = (msg, status) => new Response(`${msg}\n`, { status });
+
+async function handleBackupPut(request, env, name) {
+  if (!BACKUP_NAME_RE.test(name) || name === '.' || name === '..') return text('bad backup name', 400);
+  // Streamed straight into R2 (no buffering, the Worker has 128 MB of memory): a known length is required.
+  const len = Number(request.headers.get('Content-Length'));
+  if (!request.headers.has('Content-Length') || !Number.isInteger(len)) return text('Content-Length required', 411);
+  if (len === 0) return text('empty body', 400);
+  if (len > BACKUP_MAX_BYTES) return text('backup too large', 413);
+  const want = (request.headers.get('X-Content-SHA256') || '').toLowerCase();
+  if (want && !/^[0-9a-f]{64}$/.test(want)) return text('bad X-Content-SHA256', 400);
+  const key = BACKUP_PREFIX + name;
+  const opts = want ? { sha256: want, customMetadata: { sha256: want } } : {};
+  let obj;
+  try {
+    // With `sha256` R2 verifies the checksum itself and refuses to store a mismatching object.
+    obj = await env.BACKUPS.put(key, request.body.pipeThrough(new FixedLengthStream(len)), opts);
+  } catch (e) {
+    const msg = String(e && e.message);
+    if (want && /checksum|digest|sha/i.test(msg)) return text('sha256 mismatch', 422);
+    console.error('backup put failed', msg);
+    return text('storage failure', 502);
+  }
+  return Response.json({ key, size: obj.size, sha256: want || null });
+}
+
+async function listBackups(env) {
+  const out = [];
+  let cursor;
+  do {
+    const r = await env.BACKUPS.list({ prefix: BACKUP_PREFIX, cursor, include: ['customMetadata'] });
+    out.push(...r.objects);
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+  return out.sort((a, b) => b.uploaded - a.uploaded || (a.key < b.key ? 1 : -1));
+}
+
+async function handleBackupList(env) {
+  const objs = await listBackups(env);
+  return Response.json({
+    now: new Date().toISOString(),
+    count: objs.length,
+    objects: objs.map((o) => ({ key: o.key, size: o.size, uploaded: o.uploaded.toISOString(), sha256: o.customMetadata?.sha256 || null })),
+  });
+}
+
+// Keep the newest BACKUP_KEEP objects per database prefix (name minus the -<timestamp>.dump suffix).
+// Names embed a sortable UTC stamp, so the newest are the lexicographically largest.
+export async function pruneBackups(env, keep = BACKUP_KEEP) {
+  const groups = new Map();
+  for (const o of await listBackups(env)) {
+    const m = BACKUP_DUMP_RE.exec(o.key.slice(BACKUP_PREFIX.length));
+    if (!m) continue; // never delete anything that does not follow the naming
+    if (!groups.has(m[1])) groups.set(m[1], []);
+    groups.get(m[1]).push(o.key);
+  }
+  const deleted = [];
+  for (const keys of groups.values()) {
+    keys.sort().reverse();
+    for (const k of keys.slice(keep)) { await env.BACKUPS.delete(k); deleted.push(k); }
+  }
+  return deleted;
+}
+
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
-    if (pathname !== '/alert' && pathname !== '/status') return new Response('not found\n', { status: 404 });
+    const isBackupPut = pathname.startsWith('/backup/');
+    if (pathname !== '/alert' && pathname !== '/status' && pathname !== '/backups' && !isBackupPut) return new Response('not found\n', { status: 404 });
+    if (isBackupPut || pathname === '/backups') {
+      if (!backupAuthorized(request, env)) return new Response('unauthorized\n', { status: 401 });
+      if (isBackupPut) {
+        if (request.method !== 'PUT') return new Response('method not allowed\n', { status: 405 });
+        let name;
+        try { name = decodeURIComponent(pathname.slice('/backup/'.length)); } catch { return text('bad backup name', 400); }
+        return handleBackupPut(request, env, name);
+      }
+      return request.method === 'GET' ? handleBackupList(env) : new Response('method not allowed\n', { status: 405 });
+    }
     if (!authorized(request, env)) return new Response('unauthorized\n', { status: 401 });
     if (pathname === '/alert') return request.method === 'POST' ? handleAlert(request, env) : new Response('method not allowed\n', { status: 405 });
     return request.method === 'GET' ? handleStatus(env) : new Response('method not allowed\n', { status: 405 });
   },
-  async scheduled(_event, env, ctx) {
+  async scheduled(event, env, ctx) {
     ctx.waitUntil(runMonitor(env));
+    // Daily retention (03:00-03:04 UTC; the cron fires every 5 minutes, so exactly one run matches).
+    const t = new Date(event.scheduledTime ?? Date.now());
+    if (t.getUTCHours() === 3 && t.getUTCMinutes() < 5) {
+      ctx.waitUntil(pruneBackups(env).then((d) => { if (d.length) console.log('backup retention deleted', d.join(',')); }, (e) => console.error('backup retention failed', e.message)));
+    }
   },
 };

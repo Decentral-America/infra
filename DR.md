@@ -36,8 +36,8 @@ Operator approval: `PENDING — Owner` (name, date).
 
 | Item | Source | Method | Frequency / retention | Destination |
 |---|---|---|---|---|
-| BPS chain index `bps_<network>` | VPS system Postgres | `scripts/pg-backup.sh`: `pg_dump -Fc` as the `postgres` OS user (peer auth), verified with `pg_restore --list`, sha256 sidecar | daily 03:15 UTC (`dcc-pg-backup@<network>.timer`), keep 7 | `s3://dcc-<network>-backups/pg/bps_<network>/<UTC>.dump` |
-| Admin dashboard DB `admin_<network>` | VPS system Postgres | same | same | `.../pg/admin_<network>/<UTC>.dump` |
+| BPS chain index `bps_<network>` | VPS system Postgres | `scripts/pg-backup.sh`: `pg_dump -Fc` as the `postgres` OS user (peer auth), verified with `pg_restore --list`, sha256 sent as `X-Content-SHA256` and verified by the Worker | daily 03:15 UTC (`dcc-pg-backup@<network>.timer`), newest 7 kept by the Worker | R2 `dcc-<network>-backups`, key `pg/bps_<network>-<YYYYmmddTHHMMSSZ>.dump` |
+| Admin dashboard DB `admin_<network>` | VPS system Postgres | same | same | `pg/admin_<network>-<YYYYmmddTHHMMSSZ>.dump` |
 | Chain state (RocksDB) | ONE LKE node, default `dcc-val-0` (PVC `chain-data-dcc-val-0-0`, `/var/lib/dcc/data`) | `scripts/chain-snapshot.sh` (section 3) | daily **once the Operator approves the stop** (section 3), keep 7 | `.../chain/dcc-val-0/<UTC>-h<height>.tar.gz` + `.sha256` |
 | Grafana dashboards | git: `monitoring/dashboards/` (provisioned) | none needed | — | git |
 | Grafana state (public-dashboard share, users) | volume `grafana-data-<network>` | not backed up: `deploy-monitoring.sh` re-creates the public dashboard with its fixed token; anonymous access is off and logins use the admin password from SOPS | — | re-created by deploy |
@@ -90,24 +90,42 @@ concentration), so stopping any one LKE node costs the same ~9% and leaves > 2/3
   (c) weekly instead of daily (RPO 7 days for the chain; peers remain the first restore source).
   Decision: `PENDING — Owner`, date: `PENDING`.
 
-## 4. Destination and credentials
+## 4. Destination, upload path and credentials (ECO-85, live design)
 
-- Bucket per network: `dcc-<network>-backups` (Cloudflare R2, same account as `dcc-tofu-state`,
-  outside Linode). Image exports: `dcc-recovery-images`. **Both buckets: PENDING creation.**
-- API token: an R2 token scoped to Object Read & Write on that one bucket (not the tofu-state token).
-- On the VPS: `/opt/dcc/secrets/backup-<network>.env`, mode 600 root, with
-  `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `R2_BACKUP_ENDPOINT`
-  (`https://<account id>.r2.cloudflarestorage.com`). Source of truth: the same three keys in SOPS
-  `secrets/<network>.env`, **PENDING** (and the secrets push must write this file; not wired yet).
-- Retention is enforced by the scripts (keep 7). An R2 lifecycle rule deleting objects older than
-  30 days is a recommended backstop if a script ever stops pruning.
+No S3 API token exists (the operator's wrangler OAuth login cannot create R2 API tokens), so the VPS
+never talks to R2 directly. It uploads through the existing Cloudflare Worker `dcc-ops-monitor`
+(`monitoring/external-monitor/`), which holds an R2 binding `BACKUPS`.
+
+- Bucket: `dcc-testnet-backups` (Cloudflare R2, same account as `dcc-tofu-state`, outside Linode).
+  Mainnet gets its own bucket and binding when mainnet backups are enabled. Image exports use
+  `dcc-recovery-images` (section 7; PENDING creation).
+- Naming: `<db>-<YYYYmmddTHHMMSSZ>.dump`, e.g. `bps_testnet-20261102T031500Z.dump`, stored under `pg/`.
+- Upload: `PUT $BACKUP_WORKER_URL/backup/<name>` with `Authorization: Bearer <BACKUP_UPLOAD_TOKEN>` and
+  `X-Content-SHA256`. The Worker rejects a bad name (400), a missing Content-Length (411), an empty body
+  (400), a body over 95 MB (413) and a hash mismatch (422, nothing stored), and streams the body into R2.
+  The 95 MB limit is below the Worker free-plan request limit (100 MB). Testnet dumps are far smaller
+  (bps 91 MB of database, much less as a compressed custom dump); **if a dump nears the limit the script fails loudly and the
+  design must move to R2 multipart/S3 before mainnet.**
+- Evidence endpoint: `GET $BACKUP_WORKER_URL/backups` (same bearer) lists `pg/` objects, newest first,
+  with size, uploaded time and sha256.
+- Retention: the Worker's 5-minute cron runs once a day (03:00-03:04 UTC) and keeps the newest 7 objects per
+  database (the name before `-<stamp>.dump`), deleting older ones. Objects not matching the naming are
+  never deleted. An R2 lifecycle rule (30 days) remains a recommended backstop.
+- On the VPS: `/opt/dcc/secrets/backup-<network>.env`, mode 600 root:root, with `BACKUP_WORKER_URL` and
+  `BACKUP_UPLOAD_TOKEN`, written by `push-secrets.yml` / `push-secrets-local.sh` from the same two keys
+  in SOPS `secrets/<network>.env`. The script passes the token to curl through a 0600 header file, so it
+  is never in argv or the log. The local dump is deleted once uploaded.
+- The same token is the Worker secret `BACKUP_UPLOAD_TOKEN`; rotate by `wrangler secret put` plus a SOPS
+  update and a secrets push.
 
 ## 5. Restore procedure (fresh Linode, account-independent inputs only)
 
 1. `provision.yml` (tofu apply) for `<network>` -> new VPS; bootstrap installs Postgres, Docker,
    firewall, fail2ban, backup timer. Pin the new host key (`ssh/known_hosts`).
 2. `push-secrets.yml` (SOPS) -> master env, per-service env files, matcher config, Postgres password.
-3. Postgres: download the newest dumps and verify sha256, then
+3. Postgres: list with `GET /backups` and download the newest dumps from `pg/` with
+   `npx wrangler@4 r2 object get dcc-testnet-backups/pg/<name> --remote --file <name>` (Cloudflare account
+   login, no VPS needed); verify with `sha256sum` against the sha256 in `GET /backups`, then
    `pg_restore --clean --if-exists --no-owner --role=dcc -d bps_<network> <dump>` and the same for
    `admin_<network>` (as the `postgres` OS user). `bps_<network>` may instead be re-indexed from the
    node (runbooks/reset-bps-testnet.md) if the dump is older than the RPO.

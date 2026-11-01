@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/pg-backup.sh with stubbed runuser/pg_dump/pg_restore/aws. Run: bash scripts/tests/pg-backup.test.sh
+# Tests for scripts/pg-backup.sh with stubbed runuser/pg_dump/pg_restore/curl. Run: bash scripts/tests/pg-backup.test.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SUT="${ROOT}/scripts/pg-backup.sh"
@@ -22,57 +22,70 @@ cat > "${T}/bin/pg_restore" <<'STUB'
 #!/usr/bin/env bash
 grep -q '^PGDMP' "${!#}"
 STUB
-# aws: records every call; list-objects-v2 returns the fake bucket listing in $STUB_KEYS_<db>.
-cat > "${T}/bin/aws" <<'STUB'
+# curl: records every call (including the -H @file contents' presence, not its value). Emulates the
+# Worker: replies {"size":N} for the uploaded file, or fails like --fail for $STUB_CURL_FAIL.
+cat > "${T}/bin/curl" <<'STUB'
 #!/usr/bin/env bash
-echo "aws $*" >> "${STUB_LOG}"
-[[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]] || { echo "no creds" >&2; exit 1; }
-args=" $* "
-if [[ "${args}" == *" list-objects-v2 "* ]]; then
-  case "${args}" in
-    *"--prefix pg/bps_testnet/"*) printf '%s\n' "${STUB_KEYS_BPS:-None}" ;;
-    *) echo None ;;
+echo "curl $*" >> "${STUB_LOG}"
+file="" out="" url="" hdrfile=""
+while (( $# )); do
+  case "$1" in
+    -T) file="$2"; shift 2 ;;
+    -o) out="$2"; shift 2 ;;
+    -H) [[ "$2" == @* ]] && hdrfile="${2#@}"; shift 2 ;;
+    --retry|--max-time) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
   esac
-fi
-exit 0
+done
+grep -q '^Authorization: Bearer .' "${hdrfile}" || { echo "no auth header file" >&2; exit 22; }
+[[ -n "${STUB_CURL_FAIL:-}" && "${url}" == *"${STUB_CURL_FAIL}"* ]] && { echo "curl: (22) The requested URL returned error: 401" >&2; exit 22; }
+printf '{"key":"x","size":%s}' "$(wc -c < "${file}" | tr -d ' ')" > "${out}"
 STUB
 chmod +x "${T}/bin/"*
 
 cred="${T}/backup-testnet.env"
-printf 'R2_BACKUP_ACCESS_KEY_ID=ak\nR2_BACKUP_SECRET_ACCESS_KEY=test-secret-value-xyz\nR2_BACKUP_ENDPOINT=https://acct.r2.cloudflarestorage.com\n' > "${cred}"
+printf 'BACKUP_WORKER_URL=https://w.example.workers.dev\nBACKUP_UPLOAD_TOKEN=test-secret-value-xyz\n' > "${cred}"
 run() {
   env PATH="${T}/bin:${PATH}" STUB_LOG="${T}/calls.log" CRED_FILE="${cred}" WORK_DIR="${T}/work" \
     LOG_FILE="${T}/log/pg-backup.log" TEXTFILE="${T}/tf/dcc_pg_backup.prom" "$@" bash "${SUT}" testnet
 }
 
-# 1. Happy path: both databases dumped by name, uploaded under pg/<db>/, 9 old dumps pruned to 7.
+# 1. Happy path: both databases dumped by name and PUT to the Worker as <db>-<stamp>.dump.
 : > "${T}/calls.log"
-keys=""; for d in 01 02 03 04 05 06 07 08 09; do keys+="pg/bps_testnet/2026-10-${d}T031500Z.dump	pg/bps_testnet/2026-10-${d}T031500Z.sha256	"; done
-run STUB_KEYS_BPS="${keys}" >/dev/null || fail "happy path exited non-zero"
+run >/dev/null || fail "happy path exited non-zero"
 grep -qx 'pg_dump bps_testnet' "${T}/calls.log" || fail "bps_testnet not dumped"
 grep -qx 'pg_dump admin_testnet' "${T}/calls.log" || fail "admin_testnet not dumped"
-grep -qE 's3 cp --only-show-errors .*/bps_testnet-[0-9TZ-]+\.dump s3://dcc-testnet-backups/pg/bps_testnet/[0-9-]+T[0-9]{6}Z\.dump$' "${T}/calls.log" || fail "bps upload key"
-grep -qE 's3://dcc-testnet-backups/pg/admin_testnet/[0-9-]+T[0-9]{6}Z\.dump$' "${T}/calls.log" || fail "admin upload key"
-grep -q -- '--endpoint-url https://acct.r2.cloudflarestorage.com' "${T}/calls.log" || fail "R2 endpoint not used"
-[[ "$(grep -c 's3 rm s3://dcc-testnet-backups/pg/bps_testnet/.*\.dump$' "${T}/calls.log")" == 2 ]] || fail "expected 2 old dumps deleted"
-grep -q 's3 rm s3://dcc-testnet-backups/pg/bps_testnet/2026-10-01T031500Z.dump' "${T}/calls.log" || fail "oldest dump not deleted"
-if grep -q 's3 rm s3://dcc-testnet-backups/pg/bps_testnet/2026-10-03T' "${T}/calls.log"; then fail "deleted a dump inside the keep window"; fi
+grep -qE -- '-T [^ ]*/bps_testnet-[0-9]{8}T[0-9]{6}Z\.dump .*https://w\.example\.workers\.dev/backup/bps_testnet-[0-9]{8}T[0-9]{6}Z\.dump$' "${T}/calls.log" || fail "bps upload"
+grep -qE 'backup/admin_testnet-[0-9]{8}T[0-9]{6}Z\.dump$' "${T}/calls.log" || fail "admin upload"
+grep -q -- '--fail' "${T}/calls.log" || fail "curl --fail missing"
+grep -qE -- '-H X-Content-SHA256: [0-9a-f]{64}' "${T}/calls.log" || fail "sha256 header missing"
 f="${T}/tf/dcc_pg_backup.prom"
 grep -qE '^dcc_backup_last_success_timestamp_seconds\{kind="pg",target="bps_testnet"\} [0-9]+$' "${f}" || fail "bps metric"
 grep -qE '^dcc_backup_last_success_timestamp_seconds\{kind="pg",target="admin_testnet"\} [0-9]+$' "${f}" || fail "admin metric"
-[[ -z "$(find "${T}/work" -name '*.dump')" ]] || fail "local dump left behind"
+[[ -z "$(find "${T}/work" -name '*.dump')" ]] || fail "local dump left behind after success"
+[[ ! -e "${T}/work/.auth-header" ]] || fail "auth header file left behind"
 grep -q 'done: bps_testnet admin_testnet' "${T}/log/pg-backup.log" || fail "log file not written"
-if grep -q 'test-secret-value-xyz' "${T}/calls.log"; then fail "secret key on an aws command line"; fi
+if grep -rq 'test-secret-value-xyz' "${T}/calls.log" "${T}/log"; then fail "token leaked to argv or log"; fi
 
 # 2. A failed dump: exit non-zero, nothing uploaded for that DB, the other DB still backed up,
 #    and the failed DB keeps its previous metric sample (so its age alerts).
 : > "${T}/calls.log"
 sed -i.bak 's/target="bps_testnet"} [0-9]*/target="bps_testnet"} 1000/' "${f}"
 if run STUB_FAIL_DB=bps_testnet >/dev/null 2>&1; then fail "dump failure did not fail the run"; fi
-if grep -q 'pg/bps_testnet/.*\.dump$' "${T}/calls.log"; then fail "failed dump was uploaded"; fi
-grep -qE 's3://dcc-testnet-backups/pg/admin_testnet/.*\.dump$' "${T}/calls.log" || fail "other DB skipped after a failure"
+if grep -q 'backup/bps_testnet-' "${T}/calls.log"; then fail "failed dump was uploaded"; fi
+grep -qE 'backup/admin_testnet-.*\.dump$' "${T}/calls.log" || fail "other DB skipped after a failure"
 grep -qx 'dcc_backup_last_success_timestamp_seconds{kind="pg",target="bps_testnet"} 1000' "${f}" || fail "failed DB lost its previous sample"
 grep -q 'ERROR: backup of bps_testnet FAILED' "${T}/log/pg-backup.log" || fail "failure not logged"
+
+# 2b. Worker rejects the upload (e.g. 401/413/422): exit non-zero, metric sample kept, local copy kept.
+: > "${T}/calls.log"
+if run STUB_CURL_FAIL=backup/admin_testnet >/dev/null 2>&1; then fail "upload failure did not fail the run"; fi
+grep -q 'ERROR: backup of admin_testnet FAILED' "${T}/log/pg-backup.log" || fail "upload failure not logged"
+grep -qE 'backup/bps_testnet-' "${T}/calls.log" || fail "other DB skipped after upload failure"
+[[ -n "$(find "${T}/work" -name 'admin_testnet-*.dump')" ]] || fail "failed upload's local copy was removed"
+if grep -rq 'test-secret-value-xyz' "${T}/log"; then fail "token leaked to log"; fi
+rm -f "${T}"/work/*.dump
 
 # 3. Missing credentials: fail closed before dumping anything.
 : > "${T}/calls.log"

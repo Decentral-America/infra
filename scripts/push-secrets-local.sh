@@ -155,9 +155,8 @@ DCC_PAIRS_PASS=$( extract 'DCC_PAIRS_PASSWORD')    # Postgres role dcc_pairs (pa
 AM_SMTP_USER=$(   extract 'ALERTMANAGER_SMTP_USERNAME')  # Alertmanager email receiver
 AM_SMTP_PASS=$(   extract 'ALERTMANAGER_SMTP_PASSWORD')
 AM_RELAY_TOKEN=$( extract 'ALERT_RELAY_TOKEN')            # bearer for the Cloudflare alert-relay Worker
-R2_BACKUP_KEY_ID=$(   extract 'R2_BACKUP_ACCESS_KEY_ID')   # off-account backups (DR.md)
-R2_BACKUP_SECRET=$(   extract 'R2_BACKUP_SECRET_ACCESS_KEY')
-R2_BACKUP_ENDPOINT=$( extract 'R2_BACKUP_ENDPOINT')
+BACKUP_URL=$(   extract 'BACKUP_WORKER_URL')       # off-account backups via the Worker (DR.md)
+BACKUP_TOKEN=$( extract 'BACKUP_UPLOAD_TOKEN')
 
 MATCHER_SEED_B64=$(extract 'MATCHER_SEED_BASE64')
 # The matcher key comes from SOPS only (never read back from the live matcher: it echoes whatever
@@ -237,19 +236,18 @@ SEED_SH='f=$1; [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ] && echo >> "$f"; while I
 } | $SSH "sudo bash -c '${SEED_SH}' seed /opt/dcc/secrets/${NETWORK}.env"
 echo "[push-secrets] Seeded absent DCC_CHAIN_ID / ADMIN_DASHBOARD_PG_DATABASE / REDIS_URL (existing lines untouched)."
 
-# ── 1c. R2 backup credentials -> root-only env file (same as push-secrets.yml) ──
-if [[ -n "${R2_BACKUP_KEY_ID:-}" && -n "${R2_BACKUP_SECRET:-}" && -n "${R2_BACKUP_ENDPOINT:-}" ]]; then
-  printf 'R2_BACKUP_ACCESS_KEY_ID=%s\nR2_BACKUP_SECRET_ACCESS_KEY=%s\nR2_BACKUP_ENDPOINT=%s\n' \
-    "${R2_BACKUP_KEY_ID}" "${R2_BACKUP_SECRET}" "${R2_BACKUP_ENDPOINT}" \
+# ── 1c. Backup Worker credentials -> root-only env file (same as push-secrets.yml) ──
+if [[ -n "${BACKUP_URL:-}" && -n "${BACKUP_TOKEN:-}" ]]; then
+  printf 'BACKUP_WORKER_URL=%s\nBACKUP_UPLOAD_TOKEN=%s\n' "${BACKUP_URL}" "${BACKUP_TOKEN}" \
     | $SSH "sudo bash -c 'umask 077; cat > /opt/dcc/secrets/backup-${NETWORK}.env.new' && \
             sudo chown root:root /opt/dcc/secrets/backup-${NETWORK}.env.new && \
             sudo chmod 600 /opt/dcc/secrets/backup-${NETWORK}.env.new && \
             sudo mv -f /opt/dcc/secrets/backup-${NETWORK}.env.new /opt/dcc/secrets/backup-${NETWORK}.env"
   echo "[push-secrets] Backup credentials written (backup-${NETWORK}.env, 600 root)."
 else
-  echo "[push-secrets] WARNING: R2_BACKUP_* not all in SOPS: backup-${NETWORK}.env not written (DR.md)."
+  echo "[push-secrets] WARNING: BACKUP_WORKER_URL / BACKUP_UPLOAD_TOKEN not both in SOPS: backup-${NETWORK}.env not written (DR.md)."
 fi
-unset R2_BACKUP_KEY_ID R2_BACKUP_SECRET
+unset BACKUP_URL BACKUP_TOKEN
 
 # ── 2. Set postgres password ──────────────────────────────────────────────────
 $SSH "sudo -u postgres psql" << PGEOF
