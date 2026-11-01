@@ -54,7 +54,7 @@ DETECTED` logs); node-scala docs PR; #208 closure evidence; `scripts/check-diges
 
 ### ECO-49 — Forfeit the deposit of HotStuff equivocators
 **DONE 2026-11-01.** Lock-release spec and supply-accounting fix (node-scala #92), genesis-replay-check passed
-(run 41209978834 to height 61000; run 41275408878 from genesis to the live tip on v1.8.2's code), live re-drill on
+(run 41209978834 to height 61000; run 41275408878 from genesis to the live tip on main `23e55fa47f`, the code released as v1.8.3 apart from its Docker base-package fix and version bump), live re-drill on
 v1.8.3: deposit forfeited (balance −100.00 DCC, supply −100), all 4 nodes accepted the block. Details: Task 6.5.
 
 ### ECO-51 — Close Bug 2 (finalization rollback)
