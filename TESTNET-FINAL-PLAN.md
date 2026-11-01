@@ -115,10 +115,17 @@ DR.md "Account continuity" (structure; owner fields pending). **Owner:** 2 payme
 ops billing email, ≥ 2 months prepaid, monthly review, account behind each IP. Then tick Task 0.1 Step 1.
 
 ### ECO-85 — Backup and disaster-recovery policy
-In repo: DR.md (RPO/RTO proposed, Operator approval pending), `scripts/pg-backup.sh` + systemd timer from
-`bootstrap.sh`, chain-snapshot script (schedule pending an Operator decision, DR.md), `BackupStale` /
-`BackupNeverSucceeded` alerts. **Live:** R2 bucket + token into SOPS, push-secrets, install the timer on the
-existing VPS, remove the old cron, 7 daily objects, restore drill timed against the RTO.
+**Live (testnet, 2026-11-01):** R2 bucket `dcc-testnet-backups`; the `dcc-ops-monitor` Worker has the R2
+binding `BACKUPS`, secret `BACKUP_UPLOAD_TOKEN`, routes `PUT /backup/<name>` and `GET /backups`, and a daily
+retention (newest 7 per database). Verified end to end against the deployed Worker: 200 upload (2 MB and
+94 MB), listing, 401 wrong token, 400 bad name or empty body, 413 over 95 MB, 422 hash mismatch. No S3
+credentials are needed. In repo: DR.md (RPO/RTO proposed, Operator approval pending), `scripts/pg-backup.sh`
+uploading through the Worker + systemd timer, chain-snapshot script (schedule pending an Operator decision),
+`BackupStale` / `BackupNeverSucceeded` alerts, SOPS keys `BACKUP_WORKER_URL` / `BACKUP_UPLOAD_TOKEN`.
+**Remaining:** push-secrets to the VPS, install the script and units on the existing VPS (bootstrap only
+runs on new servers), run the service once and confirm with `GET /backups`, remove any old cron, 7
+consecutive daily objects, restore drill timed against the RTO, Operator approval of DR.md, chain
+snapshot schedule decision (it still needs S3 credentials or a Worker path of its own).
 
 ### ECO-97 — admin-e2e stability
 In repo: `admin-e2e.yml` alert-on-failure fires on any failed run of main (it was gated on `schedule`,
