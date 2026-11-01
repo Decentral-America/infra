@@ -160,14 +160,14 @@ data-service returns 200, elapsed time recorded against the RTO.
 Listed by the lead with `linode-cli images list --is_public false` on 2026-10-31. All created
 2026-10-01 (when non-payment deleted the account's Linodes), all **expire 2026-12-30**.
 
-| Image | Label / content | Size | Decision (2026-10-31) |
+| Image | Label / content | Size | Decision (2026-10-31; updated 2026-11-01) |
 |---|---|---|---|
 | `private/41601991` | dcc-backend-testnet, Debian 12 | 22091 MB | **KEEP**: the testnet VPS was restored from it on 2026-10-04; export off-account |
-| `private/41601994` | LKE boot disk | ~10 GB | **DROP**: LKE recreates worker nodes from its own image |
-| `private/41601999` | LKE boot disk | ~10 GB | **DROP**: same |
-| `private/41601995` | econode-1 | 18840 MB | **PENDING — owner of that project** (not a DCC image) |
-| `private/41602001` | turbo-team | 21111 MB | **PENDING — owner of that project** (not a DCC image) |
-| `private/41602005` | crypto-core | 18864 MB | **PENDING — owner of that project** (not a DCC image) |
+| `private/41601994` | LKE boot disk | ~10 GB | **DROP** (decision 2026-11-01): LKE recreates worker nodes from its own image |
+| `private/41601999` | LKE boot disk | ~10 GB | **DROP** (decision 2026-11-01): same |
+| `private/41601995` | econode-1 (not a DCC image) | 18840 MB | **KEEP — exported to R2** (decision 2026-11-01, taken by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30): `dcc-recovery-images/41601995/`, 55 parts, SHA-256 raw `8519bd1a6e4dda4c59ed7d27f7075abe8ef3cea07a8cac7f4a68e461f35b78b1`, compressed `502db9c342cd8abaea2fb4143dcc25fbaea4577b4cb51cce8f8583c36cd18e5d`, re-download verified identical |
+| `private/41602001` | turbo-team (not a DCC image) | 21111 MB | **KEEP — exported to R2** (decision 2026-11-01, taken by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30): `dcc-recovery-images/41602001/`, 56 parts, SHA-256 raw `105ac200bd470a959d7d0275ea119dc431368c8ed4d73a3421c9cdcb5a229344`, compressed `22f6a1b9bdd27f091799e5c44d6e19570325ef3604b8d062dfdcb3216068394a`, re-download verified identical |
+| `private/41602005` | crypto-core (not a DCC image) | 18864 MB | **KEEP — exported to R2** (decision 2026-11-01, taken by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30): `dcc-recovery-images/41602005/`, 56 parts, SHA-256 raw `59c72f10fc6fada8229638a96fc809182b622804c1900ba854b69f0046081003`, compressed `49e3c6f247a5e81cb1c2234107d73f7d674894ed134735fd46b4976902a2ab02`, re-download verified identical |
 
 **Restore-test finding (2026-10-31).** The image carries static networking for `66.228.55.154` (the former
 main IP), so a Linode restored from it comes up with that address configured and is not reachable on its new
@@ -195,6 +195,9 @@ log, delete the test Linode. Delete every temporary Linode and record `linode-cl
 | Image | R2 object key | SHA-256 (at export) | SHA-256 (re-download) | Restore-test boot log | Temp Linodes deleted |
 |---|---|---|---|---|---|
 | `private/41601991` | `dcc-recovery-images/41601991/dcc-backend-testnet-debian12.img.zst.part-000` … `part-049` (50 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `d5224473e32c62716bc3f37a486fae6ce981c46a9ed942e4b31393319b8000d5`; compressed `661cb5e6bbf93b7ad89cb63678de64b03339623b81b9cf2dc267d444437dfa34` (export 2026-10-31 14:38Z–15:00Z) | identical for both (all 50 parts re-downloaded 2026-10-31 15:06Z–15:19Z and restored onto a blank 22,108 MB disk) | booted 2026-10-31 15:22Z from the restored disk with docker/containerd/postgresql/cron masked and a Cloud Firewall dropping all outbound traffic: kernel 6.1.0-53, `multi-user.target` reached, sshd listening, startup 2min 14.8s | yes: worker Linode and firewall deleted, `linode-cli linodes list` shows no `eco81-*` |
+| `private/41601995` | `dcc-recovery-images/41601995/econode-1-disk.img.zst.part-000` … `part-054` (55 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `8519bd1a6e4dda4c59ed7d27f7075abe8ef3cea07a8cac7f4a68e461f35b78b1`; compressed `502db9c342cd8abaea2fb4143dcc25fbaea4577b4cb51cce8f8583c36cd18e5d` (export 2026-11-01 18:12Z–18:34Z) | identical for both (all 55 parts re-downloaded 18:44Z–18:55Z, streamed through `zstd -d | sha256sum`, nothing written to disk) | not performed (export and hash verification only; raw disk was never mounted or booted) | yes: worker Linode `eco81-export-worker-2` deleted 2026-11-01, `linode-cli linodes list` shows no `eco81-*` |
+| `private/41602001` | `dcc-recovery-images/41602001/turbo-team-disk.img.zst.part-000` … `part-055` (56 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `105ac200bd470a959d7d0275ea119dc431368c8ed4d73a3421c9cdcb5a229344`; compressed `22f6a1b9bdd27f091799e5c44d6e19570325ef3604b8d062dfdcb3216068394a` (export 2026-11-01 18:34Z–18:57Z) | identical for both (all 56 parts re-downloaded 19:02Z–19:15Z, streamed through `zstd -d | sha256sum`, nothing written to disk) | not performed (export and hash verification only; raw disk was never mounted or booted) | yes: worker Linode `eco81-export-worker-2` deleted 2026-11-01, `linode-cli linodes list` shows no `eco81-*` |
+| `private/41602005` | `dcc-recovery-images/41602005/crypto-core-disk.img.zst.part-000` … `part-055` (56 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `59c72f10fc6fada8229638a96fc809182b622804c1900ba854b69f0046081003`; compressed `49e3c6f247a5e81cb1c2234107d73f7d674894ed134735fd46b4976902a2ab02` (export 2026-11-01 18:57Z–19:21Z) | identical for both (all 56 parts re-downloaded 19:22Z–19:36Z, streamed through `zstd -d | sha256sum`, nothing written to disk) | not performed (export and hash verification only; raw disk was never mounted or booted) | yes: worker Linode `eco81-export-worker-2` deleted 2026-11-01, `linode-cli linodes list` shows no `eco81-*` |
 
 ## 8. Account continuity (ECO-83)
 
