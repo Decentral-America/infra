@@ -81,6 +81,36 @@ groups:
           summary: "Next committee smaller than current ({{ $value }} generators) with the period >80% elapsed"
           description: "A generator in the current committee has not committed for the next period. Check its logs for 'Self-commit' rejections/re-broadcasts and its peers; compare GET /generators/at/<current start> with /generators/at/<next start>."
 
+      # -1 = /generators/at/{nextPeriodStart} did not answer 200 (404 out of range, 5xx, timeout).
+      # CommitteeGapUpcoming deliberately matches only a real empty committee (== 0), so a node whose
+      # committee endpoint is broken for a long time would otherwise be invisible (ECO-63). 0 and
+      # positive values are real answers and never fire this.
+      - alert: CommitteeSizeUnknown
+        expr: |
+          dcc_next_period_committee_size == -1
+        for: 15m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "Next-period committee size unknown on {{ $labels.node }} for 15 min"
+          description: "dcc_next_period_committee_size has been -1 for 15 min: GET /generators/at/<next period start> did not return 200, so CommitteeGapUpcoming cannot see an empty committee coming. Check the node's REST API and `curl $NODE/generators/at/<next period start>`."
+
+      # HotStuff weighs committee votes by generating balance. A member holding >= 1/3 of the committee
+      # weight can block finality on its own, and at >= 2/3 it finalizes alone, so the committee stops
+      # being Byzantine-fault-tolerant (ECO-412; 2026-10-31: main held 73.4%). Share comes from
+      # exporter.py (GET /generators/at/{currentPeriodStart}, field "balance").
+      - alert: CommitteeMemberShareTooHigh
+        expr: |
+          dcc_committee_member_weight_share >= 1/3
+        for: 15m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "Committee member {{ $labels.address }} holds {{ $value | humanizePercentage }} of the committee weight"
+          description: "One current-period committee member holds >= 1/3 of the committee's generating balance for 15 min, so it can block finality alone (>= 2/3: it finalizes alone). Rebalance stake across the generators (Operator decision) and check GET /generators/at/<current period start>."
+
   - name: dcc-testnet-infra
     interval: 60s
     rules:
@@ -292,16 +322,18 @@ groups:
 
       # Generic scrape-target liveness for the services that had no `up == 0` rule at all.
       # (dcc-chain: ExporterDown; node/postgres: CapacityExporterDown; bps: BpsDown; lke-chain: LkeGeneratorsDown.)
+      # grafana/caddy/blackbox added for ECO-63. The blackbox-* probe jobs are NOT listed: their `up` only
+      # says the exporter answered; probe_success is the signal (EndpointProbeFailed).
       - alert: TargetDown
         expr: |
-          up{job=~"redis|loki|alloy|alertmanager|prometheus"} == 0
+          up{job=~"redis|loki|alloy|alertmanager|prometheus|grafana|caddy|blackbox"} == 0
         for: 5m
         labels:
           severity: high
           network: testnet
         annotations:
           summary: "{{ $labels.job }} is down (scrape failing for 5 min)"
-          description: "Prometheus cannot scrape job {{ $labels.job }} ({{ $labels.instance }}). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery."
+          description: "Prometheus cannot scrape job {{ $labels.job }} ({{ $labels.instance }}). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery; caddy down takes every public endpoint with it; blackbox down blinds EndpointProbeFailed."
 
       # A failing receiver means alerts fire but nobody hears them.
       - alert: AlertmanagerNotificationsFailing
@@ -313,20 +345,36 @@ groups:
           network: testnet
         annotations:
           summary: "Alertmanager failed to deliver notifications via {{ $labels.integration }}"
-          description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching GitHub issues. Check alert-webhook-testnet (/healthz) and its GitHub token."
+          description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching one channel (integration webhook = GitHub issues: check alert-webhook-testnet /healthz and its GitHub token; integration email = SiteGround SMTP: check `docker logs alertmanager-testnet | grep -i smtp` and the ALERTMANAGER_SMTP_* SOPS keys)."
 
-      # Early TLS warning. ServiceDown only fires after a certificate has already failed.
+      # TLS expiry, two tiers (ECO-64), for every public host the project serves, testnet or not
+      # (exporter.py TLS_HOSTS; owners in DNS-INVENTORY.md). ServiceDown only fires after a certificate
+      # has already failed. ACME clients (Caddy, GitHub Pages, Cloudflare) renew ~30 days before expiry,
+      # so under 21 days means renewal is failing; a manually bought certificate (decentralchain.com,
+      # GoDaddy) must be renewed by its owner. The 21-day tier is severity warning but alertmanager.yml
+      # routes TlsCert*/DomainExpir* to email too, so it reaches a human 21 days out.
       # dcc_tls_cert_expiry_timestamp_seconds comes from exporter.py (refreshed every 10 min).
-      - alert: TlsCertExpiringSoon
+      - alert: TlsCertExpiresWithin21Days
         expr: |
-          (dcc_tls_cert_expiry_timestamp_seconds - time()) < 14 * 86400
+          (dcc_tls_cert_expiry_timestamp_seconds - time()) < 21 * 86400
         for: 1h
         labels:
-          severity: high
+          severity: warning
           network: testnet
         annotations:
-          summary: "TLS certificate for {{ $labels.host }} expires in less than 14 days"
-          description: "Caddy renews Let's Encrypt certificates 30 days before expiry, so under 14 days left means renewal is failing (DNS moved, port 80/443 blocked, ACME rate limit). Check `docker logs caddy-testnet | grep -i acme`."
+          summary: "TLS certificate for {{ $labels.host }} expires in less than 21 days"
+          description: "An ACME-renewed certificate (Caddy, GitHub Pages, Cloudflare) should have renewed at ~30 days, so renewal is failing (DNS moved, port 80/443 blocked, ACME rate limit); for the testnet VPS check `docker logs caddy-testnet | grep -i acme`. A manually issued certificate must be renewed by its owner (DNS-INVENTORY.md)."
+
+      - alert: TlsCertExpiresWithin7Days
+        expr: |
+          (dcc_tls_cert_expiry_timestamp_seconds - time()) < 7 * 86400
+        for: 10m
+        labels:
+          severity: critical
+          network: testnet
+        annotations:
+          summary: "TLS certificate for {{ $labels.host }} expires in less than 7 days"
+          description: "Browsers and API clients will refuse {{ $labels.host }} when the certificate expires. Renew now: Caddy hosts via `docker exec caddy-testnet caddy reload` after fixing the ACME error; other hosts via their owner (DNS-INVENTORY.md)."
 
       - alert: TlsCertProbeFailed
         expr: |
@@ -363,6 +411,45 @@ groups:
         annotations:
           summary: "The InvalidStateHash log poll of {{ $labels.node }} has not succeeded for 10 min"
           description: "metrics-exporter (LKE) cannot read the pod log through the API (RBAC, apiserver reachability or pod missing), so InvalidStateHashDetected is blind for this node. Check `kubectl -n dcc logs deploy/metrics-exporter` and the metrics-exporter-pod-logs Role."
+
+      # A probe through DNS + Caddy + TLS that asserts a real answer (monitoring/blackbox.yml): matcher
+      # settings with its public key, a Postgres-backed data-service list, websocket /health and a real
+      # WebSocket upgrade. ServiceDown accepts any status < 500; this does not.
+      - alert: EndpointProbeFailed
+        expr: |
+          probe_success{job=~"blackbox-.*"} == 0
+        for: 5m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "{{ $labels.service }} probe {{ $labels.module }} failing for 5 min"
+          description: "blackbox_exporter probe {{ $labels.module }} of {{ $labels.instance }} has failed for 5 min (wrong status, missing body, TLS error, or no WebSocket upgrade). Reproduce with `curl -s 'http://127.0.0.1:9115/probe?debug=true&module={{ $labels.module }}&target=<target>'` on the VPS."
+
+      # Off-account backups (DR.md, scripts/pg-backup.sh -> node_exporter textfile). Daily at 03:15 UTC,
+      # so 26h without a success means a run failed or was skipped.
+      - alert: BackupStale
+        expr: |
+          (time() - dcc_backup_last_success_timestamp_seconds{kind="pg"}) > 26 * 3600
+        for: 15m
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "No successful Postgres backup of {{ $labels.target }} to R2 in 26h"
+          description: "dcc-pg-backup@testnet has not completed a backup of {{ $labels.target }} in 26h. Check `systemctl status dcc-pg-backup@testnet.service` and /var/log/dcc/pg-backup.log on the VPS, and /opt/dcc/secrets/backup-testnet.env (R2 credentials, DR.md)."
+
+      # A host where the backup never succeeded has no series at all, which BackupStale cannot see.
+      - alert: BackupNeverSucceeded
+        expr: |
+          absent(dcc_backup_last_success_timestamp_seconds{kind="pg"})
+        for: 26h
+        labels:
+          severity: high
+          network: testnet
+        annotations:
+          summary: "No Postgres backup has ever succeeded on this host"
+          description: "dcc_backup_last_success_timestamp_seconds{kind=\"pg\"} has been absent for 26h: the backup timer is not installed, has no R2 credentials, or has failed every run since boot. See DR.md and `systemctl list-timers 'dcc-pg-backup@*'`."
 
       # A container at >85% of its memory limit for 15 min is on its way to a kernel OOM kill and a
       # restart (Grafana was killed at 515 MB of 512 MiB on 2026-10-27, which failed the G2 soak).

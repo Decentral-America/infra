@@ -21,7 +21,7 @@ deploy_ssh_public_key = ""            # cat deploy_key_testnet.pub
 # postgres_host     = "localhost"     # default — co-located
 # postgres_port     = "5432"          # default
 # postgres_user     = "dcc"           # default
-# postgres_database = ""              # default: dcc_testnet (auto from workspace)
+# postgres_database = ""              # default: bps_<network> (terraform/main.tf)
 #
 # NOTE: there is no `postgres_password` OpenTofu variable. The PostgreSQL
 # password (POSTGRES_PASSWORD), DCC node wallet seed/password

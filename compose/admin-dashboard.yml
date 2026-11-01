@@ -1,8 +1,8 @@
 # docker-compose for DCC Node Dashboard
 # Location on server: /opt/dcc/compose/admin-dashboard.yml
 #
-# Traffic path: Cloudflare Tunnel → localhost:3001 → this container
-# No Caddy entry needed — the tunnel is the only ingress.
+# Traffic path: Caddy (admin_domain, scripts/render-caddyfile.sh) → 127.0.0.1:3001 → this container.
+# Listens on loopback only (HOST below); Caddy is the only ingress.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -20,6 +20,10 @@ services:
     env_file:
       - /opt/dcc/secrets/admin-dashboard-${NETWORK:-mainnet}.env
     environment:
+      # Loopback only (ECO-110 compose bind audit). react-router-serve listens on process.env.HOST when set,
+      # otherwise on every interface (@react-router/serve cli.js), which on the host network means the
+      # public IP, held back only by the host and cloud firewalls.
+      HOST: "127.0.0.1"
       # Grafana anonymous access is off; the Operations page embeds the public (shared) dashboard.
       # The page appends "/d/testnet?orgId=1&refresh=30s&kiosk" to this value, so the trailing
       # "_=" swallows that suffix into a harmless query param. The token must equal
@@ -28,7 +32,9 @@ services:
       # Treasury "fund" refuses every nodeUrl in production unless its origin is listed
       # (api.treasury.fund.ts isAllowedNodeUrl). Comma-separated origins.
       ADMIN_DASHBOARD_ALLOWED_NODE_URLS: "https://${NETWORK:-mainnet}-node.decentralchain.io"
-      # The image default (testnet-scanner.decentralchain.io) has no DNS record.
+      # Explicit scanner URL per network. The image default is now https://testnet.decentralscan.com
+      # (DecentralChain #135); setting it here keeps stagenet/mainnet off the testnet scanner.
+      # Live hosts: DNS-INVENTORY.md.
       ADMIN_DASHBOARD_SCANNER_URL: "https://${NETWORK:-mainnet}.decentralscan.com"
       # The admin image refuses to start in production without its own public URL (OAuth
       # callback and absolute links); it no longer bakes in a per-network default.
@@ -37,7 +43,7 @@ services:
       # denies everyone in production (apps/admin-dashboard treasuryAccess.ts).
       ADMIN_DASHBOARD_TREASURY_USERS: "${ADMIN_DASHBOARD_TREASURY_USERS:-jourlez}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3

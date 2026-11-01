@@ -33,6 +33,9 @@ required_keys() {
     admin-dashboard)          echo "ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_ID ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_SECRET ADMIN_DASHBOARD_JWT_SECRET ADMIN_DASHBOARD_GITHUB_PAT ADMIN_DASHBOARD_PG_DATABASE PGHOST PGPORT PGUSER PGPASSWORD DCC_NODE_URL GRAFANA_URL SENTRY_AUTH_TOKEN" ;;
     postgres-exporter)        echo "PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE" ;;
     alert-webhook)            echo "ADMIN_DASHBOARD_GITHUB_PAT" ;;
+    # Email receiver (monitoring/alertmanager.yml). compose/prometheus.yml's alertmanager entrypoint
+    # writes the password to a tmpfs file (auth_password_file) and the username into the config.
+    alertmanager)             echo "ALERTMANAGER_SMTP_USERNAME ALERTMANAGER_SMTP_PASSWORD" ;;
     *) echo "render-service-env: unknown service $1" >&2; return 1 ;;
   esac
 }
@@ -54,7 +57,7 @@ db_role() {
     *) echo "" ;;
   esac
 }
-SERVICES="node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook"
+SERVICES="node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook alertmanager"
 
 # First KEY=VALUE line for a key, verbatim (push-secrets dedupes the master file).
 line_for() { grep -m1 -E "^$1=" "${MASTER}" || true; }

@@ -8,6 +8,7 @@ sudo cp /tmp/config.alloy /opt/dcc/monitoring/config.alloy
 sudo cp /tmp/alertmanager.yml /opt/dcc/monitoring/alertmanager.yml
 sudo cp /tmp/alert-webhook.py /opt/dcc/monitoring/alert-webhook.py
 sudo cp /tmp/exporter.py /opt/dcc/monitoring/exporter.py
+sudo cp /tmp/blackbox.yml /opt/dcc/monitoring/blackbox.yml
 # Prometheus file_sd target for the LKE chain metrics-exporter NodePort (job
 # lke-chain). Written by deploy-monitoring-stack.yml from the LKE worker's current
 # public IP. Installed via a temp file + mv so Prometheus never reads a partial
@@ -51,7 +52,7 @@ rm -f /tmp/prometheus.yml /tmp/alerts.yml /tmp/loki-config.yaml \
       /tmp/config.alloy /tmp/alertmanager.yml /tmp/alert-webhook.py \
       /tmp/loki.yaml /tmp/prometheus.yaml /tmp/loki-compose.yml /tmp/prometheus-compose.yml \
       /tmp/grafana.ini /tmp/grafana-compose.yml /tmp/dashboards.yaml /tmp/testnet.json \
-      /tmp/lke-chain.json
+      /tmp/lke-chain.json /tmp/blackbox.yml
 
 # Every compose file in /opt/dcc/compose otherwise shares the same default
 # Compose project name (the directory basename), so --remove-orphans on one
@@ -112,6 +113,11 @@ sleep 4
 curl -s http://127.0.0.1:9100/metrics 2>/dev/null | grep -c '^node_filesystem_avail_bytes' | sed 's/^/  node_filesystem_avail_bytes series: /' || echo "  (node-exporter not reachable)"
 curl -s http://127.0.0.1:9187/metrics 2>/dev/null | grep -E '^pg_up ' || echo "  (postgres-exporter not reachable)"
 
+echo "=== (Re)start blackbox exporter (endpoint probes; blackbox.yml is read at startup) ==="
+NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --force-recreate blackbox-exporter
+for _ in $(seq 1 15); do curl -sf -o /dev/null http://127.0.0.1:9115/-/healthy && break; sleep 2; done
+if curl -sf -o /dev/null http://127.0.0.1:9115/-/healthy; then echo "  blackbox-exporter healthy"; else echo "ERROR: blackbox-exporter not healthy"; exit 1; fi
+
 echo "=== (Re)start Loki + Alloy (removes decommissioned promtail-testnet) ==="
 # --force-recreate: loki-config.yaml and config.alloy are bind-mounted files, which both programs read only
 # at startup; plain `up -d` leaves running containers on the old config (a Loki config fix deployed
@@ -125,7 +131,13 @@ echo "=== Restart Alertmanager + Alert Webhook ==="
 # --force-recreate: alertmanager.yml and alert-webhook.py are bind-mounted files read only at startup;
 # plain `up -d` left both on the old version (2026-10-10: Alertmanager kept the broken bearer_token_file
 # for 5 days after the fix was deployed, until a manual /-/reload).
+# The alertmanager entrypoint exits 1 without /opt/dcc/secrets/alertmanager-testnet.env (SMTP keys, written by
+# push-secrets via render-service-env.sh): run push-secrets first on a host that predates the email receiver.
+[ -f /opt/dcc/secrets/alertmanager-testnet.env ] || { echo "ERROR: /opt/dcc/secrets/alertmanager-testnet.env missing; run push-secrets.yml first"; exit 1; }
 NETWORK=testnet docker compose -p "$PROMETHEUS_PROJECT" -f /opt/dcc/compose/prometheus.yml up -d --force-recreate alertmanager alert-webhook
+for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:9093/-/ready && break; sleep 2; done
+if curl -sf -o /dev/null http://127.0.0.1:9093/-/ready; then echo "  alertmanager ready"
+else echo "ERROR: alertmanager not ready: $(docker logs --tail 20 alertmanager-testnet 2>&1)"; exit 1; fi
 
 # Grafana — isolated compose project so --remove-orphans elsewhere can't touch it, and so it
 # doesn't treat the other monitoring containers as orphans (see the 2026-07-04 incident note above).

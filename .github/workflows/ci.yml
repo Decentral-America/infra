@@ -63,7 +63,7 @@ jobs:
           KUSTOMIZE=registry.k8s.io/kustomize/kustomize:v5.7.1@sha256:937e7832dc0b09288b1398399dadb97382a27bbc35bee8fdcac47c7de4fff14d
           KUBECONFORM=ghcr.io/yannh/kubeconform:v0.7.0@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c
           SCHEMAS=(-schema-location default -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json')
-          for d in clusters/testnet clusters/testnet/apps clusters/testnet/monitoring; do
+          for d in clusters/testnet clusters/testnet/apps clusters/testnet/monitoring clusters/testnet/metrics-server; do
             echo "== kustomize build $d"
             docker run --rm -v "$PWD:/w:ro" -w /w "$KUSTOMIZE" build "$d" > "$RUNNER_TEMP/build.yaml"
             # SOPS-encrypted Secrets carry ciphertext kind/apiVersion until Flux decrypts them.
@@ -148,7 +148,7 @@ jobs:
           # Create dummy env/config files so compose config can parse references
           sudo mkdir -p /opt/dcc/secrets /opt/dcc/caddy
           sudo touch /opt/dcc/secrets/mainnet.env /opt/dcc/secrets/testnet.env /opt/dcc/secrets/stagenet.env /opt/dcc/secrets/grafana-testnet.env /opt/dcc/caddy/Caddyfile
-          for svc in node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook; do
+          for svc in node-scala scanner data-service data-service-pairs blockchain-postgres-sync websocket-api admin-dashboard postgres-exporter alert-webhook alertmanager; do
             for net in mainnet testnet stagenet; do sudo touch "/opt/dcc/secrets/${svc}-${net}.env"; done
           done
           for f in compose/*.yml; do
@@ -183,6 +183,17 @@ jobs:
           docker run --rm --entrypoint amtool -v "$PWD/monitoring:/w:ro" "$AM" check-config /w/alertmanager.yml
           docker run --rm --entrypoint amtool -v "$PWD/monitoring:/w:ro" "$AM" \
             config routes test --config.file=/w/alertmanager.yml alertname=Watchdog severity=none | grep -qx blackhole
+          # ECO-63/64: critical and high reach GitHub AND email; the 21-day TLS warning too; warnings stay GitHub-only.
+          rt() { docker run --rm --entrypoint amtool -v "$PWD/monitoring:/w:ro" "$AM" config routes test --config.file=/w/alertmanager.yml "$@"; }
+          rt alertname=X severity=critical | grep -qx github-and-email
+          rt alertname=X severity=high | grep -qx github-and-email
+          rt alertname=TlsCertExpiresWithin21Days severity=warning | grep -qx github-and-email
+          rt alertname=X severity=warning | grep -qx github-issues
+      - name: blackbox config check
+        run: |
+          set -euo pipefail
+          BB=$(grep -oE 'prom/blackbox-exporter:[^ ]+@sha256:[0-9a-f]+' compose/prometheus.yml)
+          docker run --rm -v "$PWD/monitoring/blackbox.yml:/c.yml:ro" "$BB" --config.file=/c.yml --config.check
 
       # ── Shell script linting ──────────────────────────────────────────────────
       - name: Install shellcheck

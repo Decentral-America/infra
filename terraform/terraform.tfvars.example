@@ -66,10 +66,12 @@ data_service_domain = "data-service.decentralchain.io"
 # If empty, certificates are requested anonymously (still works, no reminders).
 acme_email = "ops@decentralchain.io"
 
-# Note: off-site backup of chain state is intentionally NOT used. Every node
-# re-syncs from peers, so there is no pg_dump, no object-storage upload, and no
-# backup credentials. (This replaced the former Cloudflare R2 / object-storage
-# blockchain backup, which has been removed entirely.)
+# Backups (DR.md, ECO-85): no tofu variables. bootstrap.sh installs
+# scripts/pg-backup.sh + dcc-pg-backup@<network>.timer, which dump bps_<network>
+# and admin_<network> daily to the R2 bucket dcc-<network>-backups (keep 7).
+# The R2 credentials are NOT tofu/UDF inputs: they come from SOPS
+# (secrets/<network>.env) via the SSH secrets push into
+# /opt/dcc/secrets/backup-<network>.env. Chain state: scripts/chain-snapshot.sh.
 
 # ── Node wallet ──────────────────────────────────────────────────────────────
 # The node-scala entrypoint reads these env vars, writes them to a temp config

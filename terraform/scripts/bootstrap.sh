@@ -229,6 +229,28 @@ EOF
 systemctl enable --now fail2ban
 echo "[bootstrap] fail2ban enabled: SSH jail active (5 retries / 10 min -> 1 h ban)"
 
+# -- Host firewall (nftables, ENFORCING; AUD-052, ECO-110) ---------------------
+# Defense in depth behind the Linode Cloud Firewall: policy drop on INPUT except
+# 22/80/443/6868 tcp, 443 udp, ICMP, loopback and Docker bridges. Own table
+# (inet dcc_host) only. NEVER enable Debian's nftables.service: its
+# /etc/nftables.conf starts with `flush ruleset`, which would delete Docker's and
+# fail2ban's rules. The ruleset is syntax-checked before it is enabled.
+apt-get install -y -qq nftables
+install -d -m 755 /etc/dcc
+curl -fsSL "https://raw.githubusercontent.com/Decentral-America/infra/main/host/nftables/dcc-host.nft" \
+  -o /etc/dcc/dcc-host.nft
+chmod 644 /etc/dcc/dcc-host.nft
+curl -fsSL "https://raw.githubusercontent.com/Decentral-America/infra/main/host/systemd/dcc-host-firewall.service" \
+  -o /etc/systemd/system/dcc-host-firewall.service
+chmod 644 /etc/systemd/system/dcc-host-firewall.service
+nft -c -f /etc/dcc/dcc-host.nft \
+  || { echo "[bootstrap] FATAL: /etc/dcc/dcc-host.nft failed nft -c"; exit 1; }
+systemctl daemon-reload
+systemctl enable --now dcc-host-firewall.service
+nft list table inet dcc_host >/dev/null \
+  || { echo "[bootstrap] FATAL: table inet dcc_host not loaded"; exit 1; }
+echo "[bootstrap] Host firewall enabled: dcc-host-firewall.service (table inet dcc_host)"
+
 # -- Directory structure -------------------------------------------------------
 install -d -m 755 -o deploy -g deploy \
   /opt/dcc/compose \
@@ -389,7 +411,7 @@ sudo -u postgres psql -tc \
 # Admin dashboard operational database (load test history, future admin metadata).
 # Kept separate from the blockchain indexing database to avoid mixing concerns.
 sudo -u postgres psql -tc \
-  "SELECT 1 FROM pg_database WHERE datname = 'admin_testnet'" \
+  "SELECT 1 FROM pg_database WHERE datname = 'admin_${NETWORK}'" \
   | grep -q 1 || \
   sudo -u postgres createdb -O dcc "admin_${NETWORK}"
 
@@ -402,10 +424,32 @@ sudo -u postgres psql -c "ALTER SYSTEM SET log_disconnections = on;" >/dev/null 
 systemctl reload postgresql
 echo "[bootstrap] PostgreSQL hardened: scram-sha-256, connection logging enabled"
 
-# Chain state (Postgres, node-scala, matcher) is not backed up -- every node
-# re-syncs from peers. No local pg_dump, no off-site object-storage upload, no
-# backup cron. (Decision: rely on peer sync, not backup/restore. The former
-# Cloudflare R2 blockchain backup has been removed entirely.)
+# -- Daily Postgres backup to R2 (DR.md, ECO-85) -------------------------------
+# bps_<network> and admin_<network> are dumped (pg_dump -Fc as the postgres OS user,
+# peer auth) and uploaded to the R2 bucket dcc-<network>-backups, keeping 7 per DB,
+# by scripts/pg-backup.sh, run daily by dcc-pg-backup@<network>.timer. Peer re-sync
+# alone did not survive the 2026-10-01 account-level loss, so the off-account copy is
+# required (the 2026-10-07 "no testnet backups" decision is superseded, DR.md).
+# R2 credentials live in /opt/dcc/secrets/backup-<network>.env (600 root), written by
+# the SOPS secrets push; until it exists the job fails loudly (journal + log) and its
+# dcc_backup_last_success_timestamp_seconds metric never appears.
+# Debian 12 ships awscli 2.9.x (S3 API client for R2); security updates only.
+apt-get install -y -qq awscli
+install -d -m 750 /var/log/dcc
+install -d -m 700 /var/backups/dcc
+install -d -m 755 /var/lib/node_exporter/textfile
+curl -fsSL "https://raw.githubusercontent.com/Decentral-America/infra/main/scripts/pg-backup.sh" \
+  -o /opt/dcc/scripts/pg-backup.sh.tmp
+install -m 0755 -o root -g root /opt/dcc/scripts/pg-backup.sh.tmp /opt/dcc/scripts/pg-backup.sh
+rm -f /opt/dcc/scripts/pg-backup.sh.tmp
+for unit in dcc-pg-backup@.service dcc-pg-backup@.timer; do
+  curl -fsSL "https://raw.githubusercontent.com/Decentral-America/infra/main/host/systemd/${unit}" \
+    -o "/etc/systemd/system/${unit}"
+  chmod 644 "/etc/systemd/system/${unit}"
+done
+systemctl daemon-reload
+systemctl enable --now "dcc-pg-backup@${NETWORK}.timer"
+echo "[bootstrap] Daily Postgres backup timer enabled: dcc-pg-backup@${NETWORK}.timer"
 
 # -- GHCR authentication for docker pull --------------------------------------
 # GHCR login is handled per-deploy in deploy-container.yml by passing

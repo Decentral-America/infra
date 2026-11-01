@@ -203,12 +203,32 @@ services:
       - ALL
     volumes:
       - /opt/dcc/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    # SMTP credentials of the email receiver (ECO-63), rendered from SOPS by
+    # scripts/render-service-env.sh: ALERTMANAGER_SMTP_USERNAME / ALERTMANAGER_SMTP_PASSWORD only.
+    env_file:
+      - /opt/dcc/secrets/alertmanager-${NETWORK:-testnet}.env
+    # Alertmanager cannot expand env vars and has no username file, so the entrypoint below writes the
+    # password to a file only `nobody` can read (smtp_auth_password_file) and substitutes the username
+    # placeholder into a copy of the config, both on this tmpfs. Nothing secret touches the disk.
+    tmpfs:
+      - /run/alertmanager:size=1m,mode=0700,uid=65534,gid=65534
+    entrypoint: ["/bin/sh", "-ec"]
+    # $$ = a literal $ for the shell (compose would interpolate a single $).
     command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--web.listen-address=127.0.0.1:9093'
-      - '--storage.path=/alertmanager'
-      # Single instance: no HA gossip. The default listened on 0.0.0.0:9094 tcp+udp.
-      - '--cluster.listen-address='
+      - |
+        umask 077
+        case "$${ALERTMANAGER_SMTP_USERNAME:-}" in
+          ''|*[!A-Za-z0-9@._+-]*) echo "alertmanager: ALERTMANAGER_SMTP_USERNAME missing or invalid" >&2; exit 1 ;;
+        esac
+        [ -n "$${ALERTMANAGER_SMTP_PASSWORD:-}" ] || { echo "alertmanager: ALERTMANAGER_SMTP_PASSWORD missing" >&2; exit 1; }
+        printf '%s' "$$ALERTMANAGER_SMTP_PASSWORD" > /run/alertmanager/smtp_password
+        sed "s|__ALERTMANAGER_SMTP_USERNAME__|$$ALERTMANAGER_SMTP_USERNAME|" /etc/alertmanager/alertmanager.yml > /run/alertmanager/alertmanager.yml
+        unset ALERTMANAGER_SMTP_PASSWORD ALERTMANAGER_SMTP_USERNAME
+        exec /bin/alertmanager \
+          --config.file=/run/alertmanager/alertmanager.yml \
+          --web.listen-address=127.0.0.1:9093 \
+          --storage.path=/alertmanager \
+          --cluster.listen-address=
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9093/-/ready || exit 1"]
       interval: 60s
@@ -263,6 +283,40 @@ services:
         limits:
           # 64m -> 128m (2026-10-30): 75% of 64m at its 24h peak (48 MiB) for a stdlib HTTP server.
           memory: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # HTTP/TLS probes of the public endpoints (ECO-63), beyond ServiceDown's plain "<500" GET: each module
+  # asserts a status AND a body (or the WebSocket upgrade), through DNS + Caddy + TLS, as a user sees it.
+  # Scraped by monitoring/prometheus.yml jobs blackbox-* (multi-target pattern); EndpointProbeFailed.
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.29.1@sha256:ea1c7aa3ef3f307cd03e85f34abb604478ccb90b567fc690da0cd9776da76b13
+    container_name: "blackbox-exporter-${NETWORK:-testnet}"
+    network_mode: host
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    volumes:
+      - /opt/dcc/monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - '--config.file=/etc/blackbox_exporter/config.yml'
+      - '--web.listen-address=127.0.0.1:9115'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9115/-/healthy || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 64m
     logging:
       driver: "json-file"
       options:

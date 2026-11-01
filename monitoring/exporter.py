@@ -26,6 +26,11 @@ Metrics exposed:
                                       -1 if the endpoint returned a non-200 status (distinct from
                                       a genuine empty committee at HTTP 200 — see CommitteeGapUpcoming
                                       alert comment in alerts.yml for why this distinction matters).
+  dcc_committee_member_weight_share — each current-period committee member's share of the committee's
+                                      total generating balance (GET /generators/at/{currentPeriodStart},
+                                      field "balance"). >= 1/3 for one member means that member alone can
+                                      block, and with the rest, finalize (CommitteeMemberShareTooHigh).
+  dcc_committee_max_weight_share    — the largest of those shares
 """
 import concurrent.futures, http.server, json, os, socket, ssl, time, urllib.request
 
@@ -104,14 +109,19 @@ TLS_HOSTS = [h.strip() for h in os.getenv(
     "TLS_HOSTS",
     "testnet-node.decentralchain.io,testnet-matcher.decentralchain.io,"
     "testnet-data-service.decentralchain.io,testnet-ws.decentralchain.io,"
-    "testnet.decentralscan.com,testnet-admin.decentralchain.io,grafana.testnet.decentralchain.io",
+    "testnet.decentralscan.com,testnet-admin.decentralchain.io,grafana.testnet.decentralchain.io,"
+    # Non-testnet hosts the project serves (ECO-64; owners in DNS-INVENTORY.md). An expired
+    # certificate there breaks the public site/docs/legacy mainnet just as surely.
+    "decentralchain.io,www.decentralchain.io,docs.decentralchain.io,decentralchain.com,"
+    "mainnet-node.decentralchain.io,mainnet-matcher.decentralchain.io,data-service.decentralchain.io,"
+    "decentral.exchange,charts.decentral.exchange,testnet.decentral.exchange,decentralscan.com",
 ).split(",") if h.strip()]
 TLS_REFRESH_SECONDS = 600
 _tls_cache = {}  # host -> (checked_at, not_after_seconds or None)
 
 def tls_not_after(host):
     """notAfter of host:443's certificate as unix seconds, or None if the handshake failed.
-    Cached for TLS_REFRESH_SECONDS so a 30s scrape does not open 7 TLS sessions every time."""
+    Cached for TLS_REFRESH_SECONDS so a 30s scrape does not open a TLS session per host every time."""
     now = time.time()
     hit = _tls_cache.get(host)
     if hit and now - hit[0] < TLS_REFRESH_SECONDS:
@@ -170,6 +180,10 @@ def metrics():
         "# TYPE dcc_next_period_committee_size gauge",
         "# HELP dcc_current_period_committee_size Generator count of the CURRENT generation period (GET /generators/at/{currentPeriodStart})",
         "# TYPE dcc_current_period_committee_size gauge",
+        "# HELP dcc_committee_member_weight_share Share of the current-period committee's total generating balance held by one member (GET /generators/at/{currentPeriodStart})",
+        "# TYPE dcc_committee_member_weight_share gauge",
+        "# HELP dcc_committee_max_weight_share Largest single-member share of the current-period committee's generating balance",
+        "# TYPE dcc_committee_max_weight_share gauge",
     ]
 
     # Web-service liveness for every user-facing service (matcher, data-service,
@@ -280,6 +294,7 @@ def metrics():
                 cur_code, cur = fetch_with_status(f"{base}/generators/at/{period_start}")
                 if cur_code == 200 and isinstance(cur, list):
                     lines.append(f'dcc_current_period_committee_size{{{lbl}}} {len(cur)}')
+                    lines += committee_weight_lines(lbl, cur)
 
                 next_period_start = period_start + period_len
                 status_code, committee = fetch_with_status(f"{base}/generators/at/{next_period_start}")
@@ -294,6 +309,20 @@ def metrics():
         lines.append(f'dcc_scrape_error{{{lbl}}} {error}')
 
     return "\n".join(lines) + "\n"
+
+def committee_weight_lines(lbl, committee):
+    """Per-member share of the committee's total generating balance, plus the maximum. HotStuff
+    weighs votes by this balance, so one member at >= 1/3 can block finality on its own, and at
+    >= 2/3 finalizes alone (2026-10-31: main held 73.4%). Emits nothing for an empty committee or a
+    zero/unknown total (no division by zero, no fake 0 share)."""
+    members = [(m.get("address"), m.get("balance")) for m in committee if isinstance(m, dict)]
+    members = [(a, b) for a, b in members if isinstance(a, str) and isinstance(b, (int, float)) and b >= 0]
+    total = sum(b for _, b in members)
+    if not members or total <= 0:
+        return []
+    out = [f'dcc_committee_member_weight_share{{{lbl},address="{a}"}} {b / total:.6f}' for a, b in members]
+    out.append(f'dcc_committee_max_weight_share{{{lbl}}} {max(b for _, b in members) / total:.6f}')
+    return out
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):

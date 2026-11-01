@@ -344,7 +344,7 @@ tests:
               instance: 127.0.0.1:9121
             exp_annotations:
               summary: "redis is down (scrape failing for 5 min)"
-              description: "Prometheus cannot scrape job redis (127.0.0.1:9121). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery."
+              description: "Prometheus cannot scrape job redis (127.0.0.1:9121). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery; caddy down takes every public endpoint with it; blackbox down blinds EndpointProbeFailed."
 
   # AlertmanagerNotificationsFailing: any failed delivery fires immediately.
   - interval: 1m
@@ -365,30 +365,54 @@ tests:
               integration: webhook
             exp_annotations:
               summary: "Alertmanager failed to deliver notifications via webhook"
-              description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching GitHub issues. Check alert-webhook-testnet (/healthz) and its GitHub token."
+              description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching one channel (integration webhook = GitHub issues: check alert-webhook-testnet /healthz and its GitHub token; integration email = SiteGround SMTP: check `docker logs alertmanager-testnet | grep -i smtp` and the ALERTMANAGER_SMTP_* SOPS keys)."
 
-  # TlsCertExpiringSoon: 60 days left is quiet; 10 days left fires after 1h.
-  # promtool starts at time() = 0, so the expiry timestamps are seconds from t=0.
+  # TLS expiry tiers (ECO-64). promtool starts at time() = 0, so the expiry timestamps are seconds
+  # from t=0: 60d and 25d are quiet; 20d (the <21d fixture) fires the warning tier only; 5d fires both.
   - interval: 1m
     input_series:
       - series: 'dcc_tls_cert_expiry_timestamp_seconds{host="ok.example"}'
         values: '5184000x90'
+      - series: 'dcc_tls_cert_expiry_timestamp_seconds{host="month.example"}'
+        values: '2160000x90'
       - series: 'dcc_tls_cert_expiry_timestamp_seconds{host="soon.example"}'
-        values: '864000x90'
+        values: '1728000x90'
+      - series: 'dcc_tls_cert_expiry_timestamp_seconds{host="urgent.example"}'
+        values: '432000x90'
     alert_rule_test:
       - eval_time: 30m
-        alertname: TlsCertExpiringSoon
+        alertname: TlsCertExpiresWithin21Days
         exp_alerts: []
       - eval_time: 70m
-        alertname: TlsCertExpiringSoon
+        alertname: TlsCertExpiresWithin21Days
         exp_alerts:
           - exp_labels:
-              severity: high
+              severity: warning
               network: testnet
               host: soon.example
             exp_annotations:
-              summary: "TLS certificate for soon.example expires in less than 14 days"
-              description: "Caddy renews Let's Encrypt certificates 30 days before expiry, so under 14 days left means renewal is failing (DNS moved, port 80/443 blocked, ACME rate limit). Check `docker logs caddy-testnet | grep -i acme`."
+              summary: "TLS certificate for soon.example expires in less than 21 days"
+              description: "An ACME-renewed certificate (Caddy, GitHub Pages, Cloudflare) should have renewed at ~30 days, so renewal is failing (DNS moved, port 80/443 blocked, ACME rate limit); for the testnet VPS check `docker logs caddy-testnet | grep -i acme`. A manually issued certificate must be renewed by its owner (DNS-INVENTORY.md)."
+          - exp_labels:
+              severity: warning
+              network: testnet
+              host: urgent.example
+            exp_annotations:
+              summary: "TLS certificate for urgent.example expires in less than 21 days"
+              description: "An ACME-renewed certificate (Caddy, GitHub Pages, Cloudflare) should have renewed at ~30 days, so renewal is failing (DNS moved, port 80/443 blocked, ACME rate limit); for the testnet VPS check `docker logs caddy-testnet | grep -i acme`. A manually issued certificate must be renewed by its owner (DNS-INVENTORY.md)."
+      - eval_time: 5m
+        alertname: TlsCertExpiresWithin7Days
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: TlsCertExpiresWithin7Days
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              network: testnet
+              host: urgent.example
+            exp_annotations:
+              summary: "TLS certificate for urgent.example expires in less than 7 days"
+              description: "Browsers and API clients will refuse urgent.example when the certificate expires. Renew now: Caddy hosts via `docker exec caddy-testnet caddy reload` after fixing the ACME error; other hosts via their owner (DNS-INVENTORY.md)."
 
   # TlsCertProbeFailed after 30m.
   - interval: 5m
@@ -498,3 +522,185 @@ tests:
             exp_annotations:
               summary: "Deadman heartbeat (always firing)"
               description: "Checked off-box by infra-liveness.yml. If this alert is ever absent from Alertmanager, the alerting pipeline is broken."
+
+  # CommitteeSizeUnknown (ECO-63): -1 held 15m fires; 0 (real empty committee), 4 and a -1 that
+  # recovers after 10m stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_next_period_committee_size{node="main-node"}'
+        values: '-1x30'
+      - series: 'dcc_next_period_committee_size{node="zero-node"}'
+        values: '0x30'
+      - series: 'dcc_next_period_committee_size{node="ok-node"}'
+        values: '4x30'
+      - series: 'dcc_next_period_committee_size{node="blip-node"}'
+        values: '-1x10 4x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CommitteeSizeUnknown
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: CommitteeSizeUnknown
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              node: main-node
+            exp_annotations:
+              summary: "Next-period committee size unknown on main-node for 15 min"
+              description: "dcc_next_period_committee_size has been -1 for 15 min: GET /generators/at/<next period start> did not return 200, so CommitteeGapUpcoming cannot see an empty committee coming. Check the node's REST API and `curl $NODE/generators/at/<next period start>`."
+
+  # TargetDown now also covers grafana, caddy and the blackbox exporter; a probe job's `up` is not
+  # TargetDown's business (EndpointProbeFailed), and a healthy grafana is silent.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="grafana", instance="127.0.0.1:3002"}'
+        values: '1x10'
+      - series: 'up{job="caddy", instance="127.0.0.1:2020"}'
+        values: '0x10'
+      - series: 'up{job="blackbox", instance="127.0.0.1:9115"}'
+        values: '0x10'
+      - series: 'up{job="blackbox-http", instance="https://x.example/"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: caddy
+              instance: 127.0.0.1:2020
+            exp_annotations:
+              summary: "caddy is down (scrape failing for 5 min)"
+              description: "Prometheus cannot scrape job caddy (127.0.0.1:2020). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery; caddy down takes every public endpoint with it; blackbox down blinds EndpointProbeFailed."
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: blackbox
+              instance: 127.0.0.1:9115
+            exp_annotations:
+              summary: "blackbox is down (scrape failing for 5 min)"
+              description: "Prometheus cannot scrape job blackbox (127.0.0.1:9115). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery; caddy down takes every public endpoint with it; blackbox down blinds EndpointProbeFailed."
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="grafana", instance="127.0.0.1:3002"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: grafana
+              instance: 127.0.0.1:3002
+            exp_annotations:
+              summary: "grafana is down (scrape failing for 5 min)"
+              description: "Prometheus cannot scrape job grafana (127.0.0.1:3002). redis down breaks websocket-api and the faucet limiter; loki/alloy down stops log collection; alertmanager down stops ALL alert delivery; caddy down takes every public endpoint with it; blackbox down blinds EndpointProbeFailed."
+
+  # EndpointProbeFailed: a failing matcher probe fires after 5m; a passing data-service probe and a
+  # 2-minute websocket blip do not.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-http", instance="https://m.example/matcher/settings", module="http_matcher_settings", service="matcher"}'
+        values: '0x10'
+      - series: 'probe_success{job="blackbox-http", instance="https://ds.example/v0/x", module="http_data_service_list", service="data-service"}'
+        values: '1x10'
+      - series: 'probe_success{job="blackbox-websocket", instance="ws.example:443", module="tcp_websocket_upgrade_testnet_ws", service="websocket"}'
+        values: '0 0 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: EndpointProbeFailed
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: EndpointProbeFailed
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              job: blackbox-http
+              instance: https://m.example/matcher/settings
+              module: http_matcher_settings
+              service: matcher
+            exp_annotations:
+              summary: "matcher probe http_matcher_settings failing for 5 min"
+              description: "blackbox_exporter probe http_matcher_settings of https://m.example/matcher/settings has failed for 5 min (wrong status, missing body, TLS error, or no WebSocket upgrade). Reproduce with `curl -s 'http://127.0.0.1:9115/probe?debug=true&module=http_matcher_settings&target=<target>'` on the VPS."
+
+  # BackupStale: last success at t=0 -> stale once 26h pass (+15m for); a fresh backup is silent.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_backup_last_success_timestamp_seconds{kind="pg", target="bps_testnet"}'
+        values: '0x1700'
+      - series: 'dcc_backup_last_success_timestamp_seconds{kind="pg", target="admin_testnet"}'
+        values: '0+60x1700'
+    alert_rule_test:
+      - eval_time: 26h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              kind: pg
+              target: bps_testnet
+            exp_annotations:
+              summary: "No successful Postgres backup of bps_testnet to R2 in 26h"
+              description: "dcc-pg-backup@testnet has not completed a backup of bps_testnet in 26h. Check `systemctl status dcc-pg-backup@testnet.service` and /var/log/dcc/pg-backup.log on the VPS, and /opt/dcc/secrets/backup-testnet.env (R2 credentials, DR.md)."
+      - eval_time: 27h
+        alertname: BackupNeverSucceeded
+        exp_alerts: []
+
+  # BackupNeverSucceeded: no series at all for 26h fires.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="node"}'
+        values: '1x1700'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: BackupNeverSucceeded
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupNeverSucceeded
+        exp_alerts:
+          - exp_labels:
+              severity: high
+              network: testnet
+              kind: pg
+            exp_annotations:
+              summary: "No Postgres backup has ever succeeded on this host"
+              description: "dcc_backup_last_success_timestamp_seconds{kind=\"pg\"} has been absent for 26h: the backup timer is not installed, has no R2 credentials, or has failed every run since boot. See DR.md and `systemctl list-timers 'dcc-pg-backup@*'`."
+
+  # CommitteeMemberShareTooHigh (ECO-412): 0.734 held 15m fires critical; 0.25 and 0.3 stay silent,
+  # and a 10-minute spike does not fire.
+  - interval: 1m
+    input_series:
+      - series: 'dcc_committee_member_weight_share{node="main-node", address="31RPEK"}'
+        values: '0.734153x30'
+      - series: 'dcc_committee_member_weight_share{node="main-node", address="31PmKN"}'
+        values: '0.25x30'
+      - series: 'dcc_committee_member_weight_share{node="main-node", address="31XTtK"}'
+        values: '0.3x30'
+      - series: 'dcc_committee_member_weight_share{node="main-node", address="31dLhq"}'
+        values: '0.5x10 0.2x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CommitteeMemberShareTooHigh
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: CommitteeMemberShareTooHigh
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              network: testnet
+              node: main-node
+              address: 31RPEK
+            exp_annotations:
+              summary: "Committee member 31RPEK holds 73.42% of the committee weight"
+              description: "One current-period committee member holds >= 1/3 of the committee's generating balance for 15 min, so it can block finality alone (>= 2/3: it finalizes alone). Rebalance stake across the generators (Operator decision) and check GET /generators/at/<current period start>."

@@ -3,13 +3,14 @@ kind: Kustomization
 # Explicitly scope what the root flux-system Kustomization applies.
 # Without this, Flux walks the entire tree and finds SOPS-encrypted files
 # in apps/ before the apps Kustomization (which has SOPS enabled) can
-# handle them. The apps/ and monitoring/ directories are managed by their
-# own Kustomizations (apps, monitoring) which have decryption configured.
+# handle them. The apps/, monitoring/ and metrics-server/ directories are managed by their
+# own Kustomizations (apps, monitoring, metrics-server); apps has SOPS decryption configured.
 resources:
   - flux-system/
   - apps.yaml
   - monitoring.yaml
   - policy.yaml
+  - metrics-server.yaml
 # exchange.yaml / exchange-platform.yaml (the copied PRODUCTION web stack plus
 # its ingress-nginx + cert-manager) were retired from this cluster; the only git
 # copy now lives in archive/production-exchange-stack/ and is not reconciled.

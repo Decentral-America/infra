@@ -1,0 +1,14 @@
+[Unit]
+Description=Back up bps_%i and admin_%i to R2 dcc-%i-backups (infra scripts/pg-backup.sh, DR.md)
+After=postgresql.service network-online.target
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dcc/scripts/pg-backup.sh %i
+# A dump of a large bps_<network> can take a while; never let a hung upload run into the next day.
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

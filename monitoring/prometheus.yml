@@ -120,3 +120,89 @@ scrape_configs:
     relabel_configs:
       - target_label: network
         replacement: testnet
+
+  # Grafana's own /metrics (ECO-63). Served on loopback only; Caddy refuses /metrics on the public
+  # Grafana host (scripts/render-caddyfile.sh). Feeds TargetDown.
+  - job_name: grafana
+    static_configs:
+      - targets: ['127.0.0.1:3002']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
+  # Caddy's metrics handler on a loopback-only site (scripts/render-caddyfile.sh, 127.0.0.1:2020).
+  # Caddy's admin API is a unix socket, so it cannot be scraped directly. Feeds TargetDown.
+  - job_name: caddy
+    static_configs:
+      - targets: ['127.0.0.1:2020']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
+  # blackbox_exporter itself (compose/prometheus.yml). If it is down every probe below goes silent,
+  # so TargetDown covers it.
+  - job_name: blackbox
+    static_configs:
+      - targets: ['127.0.0.1:9115']
+    relabel_configs:
+      - target_label: network
+        replacement: testnet
+
+  # Public endpoint probes (ECO-63), multi-target pattern: each target is "<module>@<url>", the
+  # module part selects the check in monitoring/blackbox.yml. probe_success feeds EndpointProbeFailed.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    static_configs:
+      - targets:
+          - 'http_matcher_settings@https://testnet-matcher.decentralchain.io/matcher/settings'
+          - 'http_data_service_list@https://testnet-data-service.decentralchain.io/v0/transactions/transfer?limit=1'
+          - 'http_2xx@https://testnet-ws.decentralchain.io/health'
+        labels:
+          network: testnet
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^@]+)@.+'
+        target_label: __param_module
+      - source_labels: [__address__]
+        regex: '[^@]+@(.+)'
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - source_labels: [__param_module]
+        target_label: module
+      - source_labels: [__param_target]
+        regex: 'https://testnet-matcher\..*'
+        target_label: service
+        replacement: matcher
+      - source_labels: [__param_target]
+        regex: 'https://testnet-data-service\..*'
+        target_label: service
+        replacement: data-service
+      - source_labels: [__param_target]
+        regex: 'https://testnet-ws\..*'
+        target_label: service
+        replacement: websocket
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  - job_name: blackbox-websocket
+    metrics_path: /probe
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    params:
+      module: [tcp_websocket_upgrade_testnet_ws]
+    static_configs:
+      - targets: ['testnet-ws.decentralchain.io:443']
+        labels:
+          network: testnet
+          service: websocket
+          module: tcp_websocket_upgrade_testnet_ws
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115

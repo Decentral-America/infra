@@ -400,6 +400,38 @@ still crashloops, check the seed Secret decrypted (`kubectl get secret dcc-val0-
 
 ---
 
+## Scenario G — `ghcr-pull-secret` (image pull credential) and metrics-server
+
+**State (2026-10-31, ECO-110).** The three node StatefulSets reference `imagePullSecrets: ghcr-pull-secret`
+(`apps/nodes.yaml`), but no such Secret is defined in git, and no GHCR credential exists in `secrets/` or
+in any SOPS file. Pods pull today only because `ghcr.io/decentral-america/node-scala` is public: an
+anonymous manifest request for the pinned digest returns HTTP 200 (`curl` with an anonymous
+`ghcr.io/token?scope=repository:decentral-america/node-scala:pull` token, 2026-10-31). The kubelet ignores
+the missing Secret. If the package ever goes private, every pod restart fails with `ImagePullBackOff`.
+
+**To close it (Operator, never invent a credential):**
+1. Create a dedicated token with **`read:packages` only**, owned by a machine/ops identity, not a person.
+   GitHub's Container registry docs authenticate with a personal access token (classic) carrying
+   `read:packages`. Store it in the vault; never in chat or git.
+2. Build the manifest locally and encrypt it before it touches git (`.sops.yaml` matches
+   `clusters/testnet/.*\.secret\.yaml` to the testnet age key):
+   ```bash
+   kubectl create secret docker-registry ghcr-pull-secret -n dcc \
+     --docker-server=ghcr.io --docker-username=<identity> --docker-password="$(<read from vault>)" \
+     --dry-run=client -o yaml > clusters/testnet/apps/ghcr-pull-secret.secret.yaml
+   sops --encrypt --in-place clusters/testnet/apps/ghcr-pull-secret.secret.yaml
+   ```
+3. Add `- ghcr-pull-secret.secret.yaml` to `clusters/testnet/apps/kustomization.yaml` (the `apps` Flux
+   Kustomization already decrypts with `sops-age`). Open a PR; CI kubeconform skips SOPS documents.
+4. Verify after Flux applies: `kubectl -n dcc get secret ghcr-pull-secret` and, on the next pod start,
+   `kubectl -n dcc get events | grep -i pull` shows no auth error.
+
+**metrics-server** is Flux-managed from `clusters/testnet/metrics-server/` (upstream v0.9.0 manifest plus an
+LKE patch: `--kubelet-insecure-tls`, `InternalIP`; the reason is in that kustomization). Verify with
+`kubectl top nodes` and `kubectl -n kube-system get apiservice v1beta1.metrics.k8s.io` (Available=True).
+
+---
+
 ## Known CI Non-Issues (investigated, deliberately not "fixed")
 
 > Forcing these would be reckless, not thorough. Recorded so nobody re-investigates the same dead end.
