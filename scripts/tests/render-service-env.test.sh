@@ -55,6 +55,7 @@ BPS_BLOCKCHAIN_UPDATES_URL=grpc://localhost:6881
 BPS_CHAIN_ID=33
 ALERTMANAGER_SMTP_USERNAME=ops@example.org
 ALERTMANAGER_SMTP_PASSWORD=smtp=pw#1
+ALERT_RELAY_TOKEN=relaytoken1
 ENV
 
 # 1. Happy path: every service file is written, values are byte-identical.
@@ -78,7 +79,7 @@ done
 [[ "$(grep -v '^#' "${T}/out/node-scala-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "DCC_WALLET_SEED DCC_WALLET_PASSWORD " ]] || fail "node-scala key set"
 [[ "$(grep -v '^#' "${T}/out/websocket-api-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "REPO__PASSWORD " ]] || fail "websocket-api key set"
 grep -q '^TREASURY_SEED=treasury seed$' "${T}/out/admin-dashboard-testnet.env" || fail "admin-dashboard lacks optional TREASURY_SEED"
-[[ "$(grep -v '^#' "${T}/out/alertmanager-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "ALERTMANAGER_SMTP_USERNAME ALERTMANAGER_SMTP_PASSWORD " ]] || fail "alertmanager key set"
+[[ "$(grep -v '^#' "${T}/out/alertmanager-testnet.env" | cut -d= -f1 | tr '\n' ' ')" == "ALERTMANAGER_SMTP_USERNAME ALERTMANAGER_SMTP_PASSWORD ALERT_RELAY_TOKEN " ]] || fail "alertmanager key set"
 # The SMTP password reaches the alertmanager env file only.
 [[ "$(grep -l '^ALERTMANAGER_SMTP_PASSWORD=' "${T}"/out/*.env | xargs -n1 basename | tr '\n' ' ')" == "alertmanager-testnet.env " ]] || fail "SMTP password rendered outside alertmanager"
 # 3b. Fail closed: no SMTP password -> no alertmanager file, exit 1, other services still written.

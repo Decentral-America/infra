@@ -1,5 +1,9 @@
 global:
   resolve_timeout: 5m
+  # NOTE: the smtp_* settings below are now unused by any receiver. Email is relayed through the
+  # Cloudflare Worker (receiver github-and-email) because Linode blocks outbound SMTP (ticket 27787085).
+  # They are kept, with their SOPS keys and the entrypoint plumbing, so the native email_configs path
+  # can be restored in one edit if the block is lifted; removing them is a follow-up cleanup.
   # Second alert channel, independent of GitHub (ECO-63). SiteGround's SMTP host for the
   # decentralchain.io mailbox; `mail.decentralchain.io` has no DNS record, so it is not used.
   # Port 465 = implicit TLS (Alertmanager notify/email: useImplicitTLS when the port is 465);
@@ -58,9 +62,16 @@ receivers:
     webhook_configs:
       - url: 'http://localhost:9099/alert'
         send_resolved: true
-    email_configs:
-      - to: 'info@decentralchain.io'
+      # Email leg (ECO-63): the Linode VPS cannot open outbound SMTP (support ticket 27787085), so
+      # this posts to the Cloudflare Worker `dcc-ops-monitor` (monitoring/external-monitor), which
+      # sends the mail over SMTPS from Cloudflare. The bearer token is read from the tmpfs file the
+      # compose entrypoint writes from SOPS (ALERT_RELAY_TOKEN); no credential is in git.
+      - url: 'https://dcc-ops-monitor.summer-waterfall-845b.workers.dev/alert'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/alertmanager/relay_token
 
 inhibit_rules:
   # If ExporterDown, suppress all other alerts (no data = no real state)

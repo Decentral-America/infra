@@ -204,7 +204,7 @@ services:
     volumes:
       - /opt/dcc/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     # SMTP credentials of the email receiver (ECO-63), rendered from SOPS by
-    # scripts/render-service-env.sh: ALERTMANAGER_SMTP_USERNAME / ALERTMANAGER_SMTP_PASSWORD only.
+    # scripts/render-service-env.sh: ALERTMANAGER_SMTP_USERNAME / ALERTMANAGER_SMTP_PASSWORD / ALERT_RELAY_TOKEN only.
     env_file:
       - /opt/dcc/secrets/alertmanager-${NETWORK:-testnet}.env
     # Alertmanager cannot expand env vars and has no username file, so the entrypoint below writes the
@@ -222,8 +222,11 @@ services:
         esac
         [ -n "$${ALERTMANAGER_SMTP_PASSWORD:-}" ] || { echo "alertmanager: ALERTMANAGER_SMTP_PASSWORD missing" >&2; exit 1; }
         printf '%s' "$$ALERTMANAGER_SMTP_PASSWORD" > /run/alertmanager/smtp_password
+        # Bearer for the Cloudflare Worker alert relay (webhook_configs http_config.authorization.credentials_file).
+        [ -n "$${ALERT_RELAY_TOKEN:-}" ] || { echo "alertmanager: ALERT_RELAY_TOKEN missing" >&2; exit 1; }
+        printf '%s' "$$ALERT_RELAY_TOKEN" > /run/alertmanager/relay_token
         sed "s|__ALERTMANAGER_SMTP_USERNAME__|$$ALERTMANAGER_SMTP_USERNAME|" /etc/alertmanager/alertmanager.yml > /run/alertmanager/alertmanager.yml
-        unset ALERTMANAGER_SMTP_PASSWORD ALERTMANAGER_SMTP_USERNAME
+        unset ALERTMANAGER_SMTP_PASSWORD ALERTMANAGER_SMTP_USERNAME ALERT_RELAY_TOKEN
         exec /bin/alertmanager \
           --config.file=/run/alertmanager/alertmanager.yml \
           --web.listen-address=127.0.0.1:9093 \

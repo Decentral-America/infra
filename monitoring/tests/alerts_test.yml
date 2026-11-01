@@ -365,7 +365,7 @@ tests:
               integration: webhook
             exp_annotations:
               summary: "Alertmanager failed to deliver notifications via webhook"
-              description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching one channel (integration webhook = GitHub issues: check alert-webhook-testnet /healthz and its GitHub token; integration email = SiteGround SMTP: check `docker logs alertmanager-testnet | grep -i smtp` and the ALERTMANAGER_SMTP_* SOPS keys)."
+              description: "alertmanager_notifications_failed_total increased in the last 30 min. Alerts are firing but not reaching one channel (integration webhook = GitHub issues: check alert-webhook-testnet /healthz and its GitHub token; integration email = the Cloudflare Worker relay (second webhook of github-and-email): check `docker logs alertmanager-testnet | grep -i webhook`, `wrangler tail dcc-ops-monitor` and the ALERT_RELAY_TOKEN SOPS key)."
 
   # TLS expiry tiers (ECO-64). promtool starts at time() = 0, so the expiry timestamps are seconds
   # from t=0: 60d and 25d are quiet; 20d (the <21d fixture) fires the warning tier only; 5d fires both.

@@ -16,6 +16,8 @@ services:
     env_file:
       - /opt/dcc/secrets/blockchain-postgres-sync-${NETWORK:-mainnet}.env
     environment:
+      # Listen on loopback only (ECO-110): Caddy and Prometheus reach it on 127.0.0.1; the app default is 0.0.0.0.
+      BIND_ADDR: "127.0.0.1"
       # All BPS config uses BPS_ prefix via envy::prefixed("BPS_").
       # BPS_BLOCKCHAIN_UPDATES_URL and BPS_CHAIN_ID come from env_file.
       # BPS_STARTING_HEIGHT: 1 = genesis block (DCC block heights start at 1, not 0).

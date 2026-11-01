@@ -26,6 +26,8 @@ services:
       - /opt/dcc/secrets/websocket-api-${NETWORK:-mainnet}.env
     environment:
       PORT: "8081"
+      # Listen on loopback only (ECO-110): Caddy and Prometheus reach it on 127.0.0.1; the app default is 0.0.0.0.
+      BIND_ADDR: "127.0.0.1"
       SHARD_COUNT: "20"
       MAX_CONNECTIONS: "10000"
       # Must be less than terminationGracePeriodSeconds (30s default in K8s;

@@ -1,0 +1,26 @@
+# Cloudflare Worker: HTTPS->SMTP alert relay (ECO-63) + external uptime monitor (ECO-70).
+# Deployed from a workstation with `npx wrangler@4 deploy`; see ../EXTERNAL-UPTIME.md.
+name = "dcc-ops-monitor"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+account_id = "f20fd999d41a1f79ff152e6e585c8c08"
+workers_dev = true
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true
+
+[vars]
+SMTP_HOST = "gtxm1040.siteground.biz"
+SMTP_PORT = "465"
+SMTP_USER = "info@decentralchain.io"
+MAIL_TO = "info@decentralchain.io"
+MAIL_FROM = "info@decentralchain.io"
+
+# Secrets (wrangler secret put): SMTP_PASSWORD, ALERT_RELAY_TOKEN. Never in this file.
+
+[[kv_namespaces]]
+binding = "STATE"
+id = "fd5381bcb3a84a0b9e8bdf6f500b101e"

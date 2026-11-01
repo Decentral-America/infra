@@ -33,9 +33,10 @@ required_keys() {
     admin-dashboard)          echo "ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_ID ADMIN_DASHBOARD_GITHUB_OAUTH_CLIENT_SECRET ADMIN_DASHBOARD_JWT_SECRET ADMIN_DASHBOARD_GITHUB_PAT ADMIN_DASHBOARD_PG_DATABASE PGHOST PGPORT PGUSER PGPASSWORD DCC_NODE_URL GRAFANA_URL SENTRY_AUTH_TOKEN" ;;
     postgres-exporter)        echo "PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE" ;;
     alert-webhook)            echo "ADMIN_DASHBOARD_GITHUB_PAT" ;;
-    # Email receiver (monitoring/alertmanager.yml). compose/prometheus.yml's alertmanager entrypoint
+    # Email receiver (monitoring/alertmanager.yml). ALERT_RELAY_TOKEN is the bearer of the Cloudflare
+    # Worker relay (monitoring/external-monitor) that actually sends the mail. compose/prometheus.yml's alertmanager entrypoint
     # writes the password to a tmpfs file (auth_password_file) and the username into the config.
-    alertmanager)             echo "ALERTMANAGER_SMTP_USERNAME ALERTMANAGER_SMTP_PASSWORD" ;;
+    alertmanager)             echo "ALERTMANAGER_SMTP_USERNAME ALERTMANAGER_SMTP_PASSWORD ALERT_RELAY_TOKEN" ;;
     *) echo "render-service-env: unknown service $1" >&2; return 1 ;;
   esac
 }
