@@ -49,12 +49,13 @@ Blocked by ECO-42, 49, 51, 63, 66, 73, 76, 97, 99. Freeze, sample with `scripts/
 Tick Task 6.5 Steps 1-5 with Step 4 rewritten to the real evidence path (`finalizationVoting.hotstuffConflicts`
 in block 56354, `/generators/at` conflictHeight, `/node/status` hotStuffEquivocationsTotal, `EQUIVOCATION
 DETECTED` logs); node-scala docs PR; #208 closure evidence; `scripts/check-digest-parity.sh` output;
-`DRILL_OFFENDER_SEED` kept only until the ECO-49 re-drill (the re-drill reuses it, so removal is part of ECO-49's closure).
+`DRILL_OFFENDER_SEED` removed from `secrets/testnet.env` on 2026-11-01, after the ECO-49 re-drill (below).
 **2026-11-01:** #208 was closed by hand on 2026-10-13, so the pipeline was re-tested: the promtool fire/resolve fixtures pass (`monitoring/tests/alerts_test.yml`, HotStuffEquivocationDetected), and the live pipeline's test alert (infra #295) opened and was auto-closed by `github-actions[bot]` within seconds of resolving. `scripts/check-digest-parity.sh` 2026-11-01: all four testnet nodes pin `sha256:e00bb982…` (v1.8.1).
 
 ### ECO-49 — Forfeit the deposit of HotStuff equivocators
-Lock-release spec (RocksDBWriter), `genesis-replay-check.yml` past heights 56354 and 60000, re-drill
-outside any soak window (⛔), red-before/green-after evidence.
+**DONE 2026-11-01.** Lock-release spec and supply-accounting fix (node-scala #92), genesis-replay-check passed
+(run 41209978834 to height 61000; run 41275408878 from genesis to the live tip on v1.8.2's code), live re-drill on
+v1.8.3: deposit forfeited (balance −100.00 DCC, supply −100), all 4 nodes accepted the block. Details: Task 6.5.
 
 ### ECO-51 — Close Bug 2 (finalization rollback)
 `FinalizationRollbackSpec` on node-scala main, run against `d5b614ee`/current digest; consumer list for
@@ -85,7 +86,8 @@ gave up after 5 failed recoveries, and `quorum = 1` was unmet. After the heal al
 16:32Z with no rollback (the LKE side had no fork to abandon), the same block id at height 111500 on all 4, 0
 InvalidStateHash, 0 restarts. Conclusion: the single-hub peering is a real stall mode, and main alone can finalize.
 Both are fixed by the ECO-66 config commit (mutual known-peers, quorum 1) and ECO-412 (rebalance).
-See the statement above. Config commit is the last commit of the ECO-sprint-1 infra PR. **Live:** ⛔
+**DONE 2026-11-01:** config live (main quorum 1, 15d; mutual known-peers), all four nodes rolled one at a time to v1.8.3; main stopped 10 min (13:50-14:03Z): the other three kept forging and finalizing, gen-0 had 2 peers at every sample (gen-1 and val-0 peer counts not recorded: their SOPS API keys are rejected by the nodes, see ECO-76).
+See the statement above. Config commit was the last commit of the ECO-sprint-1 infra PR. **Live:** ⛔
 long-partition drill on the CURRENT settings first, then deploy-node-config + Flux, then main stopped 10 min
 → each LKE node ≥ 2 peers.
 
@@ -720,6 +722,14 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 - [x] **Step 3:** Produce an equivocation from a throwaway generator using the node-it harness technique (`FourNodeHotStuffTestSuite` equivocation scenario) against testnet, or by running a second gen-1 instance with the same key for one block (⛔, destructive to gen-1's reputation on the chain; use a funded throwaway generator instead if possible).
 - [x] **Step 4:** Expected and observed: the proof is in the block's `finalizationVoting.hotstuffConflicts` (block 56354, not a transaction), `/generators/at` shows `conflictHeight`, `/node/status` shows `hotStuffEquivocationsTotal`, node logs show `EQUIVOCATION DETECTED`, `HotStuffEquivocationDetected` fires; the other three nodes (slashing off) accepted the block. The deposit forfeiture (fixed in #77, gated at height 60000) is re-drilled under ECO-49.
 - [x] **Step 5:** Decision, 2026-10-12, recorded 2026-11-01 in node-scala `docs/hotstuff-audit-readiness.md` §8 and here (D4, line 180): `slashing-enabled` stays `no` fleet-wide until #77 is live and the external audit is done.
+
+**Re-drill 2026-11-01 (ECO-49), node-scala v1.8.3 on all four nodes.**
+- Offender `31Q7J8cVtBcGDkuUfuppqvm7Cq7BDgDAuVP` (regular balance 1999.90 DCC) committed for the period starting at 112701 (tx `3ZZHsQYJNbf4mVASq7vHiNNvJKT9gw1CRqHg9pkgRHtn`, fee 0.1 DCC) and joined as committee index 4 (5 members).
+- `slashing-enabled = yes` on gen-0 only (applied directly to the gen-0 ConfigMap/StatefulSet with Flux suspended, not committed), confirmed per node: gen-0 yes; gen-1, val-0, main no.
+- 14:28:47Z: `EquivocationDrill equivocate` sent two PREPARE votes for view 112704 (epoch 1127). 14:29:15Z: all four nodes logged `EQUIVOCATION DETECTED: voter #4`; `dcc_hotstuff_equivocations_total` = 1.
+- gen-0 folded the proof into block **112717** (`Avemos49jUm8…`). The same block id is on all four nodes, so all accepted it. `/generators/at` shows the offender with `conflictHeight = 112717` and weight 0.
+- **Forfeiture:** the offender's regular balance went from 1999.80 DCC (after the 0.1 DCC fee) to **1899.80 DCC**, exactly the 100 DCC deposit. The recorded total supply moved −80 DCC at block 112718 (+20 reward −100 forfeited), which is the supply accounting fixed in node-scala #92.
+- gen-0 was rolled back to `slashing-enabled = no` (restored committed `nodes.yaml`, rolled gen-0, then resumed Flux: `lastAppliedRevision` unchanged and no pod start time changed). Fleet decision unchanged: `slashing-enabled` stays `no` until the external audit is done.
 
 **Result 2026-10-12 (Claude):** drill run with a throwaway committee member instead of a real node.
 - Offender `31Q7J8cVtBcGDkuUfuppqvm7Cq7BDgDAuVP` was funded at h54946 and committed at h56240 (tx `5p4r2mgS…`) for period 56301, as committee index #4.
