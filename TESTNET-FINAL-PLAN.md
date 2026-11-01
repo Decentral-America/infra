@@ -105,9 +105,7 @@ rotate OAuth client secret, Sentry token, admin PAT, `TF_VAR_ROOT_PASSWORD`; ded
 `docker inspect` env check per service against the table.
 
 ### ECO-81 — Preserve Linode recovery images before 2026-12-30
-DR.md "Linode private images": keep 41601991, drop the two LKE boot disks, three non-DCC images pending
-their owner. **DONE live 2026-10-31:** exported to R2 `dcc-recovery-images` (50 parts), SHA-256 verified against a full
-re-download, restore boot test with the clone isolated, temp Linode and firewall deleted. Evidence in DR.md §7.
+DR.md §7: all images are decided (2026-11-01, by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30). The four kept images (41601991, 41601995, 41602001, 41602005) are exported to R2 `dcc-recovery-images` and verified by SHA-256 against a full re-download; 41601991 also had a restore boot test (2026-10-31). The two LKE boot disks (41601994, 41601999) are dropped. Temp Linodes deleted. Evidence in DR.md §7.
 Owner sign-off of the keep/drop list (before 2026-12-15) is still pending.
 
 ### ECO-83 — Linode billing safeguards
