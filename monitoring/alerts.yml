@@ -437,7 +437,7 @@ groups:
           network: testnet
         annotations:
           summary: "No successful Postgres backup of {{ $labels.target }} to R2 in 26h"
-          description: "dcc-pg-backup@testnet has not completed a backup of {{ $labels.target }} in 26h. Check `systemctl status dcc-pg-backup@testnet.service` and /var/log/dcc/pg-backup.log on the VPS, and /opt/dcc/secrets/backup-testnet.env (R2 credentials, DR.md)."
+          description: "dcc-pg-backup@testnet has not completed a backup of {{ $labels.target }} in 26h. Check `systemctl status dcc-pg-backup@testnet.service` and /var/log/dcc/pg-backup.log on the VPS, and /opt/dcc/secrets/backup-testnet.env (BACKUP_WORKER_URL / BACKUP_UPLOAD_TOKEN, DR.md) and `GET /backups` on the Worker."
 
       # A host where the backup never succeeded has no series at all, which BackupStale cannot see.
       - alert: BackupNeverSucceeded
@@ -449,7 +449,7 @@ groups:
           network: testnet
         annotations:
           summary: "No Postgres backup has ever succeeded on this host"
-          description: "dcc_backup_last_success_timestamp_seconds{kind=\"pg\"} has been absent for 26h: the backup timer is not installed, has no R2 credentials, or has failed every run since boot. See DR.md and `systemctl list-timers 'dcc-pg-backup@*'`."
+          description: "dcc_backup_last_success_timestamp_seconds{kind=\"pg\"} has been absent for 26h: the backup timer is not installed, has no Worker upload credentials, or has failed every run since boot. See DR.md and `systemctl list-timers 'dcc-pg-backup@*'`."
 
       # A container at >85% of its memory limit for 15 min is on its way to a kernel OOM kill and a
       # restart (Grafana was killed at 515 MB of 512 MiB on 2026-10-27, which failed the G2 soak).

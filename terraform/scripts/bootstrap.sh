@@ -426,14 +426,17 @@ echo "[bootstrap] PostgreSQL hardened: scram-sha-256, connection logging enabled
 
 # -- Daily Postgres backup to R2 (DR.md, ECO-85) -------------------------------
 # bps_<network> and admin_<network> are dumped (pg_dump -Fc as the postgres OS user,
-# peer auth) and uploaded to the R2 bucket dcc-<network>-backups, keeping 7 per DB,
-# by scripts/pg-backup.sh, run daily by dcc-pg-backup@<network>.timer. Peer re-sync
-# alone did not survive the 2026-10-01 account-level loss, so the off-account copy is
-# required (the 2026-10-07 "no testnet backups" decision is superseded, DR.md).
-# R2 credentials live in /opt/dcc/secrets/backup-<network>.env (600 root), written by
-# the SOPS secrets push; until it exists the job fails loudly (journal + log) and its
-# dcc_backup_last_success_timestamp_seconds metric never appears.
-# Debian 12 ships awscli 2.9.x (S3 API client for R2); security updates only.
+# peer auth) by scripts/pg-backup.sh, run daily by dcc-pg-backup@<network>.timer, and
+# uploaded through the Cloudflare Worker dcc-ops-monitor (PUT /backup/<name>), which
+# stores them in R2 and keeps the newest 7 per database. No S3 credentials exist on
+# the host. Peer re-sync alone did not survive the 2026-10-01 account-level loss, so
+# the off-account copy is required (the 2026-10-07 "no testnet backups" decision is
+# superseded, DR.md).
+# BACKUP_WORKER_URL / BACKUP_UPLOAD_TOKEN live in /opt/dcc/secrets/backup-<network>.env
+# (600 root), written by the SOPS secrets push; until it exists the job fails loudly
+# (journal + log) and its dcc_backup_last_success_timestamp_seconds metric never appears.
+# curl (>= 7.55, for -H @file) is what uploads; awscli is kept only for scripts/chain-snapshot.sh
+# (S3 API; its schedule and credentials are still an Operator decision, DR.md section 3).
 apt-get install -y -qq awscli
 install -d -m 750 /var/log/dcc
 install -d -m 700 /var/backups/dcc

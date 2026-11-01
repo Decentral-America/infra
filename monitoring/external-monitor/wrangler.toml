@@ -19,8 +19,13 @@ SMTP_USER = "info@decentralchain.io"
 MAIL_TO = "info@decentralchain.io"
 MAIL_FROM = "info@decentralchain.io"
 
-# Secrets (wrangler secret put): SMTP_PASSWORD, ALERT_RELAY_TOKEN. Never in this file.
+# Secrets (wrangler secret put): SMTP_PASSWORD, ALERT_RELAY_TOKEN, BACKUP_UPLOAD_TOKEN. Never in this file.
 
 [[kv_namespaces]]
 binding = "STATE"
 id = "fd5381bcb3a84a0b9e8bdf6f500b101e"
+
+# Off-account Postgres backups (ECO-85). Secret BACKUP_UPLOAD_TOKEN via `wrangler secret put`.
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "dcc-testnet-backups"

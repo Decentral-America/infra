@@ -36,8 +36,8 @@ Operator approval: `PENDING — Owner` (name, date).
 
 | Item | Source | Method | Frequency / retention | Destination |
 |---|---|---|---|---|
-| BPS chain index `bps_<network>` | VPS system Postgres | `scripts/pg-backup.sh`: `pg_dump -Fc` as the `postgres` OS user (peer auth), verified with `pg_restore --list`, sha256 sidecar | daily 03:15 UTC (`dcc-pg-backup@<network>.timer`), keep 7 | `s3://dcc-<network>-backups/pg/bps_<network>/<UTC>.dump` |
-| Admin dashboard DB `admin_<network>` | VPS system Postgres | same | same | `.../pg/admin_<network>/<UTC>.dump` |
+| BPS chain index `bps_<network>` | VPS system Postgres | `scripts/pg-backup.sh`: `pg_dump -Fc` as the `postgres` OS user (peer auth), verified with `pg_restore --list`, sha256 sent as `X-Content-SHA256` and verified by the Worker | daily 03:15 UTC (`dcc-pg-backup@<network>.timer`), newest 7 kept by the Worker | R2 `dcc-<network>-backups`, key `pg/bps_<network>-<YYYYmmddTHHMMSSZ>.dump` |
+| Admin dashboard DB `admin_<network>` | VPS system Postgres | same | same | `pg/admin_<network>-<YYYYmmddTHHMMSSZ>.dump` |
 | Chain state (RocksDB) | ONE LKE node, default `dcc-val-0` (PVC `chain-data-dcc-val-0-0`, `/var/lib/dcc/data`) | `scripts/chain-snapshot.sh` (section 3) | daily **once the Operator approves the stop** (section 3), keep 7 | `.../chain/dcc-val-0/<UTC>-h<height>.tar.gz` + `.sha256` |
 | Grafana dashboards | git: `monitoring/dashboards/` (provisioned) | none needed | — | git |
 | Grafana state (public-dashboard share, users) | volume `grafana-data-<network>` | not backed up: `deploy-monitoring.sh` re-creates the public dashboard with its fixed token; anonymous access is off and logins use the admin password from SOPS | — | re-created by deploy |
@@ -90,24 +90,42 @@ concentration), so stopping any one LKE node costs the same ~9% and leaves > 2/3
   (c) weekly instead of daily (RPO 7 days for the chain; peers remain the first restore source).
   Decision: `PENDING — Owner`, date: `PENDING`.
 
-## 4. Destination and credentials
+## 4. Destination, upload path and credentials (ECO-85, live design)
 
-- Bucket per network: `dcc-<network>-backups` (Cloudflare R2, same account as `dcc-tofu-state`,
-  outside Linode). Image exports: `dcc-recovery-images`. **Both buckets: PENDING creation.**
-- API token: an R2 token scoped to Object Read & Write on that one bucket (not the tofu-state token).
-- On the VPS: `/opt/dcc/secrets/backup-<network>.env`, mode 600 root, with
-  `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `R2_BACKUP_ENDPOINT`
-  (`https://<account id>.r2.cloudflarestorage.com`). Source of truth: the same three keys in SOPS
-  `secrets/<network>.env`, **PENDING** (and the secrets push must write this file; not wired yet).
-- Retention is enforced by the scripts (keep 7). An R2 lifecycle rule deleting objects older than
-  30 days is a recommended backstop if a script ever stops pruning.
+No S3 API token exists (the operator's wrangler OAuth login cannot create R2 API tokens), so the VPS
+never talks to R2 directly. It uploads through the existing Cloudflare Worker `dcc-ops-monitor`
+(`monitoring/external-monitor/`), which holds an R2 binding `BACKUPS`.
+
+- Bucket: `dcc-testnet-backups` (Cloudflare R2, same account as `dcc-tofu-state`, outside Linode).
+  Mainnet gets its own bucket and binding when mainnet backups are enabled. Image exports use
+  `dcc-recovery-images` (section 7; PENDING creation).
+- Naming: `<db>-<YYYYmmddTHHMMSSZ>.dump`, e.g. `bps_testnet-20261102T031500Z.dump`, stored under `pg/`.
+- Upload: `PUT $BACKUP_WORKER_URL/backup/<name>` with `Authorization: Bearer <BACKUP_UPLOAD_TOKEN>` and
+  `X-Content-SHA256`. The Worker rejects a bad name (400), a missing Content-Length (411), an empty body
+  (400), a body over 95 MB (413) and a hash mismatch (422, nothing stored), and streams the body into R2.
+  The 95 MB limit is below the Worker free-plan request limit (100 MB). Testnet dumps are far smaller
+  (bps 91 MB of database, much less as a compressed custom dump); **if a dump nears the limit the script fails loudly and the
+  design must move to R2 multipart/S3 before mainnet.**
+- Evidence endpoint: `GET $BACKUP_WORKER_URL/backups` (same bearer) lists `pg/` objects, newest first,
+  with size, uploaded time and sha256.
+- Retention: the Worker's 5-minute cron runs once a day (03:00-03:04 UTC) and keeps the newest 7 objects per
+  database (the name before `-<stamp>.dump`), deleting older ones. Objects not matching the naming are
+  never deleted. An R2 lifecycle rule (30 days) remains a recommended backstop.
+- On the VPS: `/opt/dcc/secrets/backup-<network>.env`, mode 600 root:root, with `BACKUP_WORKER_URL` and
+  `BACKUP_UPLOAD_TOKEN`, written by `push-secrets.yml` / `push-secrets-local.sh` from the same two keys
+  in SOPS `secrets/<network>.env`. The script passes the token to curl through a 0600 header file, so it
+  is never in argv or the log. The local dump is deleted once uploaded.
+- The same token is the Worker secret `BACKUP_UPLOAD_TOKEN`; rotate by `wrangler secret put` plus a SOPS
+  update and a secrets push.
 
 ## 5. Restore procedure (fresh Linode, account-independent inputs only)
 
 1. `provision.yml` (tofu apply) for `<network>` -> new VPS; bootstrap installs Postgres, Docker,
    firewall, fail2ban, backup timer. Pin the new host key (`ssh/known_hosts`).
 2. `push-secrets.yml` (SOPS) -> master env, per-service env files, matcher config, Postgres password.
-3. Postgres: download the newest dumps and verify sha256, then
+3. Postgres: list with `GET /backups` and download the newest dumps from `pg/` with
+   `npx wrangler@4 r2 object get dcc-testnet-backups/pg/<name> --remote --file <name>` (Cloudflare account
+   login, no VPS needed); verify with `sha256sum` against the sha256 in `GET /backups`, then
    `pg_restore --clean --if-exists --no-owner --role=dcc -d bps_<network> <dump>` and the same for
    `admin_<network>` (as the `postgres` OS user). `bps_<network>` may instead be re-indexed from the
    node (runbooks/reset-bps-testnet.md) if the dump is older than the RPO.
@@ -142,14 +160,14 @@ data-service returns 200, elapsed time recorded against the RTO.
 Listed by the lead with `linode-cli images list --is_public false` on 2026-10-31. All created
 2026-10-01 (when non-payment deleted the account's Linodes), all **expire 2026-12-30**.
 
-| Image | Label / content | Size | Decision (2026-10-31) |
+| Image | Label / content | Size | Decision (2026-10-31; updated 2026-11-01) |
 |---|---|---|---|
 | `private/41601991` | dcc-backend-testnet, Debian 12 | 22091 MB | **KEEP**: the testnet VPS was restored from it on 2026-10-04; export off-account |
-| `private/41601994` | LKE boot disk | ~10 GB | **DROP**: LKE recreates worker nodes from its own image |
-| `private/41601999` | LKE boot disk | ~10 GB | **DROP**: same |
-| `private/41601995` | econode-1 | 18840 MB | **PENDING — owner of that project** (not a DCC image) |
-| `private/41602001` | turbo-team | 21111 MB | **PENDING — owner of that project** (not a DCC image) |
-| `private/41602005` | crypto-core | 18864 MB | **PENDING — owner of that project** (not a DCC image) |
+| `private/41601994` | LKE boot disk | ~10 GB | **DROP** (decision 2026-11-01): LKE recreates worker nodes from its own image |
+| `private/41601999` | LKE boot disk | ~10 GB | **DROP** (decision 2026-11-01): same |
+| `private/41601995` | econode-1 (not a DCC image) | 18840 MB | **KEEP — exported to R2** (decision 2026-11-01, taken by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30): `dcc-recovery-images/41601995/`, 55 parts, SHA-256 raw `8519bd1a6e4dda4c59ed7d27f7075abe8ef3cea07a8cac7f4a68e461f35b78b1`, compressed `502db9c342cd8abaea2fb4143dcc25fbaea4577b4cb51cce8f8583c36cd18e5d`, re-download verified identical |
+| `private/41602001` | turbo-team (not a DCC image) | 21111 MB | **KEEP — exported to R2** (decision 2026-11-01, taken by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30): `dcc-recovery-images/41602001/`, 56 parts, SHA-256 raw `105ac200bd470a959d7d0275ea119dc431368c8ed4d73a3421c9cdcb5a229344`, compressed `22f6a1b9bdd27f091799e5c44d6e19570325ef3604b8d062dfdcb3216068394a`, re-download verified identical |
+| `private/41602005` | crypto-core (not a DCC image) | 18864 MB | **KEEP — exported to R2** (decision 2026-11-01, taken by the assistant under the Owner's blanket delegation; the Owner can override before 2026-12-30): `dcc-recovery-images/41602005/`, 56 parts, SHA-256 raw `59c72f10fc6fada8229638a96fc809182b622804c1900ba854b69f0046081003`, compressed `49e3c6f247a5e81cb1c2234107d73f7d674894ed134735fd46b4976902a2ab02`, re-download verified identical |
 
 **Restore-test finding (2026-10-31).** The image carries static networking for `66.228.55.154` (the former
 main IP), so a Linode restored from it comes up with that address configured and is not reachable on its new
@@ -177,6 +195,9 @@ log, delete the test Linode. Delete every temporary Linode and record `linode-cl
 | Image | R2 object key | SHA-256 (at export) | SHA-256 (re-download) | Restore-test boot log | Temp Linodes deleted |
 |---|---|---|---|---|---|
 | `private/41601991` | `dcc-recovery-images/41601991/dcc-backend-testnet-debian12.img.zst.part-000` … `part-049` (50 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `d5224473e32c62716bc3f37a486fae6ce981c46a9ed942e4b31393319b8000d5`; compressed `661cb5e6bbf93b7ad89cb63678de64b03339623b81b9cf2dc267d444437dfa34` (export 2026-10-31 14:38Z–15:00Z) | identical for both (all 50 parts re-downloaded 2026-10-31 15:06Z–15:19Z and restored onto a blank 22,108 MB disk) | booted 2026-10-31 15:22Z from the restored disk with docker/containerd/postgresql/cron masked and a Cloud Firewall dropping all outbound traffic: kernel 6.1.0-53, `multi-user.target` reached, sshd listening, startup 2min 14.8s | yes: worker Linode and firewall deleted, `linode-cli linodes list` shows no `eco81-*` |
+| `private/41601995` | `dcc-recovery-images/41601995/econode-1-disk.img.zst.part-000` … `part-054` (55 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `8519bd1a6e4dda4c59ed7d27f7075abe8ef3cea07a8cac7f4a68e461f35b78b1`; compressed `502db9c342cd8abaea2fb4143dcc25fbaea4577b4cb51cce8f8583c36cd18e5d` (export 2026-11-01 18:12Z–18:34Z) | identical for both (all 55 parts re-downloaded 18:44Z–18:55Z, streamed through `zstd -d | sha256sum`, nothing written to disk) | not performed (export and hash verification only; raw disk was never mounted or booted) | yes: worker Linode `eco81-export-worker-2` deleted 2026-11-01, `linode-cli linodes list` shows no `eco81-*` |
+| `private/41602001` | `dcc-recovery-images/41602001/turbo-team-disk.img.zst.part-000` … `part-055` (56 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `105ac200bd470a959d7d0275ea119dc431368c8ed4d73a3421c9cdcb5a229344`; compressed `22f6a1b9bdd27f091799e5c44d6e19570325ef3604b8d062dfdcb3216068394a` (export 2026-11-01 18:34Z–18:57Z) | identical for both (all 56 parts re-downloaded 19:02Z–19:15Z, streamed through `zstd -d | sha256sum`, nothing written to disk) | not performed (export and hash verification only; raw disk was never mounted or booted) | yes: worker Linode `eco81-export-worker-2` deleted 2026-11-01, `linode-cli linodes list` shows no `eco81-*` |
+| `private/41602005` | `dcc-recovery-images/41602005/crypto-core-disk.img.zst.part-000` … `part-055` (56 × 256 MiB; restore = concatenate in order, `zstd -d`) | raw `59c72f10fc6fada8229638a96fc809182b622804c1900ba854b69f0046081003`; compressed `49e3c6f247a5e81cb1c2234107d73f7d674894ed134735fd46b4976902a2ab02` (export 2026-11-01 18:57Z–19:21Z) | identical for both (all 56 parts re-downloaded 19:22Z–19:36Z, streamed through `zstd -d | sha256sum`, nothing written to disk) | not performed (export and hash verification only; raw disk was never mounted or booted) | yes: worker Linode `eco81-export-worker-2` deleted 2026-11-01, `linode-cli linodes list` shows no `eco81-*` |
 
 ## 8. Account continuity (ECO-83)
 

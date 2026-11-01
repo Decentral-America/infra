@@ -652,7 +652,7 @@ tests:
               target: bps_testnet
             exp_annotations:
               summary: "No successful Postgres backup of bps_testnet to R2 in 26h"
-              description: "dcc-pg-backup@testnet has not completed a backup of bps_testnet in 26h. Check `systemctl status dcc-pg-backup@testnet.service` and /var/log/dcc/pg-backup.log on the VPS, and /opt/dcc/secrets/backup-testnet.env (R2 credentials, DR.md)."
+              description: "dcc-pg-backup@testnet has not completed a backup of bps_testnet in 26h. Check `systemctl status dcc-pg-backup@testnet.service` and /var/log/dcc/pg-backup.log on the VPS, and /opt/dcc/secrets/backup-testnet.env (BACKUP_WORKER_URL / BACKUP_UPLOAD_TOKEN, DR.md) and `GET /backups` on the Worker."
       - eval_time: 27h
         alertname: BackupNeverSucceeded
         exp_alerts: []
@@ -675,7 +675,7 @@ tests:
               kind: pg
             exp_annotations:
               summary: "No Postgres backup has ever succeeded on this host"
-              description: "dcc_backup_last_success_timestamp_seconds{kind=\"pg\"} has been absent for 26h: the backup timer is not installed, has no R2 credentials, or has failed every run since boot. See DR.md and `systemctl list-timers 'dcc-pg-backup@*'`."
+              description: "dcc_backup_last_success_timestamp_seconds{kind=\"pg\"} has been absent for 26h: the backup timer is not installed, has no Worker upload credentials, or has failed every run since boot. See DR.md and `systemctl list-timers 'dcc-pg-backup@*'`."
 
   # CommitteeMemberShareTooHigh (ECO-412): 0.734 held 15m fires critical; 0.25 and 0.3 stay silent,
   # and a 10-minute spike does not fire.

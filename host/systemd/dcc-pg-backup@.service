@@ -1,5 +1,5 @@
 [Unit]
-Description=Back up bps_%i and admin_%i to R2 dcc-%i-backups (infra scripts/pg-backup.sh, DR.md)
+Description=Back up bps_%i and admin_%i to R2 via the dcc-ops-monitor Worker (infra scripts/pg-backup.sh, DR.md)
 After=postgresql.service network-online.target
 Wants=network-online.target
 Requires=postgresql.service

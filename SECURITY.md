@@ -101,7 +101,7 @@ Not rendered by `render-service-env.sh`, written directly by `push-secrets.yml`:
 | File | Keys | Reader |
 |---|---|---|
 | `grafana-<network>.env` (640 root:deploy) | GF_SECURITY_ADMIN_PASSWORD (SOPS `GRAFANA_ADMIN_PASSWORD`) | grafana container |
-| `backup-<network>.env` (600 root:root) | R2_BACKUP_ACCESS_KEY_ID, R2_BACKUP_SECRET_ACCESS_KEY, R2_BACKUP_ENDPOINT | `scripts/pg-backup.sh` (systemd, root); no container |
+| `backup-<network>.env` (600 root:root) | BACKUP_WORKER_URL, BACKUP_UPLOAD_TOKEN | `scripts/pg-backup.sh` (systemd, root); no container |
 | `/opt/dcc/config/matcher-<network>/local.conf` (640 root:113) | matcher seed (SOPS `MATCHER_SEED_BASE64`), API key hashes | matcher container (uid 113), read-only mount |
 
 The matcher has no `env_file`. The main node's API key hash is in `node-config/<network>/dcc.conf`
