@@ -12,14 +12,14 @@ expiry; `monitoring/exporter.py` (`dcc_tls_cert_expiry_timestamp_seconds`) watch
 
 | Domain | Registrar (RDAP) | DNS provider (NS) | Registered | Expires (RDAP, UTC) | Auto-renew | RDAP status |
 |---|---|---|---|---|---|---|
-| decentralchain.io | NameCheap, Inc. (IANA 1068) | SiteGround (`ns1/ns2.siteground.net`) | 2021-01-30 | **2027-01-30T17:44:00Z** | unverified — owner console | client transfer prohibited |
-| decentralscan.com | NameCheap, Inc. (IANA 1068) | Namecheap BasicDNS (`dns1/dns2.registrar-servers.com`) | 2021-03-01 | **2027-03-01T22:57:15Z** | unverified — owner console | client transfer prohibited |
-| decentral.exchange | NameCheap, Inc. (IANA 1068) | Namecheap BasicDNS (`dns1/dns2.registrar-servers.com`) | 2021-03-05 | **2027-03-05T21:12:57Z** | unverified — owner console | client transfer prohibited |
-| decentralchain.com | GoDaddy.com, LLC (IANA 146) | GoDaddy (`ns29/ns30.domaincontrol.com`) | 2017-08-05 | **2027-08-05T19:03:48Z** | unverified — owner console | client delete/renew/transfer/update prohibited |
+| decentralchain.io | NameCheap, Inc. (IANA 1068) | SiteGround (`ns1/ns2.siteground.net`) | 2021-01-30 | **2027-01-30T17:44:00Z** | **ON** (Owner confirmed 2026-11-01) | client transfer prohibited |
+| decentralscan.com | NameCheap, Inc. (IANA 1068) | Namecheap BasicDNS (`dns1/dns2.registrar-servers.com`) | 2021-03-01 | **2027-03-01T22:57:15Z** | **ON** (Owner confirmed 2026-11-01) | client transfer prohibited |
+| decentral.exchange | NameCheap, Inc. (IANA 1068) | Namecheap BasicDNS (`dns1/dns2.registrar-servers.com`) | 2021-03-05 | **2027-03-05T21:12:57Z** | **ON** (Owner confirmed 2026-11-01) | client transfer prohibited |
+| decentralchain.com | GoDaddy.com, LLC (IANA 146) | GoDaddy (`ns29/ns30.domaincontrol.com`) | 2017-08-05 | **2027-08-05T19:03:48Z** | **ON** (Owner confirmed 2026-11-01) | client delete/renew/transfer/update prohibited |
 
 RDAP does not expose the registrar's auto-renew setting (the EPP "client renew prohibited" flag is a
-registrar lock, not auto-renew). The Owner must confirm auto-renew in the Namecheap (3 domains) and
-GoDaddy (1 domain) consoles and record the date here. Note: decentralchain.io is **registered** at
+registrar lock, not auto-renew). The Owner confirmed on 2026-11-01 that auto-renew is turned on for all four
+domains (Namecheap: 3, GoDaddy: 1); it cannot be re-checked from outside, so re-confirm at each yearly renewal. Note: decentralchain.io is **registered** at
 Namecheap but its **DNS** is hosted at SiteGround.
 
 RDAP endpoints: `.com` → `https://rdap.verisign.com/com/v1/`, `.exchange` →
