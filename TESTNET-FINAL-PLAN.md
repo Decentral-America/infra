@@ -49,7 +49,8 @@ Blocked by ECO-42, 49, 51, 63, 66, 73, 76, 97, 99. Freeze, sample with `scripts/
 Tick Task 6.5 Steps 1-5 with Step 4 rewritten to the real evidence path (`finalizationVoting.hotstuffConflicts`
 in block 56354, `/generators/at` conflictHeight, `/node/status` hotStuffEquivocationsTotal, `EQUIVOCATION
 DETECTED` logs); node-scala docs PR; #208 closure evidence; `scripts/check-digest-parity.sh` output;
-`DRILL_OFFENDER_SEED` kept only until the ECO-49 re-drill.
+`DRILL_OFFENDER_SEED` kept only until the ECO-49 re-drill (the re-drill reuses it, so removal is part of ECO-49's closure).
+**2026-11-01:** #208 was closed by hand on 2026-10-13, so the pipeline was re-tested: the promtool fire/resolve fixtures pass (`monitoring/tests/alerts_test.yml`, HotStuffEquivocationDetected), and the live pipeline's test alert (infra #295) opened and was auto-closed by `github-actions[bot]` within seconds of resolving. `scripts/check-digest-parity.sh` 2026-11-01: all four testnet nodes pin `sha256:e00bb982…` (v1.8.1).
 
 ### ECO-49 — Forfeit the deposit of HotStuff equivocators
 Lock-release spec (RocksDBWriter), `genesis-replay-check.yml` past heights 56354 and 60000, re-drill
@@ -127,7 +128,7 @@ node-scala work (RCA, retry audit, PR trigger, 20 green runs). Recommended befor
 
 ### ECO-99 — Deduplicate this plan; reconcile stale docs
 This restructure; waivers marked revoked; stale lines corrected in History (RELAUNCH-20260904.md:47 IP,
-REDIS_PASSWORD, digest, whole-env, mainnet-node). **Remaining:** clean trees in all 6 repos, recorded.
+REDIS_PASSWORD, digest, whole-env, mainnet-node). **Clean trees, recorded 2026-11-01** (`git status --porcelain` empty, level with origin, on the integration branch): DecentralChain `dev`, docs `dev`, infra `dev`, matcher `dev` (each fast-forwarded to `main` on 2026-10-31 so dev == main at that time), node-scala `main` (no dev branch), dcc-report `main`. Phase 9 row 13 is ticked at the end of the sprint-closing pass.
 
 ### ECO-109 — DNS inventory and dead references
 `DNS-INVENTORY.md` from public DNS (registrar console export still PENDING, Owner); mainnet-node and
@@ -675,13 +676,15 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 > **Closure (2026-10-18):** WAIVED: Bug 2 has no closing evidence; accepted as known (register AUD-188) under the 2026-10-18 waiver
 >
 > **REVOKED 2026-10-24** (mainnet-grade standard): AUD-188 no longer counts; Bug 2 is open as ECO-51 (Part 1).
+>
+> **DONE 2026-11-01 (ECO-51):** `FinalizationRollbackSpec` (node-scala #92, 4 cases) passes on main and fails before commit `aa230593b7` (bisected), so Bug 2 was closed by `aa230593b7`. Consumer list with a verdict per reader: node-scala `docs/consensus-divergences-from-upstream.md` §8. The audit found a separate sync-path gap (ECO-413), fixed in node-scala #93 and checked by a full genesis replay to the live tip (run 41275408878). The root consensus reference now marks Bug 2 CLOSED.
 
 **Files:** `$BC/CONSENSUS-BUG-INVESTIGATION-REFERENCE.md:147-157`; `$NODE/node/src/main/scala/com/decentralchain/state/FinalizationState.scala`; node-scala commits from the 2026-08-30 relaunch (memory `testnet-final-relaunch-20260830:21` — "Task D finalization-rollback bug was real", DeterministicFinality cluster).
 
-- [ ] **Step 1:** `cd $NODE && git log --oneline --since=2026-08-25 -- node/src/main/scala/com/decentralchain/state/FinalizationState.scala node/src/main/scala/com/decentralchain/state/BlockchainUpdaterImpl.scala | head -20`. Read each for "rollback", "microblock discard", "finalized height".
-- [ ] **Step 2:** Write a failing test if no rollback coverage exists: in `node/tests/.../FinalizationRollbackSpec.scala`, append a microblock that advances the finalized-height value, discard it (`removeAfter`), assert the finalized height returns to its pre-microblock value and the next key block's state hash equals the appender's recompute. Run `sbt "node-tests/testOnly *FinalizationRollbackSpec"`.
-- [ ] **Step 3:** If it fails: implement both halves together per §9 (per-liquid-point finalized tracking with correct rollback; block-builder must not mix discarded-piece data), following TDD; full `sbt "node-tests/test"` zero regressions; PR to main. If it passes: update §9 Bug 2 to "CLOSED by <commit>, covered by FinalizationRollbackSpec" with the commit hash.
-- [ ] **Step 4:** Same pass for §8 line 110 (committee-*eligibility* logic vs. stale rollback): `grep -rn "committedGenerators\|nextCommittedGenerators" node/src/main/scala | grep -v Hash` — list every non-hash consumer; for each, state in the doc whether it reads the rolled-back or live list. Close or open accordingly.
+- [x] **Step 1:** `cd $NODE && git log --oneline --since=2026-08-25 -- node/src/main/scala/com/decentralchain/state/FinalizationState.scala node/src/main/scala/com/decentralchain/state/BlockchainUpdaterImpl.scala | head -20`. Read each for "rollback", "microblock discard", "finalized height".
+- [x] **Step 2:** Write a failing test if no rollback coverage exists: in `node/tests/.../FinalizationRollbackSpec.scala`, append a microblock that advances the finalized-height value, discard it (`removeAfter`), assert the finalized height returns to its pre-microblock value and the next key block's state hash equals the appender's recompute. Run `sbt "node-tests/testOnly *FinalizationRollbackSpec"`.
+- [x] **Step 3:** If it fails: implement both halves together per §9 (per-liquid-point finalized tracking with correct rollback; block-builder must not mix discarded-piece data), following TDD; full `sbt "node-tests/test"` zero regressions; PR to main. If it passes: update §9 Bug 2 to "CLOSED by <commit>, covered by FinalizationRollbackSpec" with the commit hash.
+- [x] **Step 4:** Same pass for §8 line 110 (committee-*eligibility* logic vs. stale rollback): `grep -rn "committedGenerators\|nextCommittedGenerators" node/src/main/scala | grep -v Hash` — list every non-hash consumer; for each, state in the doc whether it reads the rolled-back or live list. Close or open accordingly.
 
 ### Task 6.2: Live epoch transition + committee rotation evidence (T10)
 
@@ -712,11 +715,11 @@ curl -s http://127.0.0.1:6886/matcher | jq          # matcher public key; must e
 
 > **Closure (2026-10-18):** DONE: equivocation drill 2026-10-12 (Soak Log); forfeiture fix live from height 60000 (#213)
 
-- [ ] **Step 1:** Wait until Tasks 6.2–6.4 are recorded and the chain is ≥ 24h past power-on (first-boot lockedQC window, `hotstuff-audit-readiness.md:124-134`).
-- [ ] **Step 2 ⛔:** Set `slashing-enabled = yes` on gen-0 only (`nodes.yaml:170` block). Flux rolls it.
-- [ ] **Step 3:** Produce an equivocation from a throwaway generator using the node-it harness technique (`FourNodeHotStuffTestSuite` equivocation scenario) against testnet, or by running a second gen-1 instance with the same key for one block (⛔, destructive to gen-1's reputation on the chain; use a funded throwaway generator instead if possible).
-- [ ] **Step 4:** Expected: `HotStuffEquivocationDetected` fires; gen-0 emits the evidence tx; `/transactions/info/<id>` shows the `HotStuffEquivocationProof` applied; the offender's generating balance is penalised per the T5 rules. Other three nodes (slashing off) accept the block containing the evidence.
-- [ ] **Step 5:** Decide fleet-wide `slashing-enabled` and record the decision in `hotstuff-audit-readiness.md:326` and D4 of the source plan.
+- [x] **Step 1:** Wait until Tasks 6.2–6.4 are recorded and the chain is ≥ 24h past power-on (first-boot lockedQC window, `hotstuff-audit-readiness.md:124-134`).
+- [x] **Step 2 ⛔:** Set `slashing-enabled = yes` on gen-0 only (`nodes.yaml:170` block). Flux rolls it.
+- [x] **Step 3:** Produce an equivocation from a throwaway generator using the node-it harness technique (`FourNodeHotStuffTestSuite` equivocation scenario) against testnet, or by running a second gen-1 instance with the same key for one block (⛔, destructive to gen-1's reputation on the chain; use a funded throwaway generator instead if possible).
+- [x] **Step 4:** Expected and observed: the proof is in the block's `finalizationVoting.hotstuffConflicts` (block 56354, not a transaction), `/generators/at` shows `conflictHeight`, `/node/status` shows `hotStuffEquivocationsTotal`, node logs show `EQUIVOCATION DETECTED`, `HotStuffEquivocationDetected` fires; the other three nodes (slashing off) accepted the block. The deposit forfeiture (fixed in #77, gated at height 60000) is re-drilled under ECO-49.
+- [x] **Step 5:** Decision, 2026-10-12, recorded 2026-11-01 in node-scala `docs/hotstuff-audit-readiness.md` §8 and here (D4, line 180): `slashing-enabled` stays `no` fleet-wide until #77 is live and the external audit is done.
 
 **Result 2026-10-12 (Claude):** drill run with a throwaway committee member instead of a real node.
 - Offender `31Q7J8cVtBcGDkuUfuppqvm7Cq7BDgDAuVP` was funded at h54946 and committed at h56240 (tx `5p4r2mgS…`) for period 56301, as committee index #4.
@@ -821,7 +824,7 @@ Evidence collected 2026-10-18 at height 74871:
 | 7 | Alerts loaded, delivery proven, MainNodeUnreachable/LkeGeneratorsDown present | DONE | 26 rules; True True True (count, MainNodeUnreachable, LkeGeneratorsDown, Watchdog); delivery #186/#189/#208/#211 |
 | 8 | Downstream: BPS ≈ chain, matcher round-trip, DS 200, faucet, balances, URLs, admin-e2e green | DONE except the matcher canary: PENDING (`matcher-canary.yml` ships in the wave-4 PR; needs its one-time asset setup) | BPS lag 0; matcher-canary last 24: matcher-canary.yml not on main yet; DS 200; faucet claim PASS (2026-10-18 live E2E row 1); balances in TOPOLOGY.md; admin-e2e green run 38152087859 2026-10-11T15:38:01Z |
 | 9 | Drills: crash, partition, epoch transition, equivocation + fleet decision | DONE | Soak Log 2026-10-10 / 2026-10-12 / 2026-10-15; fleet decision: slashing stays off (SOAK-2026-10-12.md) |
-| 10 | Bug 2 resolved (Task 6.1) | WAIVED → **REVOKED 2026-10-24** (ECO-51) | register AUD-188 |
+| 10 | Bug 2 resolved (Task 6.1) | **DONE 2026-11-01** (ECO-51); waiver AUD-188 revoked 2026-10-24 | `FinalizationRollbackSpec` (node-scala #92), closing commit `aa230593b7`, consumer list §8, replay run 41275408878 |
 | 11 | Security: API keys + SSH key rotated, KeeWeb cleaned, REDIS_PASSWORD in SOPS, canary env secret | DONE except KeeWeb (WAIVED: operator keeps KEEWEB_BACKUP.md as is, AUD-094 → **REVOKED 2026-10-24**, ECO-73) | #193; SSH 2026-10-10; REDIS_PASSWORD in SOPS: 1; canary env secret present: true |
 | 12 | Docs reconciled; public docs 200 | DONE | wave-4 PR (AUD-030/084/089/090/091); docs.decentralchain.io 200 |
 | 13 | Working trees clean (DecentralChain, matcher, infra, docs) | PENDING while any count below is non-zero (matcher has local uncommitted changes) | porcelain line counts: DecentralChain=0 matcher=6 infra=0 docs=0 |
