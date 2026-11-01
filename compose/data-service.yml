@@ -25,6 +25,8 @@ services:
       # PORT is a hardcoded infrastructure constant, safe to set here.
       # Caddy proxies 127.0.0.1:8080 with TLS on 443.
       PORT: "8080"
+      # Listen on loopback only (ECO-110): Caddy and Prometheus reach it on 127.0.0.1; the app default is 0.0.0.0.
+      BIND_ADDR: "127.0.0.1"
       # data-service defaults to PGSSLMODE=require. For on-server PostgreSQL
       # (127.0.0.1 loopback), SSL adds no security benefit and requires a
       # trusted cert. Disable it for all local deployments.
