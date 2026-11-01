@@ -130,7 +130,7 @@ node-scala work (RCA, retry audit, PR trigger, 20 green runs). Recommended befor
 
 ### ECO-99 — Deduplicate this plan; reconcile stale docs
 This restructure; waivers marked revoked; stale lines corrected in History (RELAUNCH-20260904.md:47 IP,
-REDIS_PASSWORD, digest, whole-env, mainnet-node). **Clean trees, recorded 2026-11-01** (`git status --porcelain` empty, level with origin, on the integration branch): DecentralChain `dev`, docs `dev`, infra `dev`, matcher `dev` (each fast-forwarded to `main` on 2026-10-31 so dev == main at that time), node-scala `main` (no dev branch), dcc-report `main`. Phase 9 row 13 is ticked at the end of the sprint-closing pass.
+REDIS_PASSWORD, digest, whole-env, mainnet-node). **Clean trees, recorded 2026-11-01** (`git status --porcelain` empty, level with origin, on the integration branch): DecentralChain `dev`, docs `dev`, infra `dev`, matcher `dev` (each fast-forwarded to `main` on 2026-10-31 so dev == main at that time), node-scala `main` (no dev branch), dcc-report `main`. Phase 9 row 13 ticked 2026-11-01.
 
 ### ECO-109 — DNS inventory and dead references
 `DNS-INVENTORY.md` from public DNS (registrar console export still PENDING, Owner); mainnet-node and
@@ -837,7 +837,7 @@ Evidence collected 2026-10-18 at height 74871:
 | 10 | Bug 2 resolved (Task 6.1) | **DONE 2026-11-01** (ECO-51); waiver AUD-188 revoked 2026-10-24 | `FinalizationRollbackSpec` (node-scala #92), closing commit `aa230593b7`, consumer list §8, replay run 41275408878 |
 | 11 | Security: API keys + SSH key rotated, KeeWeb cleaned, REDIS_PASSWORD in SOPS, canary env secret | DONE except KeeWeb (WAIVED: operator keeps KEEWEB_BACKUP.md as is, AUD-094 → **REVOKED 2026-10-24**, ECO-73) | #193; SSH 2026-10-10; REDIS_PASSWORD in SOPS: 1; canary env secret present: true |
 | 12 | Docs reconciled; public docs 200 | DONE | wave-4 PR (AUD-030/084/089/090/091); docs.decentralchain.io 200 |
-| 13 | Working trees clean (DecentralChain, matcher, infra, docs) | PENDING while any count below is non-zero (matcher has local uncommitted changes) | porcelain line counts: DecentralChain=0 matcher=6 infra=0 docs=0 |
+| 13 | Working trees clean (all 6 repos + root) | **DONE 2026-11-01** | `git status --porcelain` = 0, level with origin, 0 stashes, 1 worktree each: DecentralChain `dev`, matcher `dev`, infra `dev`, docs `dev`, node-scala `main` (no dev branch), dcc-report `main`; root repo 0 |
 
 ---
 
