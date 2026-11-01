@@ -75,6 +75,15 @@ weekly RDAP workflow `domain-expiry.yml` (< 60 days opens an issue); registrar/e
 **Live/Owner:** one green RDAP run; Owner confirms auto-renew per domain (3 Namecheap, 1 GoDaddy).
 
 ### ECO-66 — Main node quorum, peering and generation interval
+**Long-partition drill DONE on the current settings (2026-10-31).** iptables on the VPS dropped the LKE node IP
+`139.162.144.243` both ways from 14:20:38Z; a systemd timer healed it at 16:30:38Z (130 min, about 270 blocks per side,
+beyond `max-rollback = 100`). During: main forged alone 109889 → 110127 and its `hotStuffFinalizedHeight` kept advancing
+(it holds 73.4% of the committee weight, so it reaches quorum by itself: ECO-412). gen-0, gen-1 and val-0 forged nothing
+and stayed at 109892 / finalized 109886: their only known peer is main, so they had zero peers, the HotStuff watchdog
+gave up after 5 failed recoveries, and `quorum = 1` was unmet. After the heal all 4 nodes were at 110131–110132 by
+16:32Z with no rollback (the LKE side had no fork to abandon), the same block id at height 111500 on all 4, 0
+InvalidStateHash, 0 restarts. Conclusion: the single-hub peering is a real stall mode, and main alone can finalize.
+Both are fixed by the ECO-66 config commit (mutual known-peers, quorum 1) and ECO-412 (rebalance).
 See the statement above. Config commit is the last commit of the ECO-sprint-1 infra PR. **Live:** ⛔
 long-partition drill on the CURRENT settings first, then deploy-node-config + Flux, then main stopped 10 min
 → each LKE node ≥ 2 peers.
@@ -94,7 +103,9 @@ rotate OAuth client secret, Sentry token, admin PAT, `TF_VAR_ROOT_PASSWORD`; ded
 
 ### ECO-81 — Preserve Linode recovery images before 2026-12-30
 DR.md "Linode private images": keep 41601991, drop the two LKE boot disks, three non-DCC images pending
-their owner. **Live:** export to R2 `dcc-recovery-images` with SHA-256, restore test, temp-Linode cleanup.
+their owner. **DONE live 2026-10-31:** exported to R2 `dcc-recovery-images` (50 parts), SHA-256 verified against a full
+re-download, restore boot test with the clone isolated, temp Linode and firewall deleted. Evidence in DR.md §7.
+Owner sign-off of the keep/drop list (before 2026-12-15) is still pending.
 
 ### ECO-83 — Linode billing safeguards
 DR.md "Account continuity" (structure; owner fields pending). **Owner:** 2 payment methods per account,
