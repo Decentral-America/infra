@@ -61,7 +61,7 @@ services:
         max-file: "3"
 
   exporter:
-    image: python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8
+    image: python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
     container_name: "exporter-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -193,7 +193,7 @@ services:
     # Bumped 0.33.1 -> 0.34.1 (2026-09-29): only [CHANGE] is the finer-grained
     # `reason` label on alertmanager_notifications_failed_total (not used by
     # any alert/dashboard here). `amtool check-config` passes on 0.34.1.
-    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+    image: prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
     container_name: "alertmanager-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped
@@ -249,7 +249,7 @@ services:
         max-file: "3"
 
   alert-webhook:
-    image: python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8
+    image: python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
     container_name: "alert-webhook-${NETWORK:-testnet}"
     network_mode: host
     restart: unless-stopped

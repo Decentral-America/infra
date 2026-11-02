@@ -40,7 +40,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: monitor
-              image: node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+              image: node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
               command: ["sh", "/app/run-canary.sh", "canary-transaction.mjs", "CanaryTransactionFailed", "canary transaction did not confirm against testnet", "CanaryWalletUnfunded", "canary wallet balance is below 10x the tx fee (re-fund from treasury)"]
               env:
                 - name: GITHUB_TOKEN
@@ -126,7 +126,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: monitor
-              image: node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+              image: node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
               command: ["sh", "/app/run-canary.sh", "matcher-canary.mjs", "MatcherSettlementCanaryFailed", "a crossing order pair did not match and settle on testnet", "MatcherCanaryUnfunded", "matcher canary accounts lack DCC or CANARY (re-run matcher-canary-setup.mjs funding)"]
               env:
                 - name: GITHUB_TOKEN
@@ -214,7 +214,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: monitor
-              image: python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8
+              image: python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
               command: ["python3", "/app/infra-liveness.py"]
               env:
                 - name: GITHUB_TOKEN
